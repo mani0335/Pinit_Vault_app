@@ -20,6 +20,26 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Signing config: use Gradle properties or CI env vars to populate release keystore
+            // To sign: add the following to ~/.gradle/gradle.properties or pass via command line:
+            // RELEASE_STORE_FILE=/path/to/keystore.jks
+            // RELEASE_STORE_PASSWORD=storepassword
+            // RELEASE_KEY_ALIAS=keyalias
+            // RELEASE_KEY_PASSWORD=keypassword
+            if (project.hasProperty('RELEASE_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (project.hasProperty('RELEASE_STORE_FILE')) {
+                storeFile file(project.property('RELEASE_STORE_FILE'))
+                storePassword project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD') : ''
+                keyAlias project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS') : ''
+                keyPassword project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD') : ''
+            }
         }
     }
 }

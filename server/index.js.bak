@@ -8,14 +8,6 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Mongoose models
-let User;
-try {
-  User = require('./models/User');
-} catch (e) {
-  // model may not be available if mongoose isn't installed or file missing
-}
-
 // In-memory DB (for demo). In production use Firestore via Firebase Admin.
 const users = new Map();
 let mongoClient = null;
@@ -100,7 +92,7 @@ try {
   const mongooseUri = process.env.MONGOOSE_URI || process.env.MONGODB_URI;
   if (mongooseUri) {
     mongoose
-      .connect(mongooseUri)
+      .connect(mongooseUri, { useNewUrlParser: true, useUnifiedTopology: true })
       .then(() => console.log('Mongoose: MongoDB Connected'))
       .catch((err) => console.warn('Mongoose connection failed:', err && err.message ? err.message : err));
   }
@@ -147,6 +139,22 @@ app.post('/api/register', (req, res) => {
             $set: {
               userId,
               deviceToken,
+              device              Set-Location .\server
+              $env:MONGODB_URI="mongodb+srv://pasulamanish0335_db_user:Manish1614@cluster0.jwchpax.mongodb.net/biovault"
+              $env:PORT="3333"
+              node index.js              Set-Location .\server
+              # (re-)set the Mongo URI and DB for this session
+              $env:MONGODB_URI="mongodb+srv://pasulamanish0335_db_user:Manish1614@cluster0.jwchpax.mongodb.net/biovault"
+              $env:MONGODB_DB="biovault"
+              $env:PORT="3333"
+              
+              # install server deps if not already
+              npm install
+              
+              # start the server
+              node index.js
+              # or
+              npm startId: deviceToken,
               biometricEnabled: !!(webauthn || faceEmbedding),
               webauthn_credential: webauthn || null,
               face_embedding: normalizeVector(faceEmbedding),
@@ -607,20 +615,6 @@ app.post('/api/device/rebind', (req, res) => {
   record.temp_verified = false;
   users.set(userId, record);
   return res.json({ ok: true });
-});
-
-// Mongoose-backed quick test route: saves a User document
-app.post('/register', async (req, res) => {
-  try {
-    const { deviceId = 'DEVICE123', fingerprintId = 'FP001', faceId = 'FACE001' } = req.body || {};
-    if (!User) return res.status(500).json({ ok: false, error: 'User model not available' });
-    const user = new User({ deviceId, fingerprintId, faceId });
-    await user.save();
-    return res.json({ ok: true, id: user._id });
-  } catch (err) {
-    console.error('Mongoose save error', err);
-    return res.status(500).json({ ok: false, error: 'Failed to save user' });
-  }
 });
 
 app.get('/', (req, res) => res.send('Biovault mock server running'));

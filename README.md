@@ -1,182 +1,163 @@
-<<<<<<< HEAD
-# Biovault_App
-# Biovault_App
+# Biovault App
 
-## Project info
+## Project Info
 
-This repository contains the Biovault mobile/web app — a biometric vault demo built with Vite + React + TypeScript and packaged with Capacitor for Android.
+This repository contains the Biovault mobile/web app, a biometric vault demo built with Vite + React + TypeScript and packaged with Capacitor for Android.
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes.
-
-The only requirement is having Node.js & npm installed.
-
-Follow these steps:
-
-```sh
-# Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Install the necessary dependencies.
-npm i
-
-# Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-## What technologies are used for this project?
-
-This project is built with:
+## Tech Stack
 
 - Vite
 - TypeScript
 - React
 - shadcn-ui
 - Tailwind CSS
+- Capacitor (Android)
+- Express (mock backend)
 
-## App Flow
+## Current Work (What I am doing)
 
-Below is the high-level app flow for the biometric vault application:
+The following items describe the active implementation workflow in this project:
 
-APP START
-	│
-	▼
-Splash Screen
-	│
-	▼
-Fingerprint Scan
-	│
-	▼
-Check Fingerprint
-	│
-	├───────────────► Fingerprint Found
-	│                      │
-	│                      ▼
-	│               Device ID Check
-	│                      │
-	│         ┌────────────┴────────────┐
-	│         │                         │
-	│         ▼                         ▼
-	│   Device Match            Device Mismatch
-	│         │                         │
-	│         ▼                         ▼
-	│  Face Authentication      Temporary Access
-	│         │                         │
-	│         ▼                         ▼
-	│   Vault Dashboard        Enter Temporary Code
-	│                                   │
-	│                                   ▼
-	│                          Code Verification
-	│                                   │
-	│                                   ▼
-	│                         Register Biometrics
-	│                                   │
-	│                                   ▼
-	│                           Update Device ID
-	│                                   │
-	│                                   ▼
-	│                           Login Again
-	│                                   │
-	│                                   ▼
-	│                           Vault Dashboard
-	│
-	└──────────────► Fingerprint  Not Found
-		                          │
-		                          ▼
-		                  New User Registration
-		                          │
-		                          ▼
-		                 Register Fingerprint + Face
-		                          │
-		                          ▼
-					Generate USER_ID
-		                          │
-		                          ▼
-					Bind Device
-		                          │
-		                          ▼
-					Vault Dashboard
+- Implement biometric-first login (fingerprint with secure fallback behavior).
+- Validate user + device binding through backend API checks.
+- Support temporary access flow when device mismatch occurs.
+- Support first-time user registration with biometric enrollment.
+- Keep backend verification isolated from raw biometric payloads.
+- Build and test Android debug APK through Capacitor + Gradle.
+- Improve routing and error-handling paths for login and registration.
 
-## What I Changed
+## Workflow Graph
 
-Below is a concise summary of code and project changes made while implementing the biometric vault flow, building the Android app, and wiring up a mock backend for testing.
+```mermaid
+flowchart TD
+    A[App Start] --> B[Splash Screen]
+    B --> C[Fingerprint Scan]
+    C --> D{Fingerprint Found?}
 
-- **Files Modified**:
-  - `src/pages/Login.tsx` — updated routing and error handling to follow the App Flow.
-  - `src/pages/Index.tsx` — replaced landing page with an auto-navigating splash.
-  - `src/components/FingerprintScanner.tsx` — improved biometric fallback, fetch error handling, and server calls.
-  - `src/pages/Register.tsx` — enrollment and API call fixes.
-  - Android Gradle files updated for Java compatibility: `android/app/capacitor.build.gradle`, `android/capacitor-cordova-android-plugins/build.gradle`.
-  - Debug/packaging: debug APK available at `android/app/build/outputs/apk/debug/app-debug.apk`.
+    D -->|Yes| E[Device ID Check]
+    E -->|Device Match| F[Face Authentication]
+    F --> G[Vault Dashboard]
 
-## API Endpoints (mock backend)
+    E -->|Device Mismatch| H[Temporary Access]
+    H --> I[Enter Temporary Code]
+    I --> J[Code Verification]
+    J --> K[Register Biometrics]
+    K --> L[Update Device ID]
+    L --> M[Login Again]
+    M --> G
 
-The project includes a simple mock Express backend at `server/index.js`. Default listen port is `3333` (can be overridden with `PORT`). Endpoints:
-
-- **POST /api/register** — body: `{ userId, deviceToken, webauthn?, faceEmbedding? }`.
-- **POST /api/validate** — body: `{ userId, deviceToken }`. Returns `{ authorized: true }` or `403` with `reason`.
-- **POST /api/face** — body: `{ userId, embedding }`.
-- **GET /** — health/status endpoint.
-
-The mock server uses an in-memory Map by default. If Firebase Admin credentials are provided via `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_PATH` environment variables, Firestore will be used.
-
-## How to run locally (web + backend)
-
-- Install dependencies: `npm i`.
-- Set API URL for client: edit `.env` and set `VITE_API_URL` to your PC LAN IP + port (example: `VITE_API_URL=http://192.168.1.42:3333`).
-- Start mock backend:
-
-```powershell
-# from repo root
-npm start --prefix secure-sweet-access-main/server
+    D -->|No| N[New User Registration]
+    N --> O[Register Fingerprint + Face]
+    O --> P[Generate USER_ID]
+    P --> Q[Bind Device]
+    Q --> G
 ```
 
-- Run dev web app:
+## What Was Changed In This Phase
+
+- `src/pages/Login.tsx`: Updated routing and error handling to match the workflow.
+- `src/pages/Index.tsx`: Replaced landing page behavior with splash-driven navigation.
+- `src/components/FingerprintScanner.tsx`: Improved biometric fallback behavior and API integration.
+- `src/pages/Register.tsx`: Fixed enrollment flow and backend request behavior.
+- `android/app/capacitor.build.gradle`: Updated Java/Gradle compatibility settings.
+- `android/capacitor-cordova-android-plugins/build.gradle`: Updated Java/Gradle compatibility settings.
+- Android debug APK output available at `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+## API Endpoints (Mock Backend)
+
+The mock backend is implemented in `server/index.js`. Default port is `3333` (override with `PORT`).
+
+- `POST /api/register`: body `{ userId, deviceToken, webauthn?, faceEmbedding? }`
+- `POST /api/validate`: body `{ userId, deviceToken }` (returns auth result)
+- `POST /api/face`: body `{ userId, embedding }`
+- `GET /`: health endpoint
+
+By default, the backend stores data in-memory. If `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_PATH` is configured, Firestore can be used.
+
+## Local Run Steps (Web + Backend)
+
+```bash
+npm install
+```
+
+Set `VITE_API_URL` in `.env` to your machine LAN IP + backend port.
+Example: `VITE_API_URL=http://192.168.1.42:3333`
+
+Start backend:
+
+```powershell
+npm install --prefix server
+npm start --prefix server
+```
+
+Start app:
 
 ```bash
 npm run dev
 ```
 
-## Android (Capacitor) — build & run on device
-
-- Sync web assets to Android (after building):
+## Android Build and Run
 
 ```bash
+npm run build
 npx cap sync android
-```
-
-- Open Android Studio:
-
-```bash
-cd secure-sweet-access-main
 npx cap open android
 ```
 
-- Build & install via Gradle (requires `adb` and a connected device):
+From `android` folder:
 
 ```powershell
-cd android
 ./gradlew assembleDebug
 ./gradlew installDebug
 ```
 
-- APK path: `android/app/build/outputs/apk/debug/app-debug.apk`.
+APK path: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-## Notes & Troubleshooting
+## Notes
 
-- Backend port: server default port is `3333`. If you used `5000`, update `.env` or start the server with `PORT=5000 npm start`.
-- Phone cannot reach backend: ensure phone and PC are on same Wi‑Fi and `VITE_API_URL` uses PC LAN IP (not `localhost`).
-- ADB / device issues: open `android` in Android Studio if `gradlew installDebug` fails.
-- Java / Gradle compatibility: Gradle files were adjusted to target Java 17; update if your JDK differs.
+- Use LAN IP in `VITE_API_URL` for physical device testing.
+- Ensure phone and dev machine are on the same network.
+- If install fails from CLI, open Android Studio and run from there.
+- Java 17 is expected by the current Android Gradle configuration.
+- If `VITE_API_URL` is not set (or points to localhost), the app now runs in local standalone mode. This allows the APK to run on any phone without your local backend.
 
----
-If you want the exact debug command log (kill port, start server, build APK) added, tell me and I'll append it.
-					- **Sync web assets to Android** (after building or `npm run build`):
+## Release build & signing
+
+The project now produces a release APK (unsigned) by default. To create a production-signed APK or AAB, follow these steps:
+
+1. Create a release keystore (example using Java `keytool`):
+
+```bash
+keytool -genkeypair -v -keystore ~/biovault-release.jks -alias biovault_key -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. Add signing properties to your Gradle properties (either `~/.gradle/gradle.properties` or `android/gradle.properties`):
+
+```
+RELEASE_STORE_FILE=/absolute/path/to/biovault-release.jks
+RELEASE_STORE_PASSWORD=your_store_password
+RELEASE_KEY_ALIAS=biovault_key
+RELEASE_KEY_PASSWORD=your_key_password
+```
+
+3. Build a signed release APK (from project root):
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+If you provided signing properties, Gradle will produce a signed APK at `android/app/build/outputs/apk/release/app-release.apk`. If signing properties are not present you will get an unsigned APK at `android/app/build/outputs/apk/release/app-release-unsigned.apk` which you can sign manually with `apksigner`.
+
+Manual signing example (if you kept unsigned APK):
+
+```bash
+# sign
+apksigner sign --ks ~/biovault-release.jks --out app-release-signed.apk app-release-unsigned.apk
+# verify
+apksigner verify app-release-signed.apk
+```
+
+Notes:
+- The app enforces TLS by default (cleartext disabled). If you need temporary cleartext access to specific development endpoints, add a domain-config entry to `android/app/src/main/res/xml/network_security_config.xml`.
+- User data in standalone mode is stored per-device in local storage; to share accounts across devices deploy a remote backend and set `VITE_API_URL` to its URL.

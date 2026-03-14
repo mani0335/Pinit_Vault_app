@@ -13,6 +13,12 @@ const Dashboard = () => {
   const isTemp = searchParams.get("mode") === "temp";
   const [activeModule, setActiveModule] = useState<string | null>(null);
 
+  const handleLogout = () => {
+    localStorage.removeItem("biovault_token");
+    localStorage.removeItem("biovault_refresh_token");
+    navigate("/login");
+  };
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       <HexGrid />
@@ -35,7 +41,7 @@ const Dashboard = () => {
               </div>
             )}
             <StatusIndicator status={isTemp ? "warning" : "online"} label={isTemp ? "Temp Session" : "Authenticated"} />
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground">
               <LogOut className="w-4 h-4" />
             </Button>
           </div>

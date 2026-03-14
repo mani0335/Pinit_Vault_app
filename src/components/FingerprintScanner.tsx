@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
+import { validateUser } from "@/lib/authService";
 import { motion, AnimatePresence } from "framer-motion";
 import { Fingerprint, CheckCircle, XCircle } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
@@ -13,9 +14,10 @@ interface FingerprintScannerProps {
   onCredential?: (webauthn: any) => void;
 }
 
-export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScannerProps) {
+export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: FingerprintScannerProps) {
   const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const SUCCESS_HOLD_MS = 350;
   const cancelScan = useCallback(() => {
     setStatus("idle");
     setMessage("Scan cancelled");
@@ -50,29 +52,24 @@ export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScan
                 // eslint-disable-next-line no-console
                 console.log('Validate (native) values:', { userId, deviceToken });
                 if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
-                const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-                const resp = await fetch(`${API_BASE}/api/validate`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ userId, deviceToken }),
-                });
-                let data: any = {};
-                try { data = await resp.json(); } catch (e) { /* ignore parse errors */ }
-                if (resp.ok && data.authorized) {
-                  setTimeout(onSuccess, 1500);
+                const result = await validateUser(userId, deviceToken);
+                if (result.authorized) {
+                  setTimeout(onSuccess, SUCCESS_HOLD_MS);
                   return;
                 } else {
-                  throw new Error(data.reason || `User not authorized. Server responded ${resp.status}`);
+                  throw new Error(result.reason || 'User not authorized');
                 }
               } catch (e: any) {
+                const msg = (e?.message || '').toString();
+                const friendly = msg || 'User not authorized. Please register first.';
                 setStatus('error');
-                setMessage(e.message || 'User not authorized. Please register first.');
-                onError?.(e.message || 'User not authorized');
+                setMessage(friendly);
+                onError?.(friendly || 'User not authorized');
                 setTimeout(() => setStatus('idle'), 3000);
                 return;
               }
             }
-            setTimeout(onSuccess, 1500);
+            setTimeout(onSuccess, SUCCESS_HOLD_MS);
             return;
           }
         } catch (nativeErr) {
@@ -133,7 +130,7 @@ export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScan
 
           setStatus("success");
           setMessage("Fingerprint registered successfully!");
-          setTimeout(onSuccess, 1500);
+          setTimeout(onSuccess, SUCCESS_HOLD_MS);
         }
       } else {
         const challenge = crypto.getRandomValues(new Uint8Array(32));
@@ -155,27 +152,22 @@ export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScan
               const deviceToken = await getDeviceToken();
               const userId = localStorage.getItem('biovault_userId');
               if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
-              const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-              const resp = await fetch(`${API_BASE}/api/validate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, deviceToken }),
-              });
-              let data: any = {};
-              try { data = await resp.json(); } catch (e) { /* ignore parse errors */ }
-              if (resp.ok && data.authorized) {
-                setTimeout(onSuccess, 1500);
+              const result = await validateUser(userId, deviceToken);
+              if (result.authorized) {
+                setTimeout(onSuccess, SUCCESS_HOLD_MS);
               } else {
-                throw new Error(data.reason || `User not authorized. Server responded ${resp.status}`);
+                throw new Error(result.reason || 'User not authorized');
               }
             } catch (e: any) {
+              const msg = (e?.message || '').toString();
+              const friendly = msg || 'User not authorized. Please register first.';
               setStatus('error');
-              setMessage(e.message || 'User not authorized. Please register first.');
-              onError?.(e.message);
+              setMessage(friendly);
+              onError?.(friendly);
               setTimeout(() => setStatus('idle'), 3000);
             }
           } else {
-            setTimeout(onSuccess, 1500);
+            setTimeout(onSuccess, SUCCESS_HOLD_MS);
           }
         }
       }
@@ -185,26 +177,51 @@ export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScan
       onError?.(err.message);
       setTimeout(() => setStatus("idle"), 3000);
     }
-  }, [mode, onSuccess, onError]);
+  }, [mode, onSuccess, onError, SUCCESS_HOLD_MS]);
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <h3 className="text-lg font-semibold">Fingerprint</h3>
+    <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-4">
+      <div className="w-full text-center">
+        <h3 className="text-xl md:text-2xl font-display font-semibold tracking-wide text-foreground">Fingerprint Authentication</h3>
+        <p className="text-sm md:text-base text-muted-foreground mt-1">Confirm your identity with a secure biometric scan.</p>
+      </div>
 
-      <div className="relative w-48 h-48">
-        <div className={`absolute inset-0 rounded-full p-1 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500`} />
+      <div className="relative w-full max-w-[320px] h-[250px] rounded-2xl overflow-hidden border border-primary/35 bg-gradient-to-b from-card/95 via-card/85 to-background/90 shadow-[0_0_30px_hsl(var(--neon-glow)/0.18)]">
+        <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/10 to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--neon-glow)/0.16),transparent_62%)]" />
+        <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "linear-gradient(hsl(var(--border)/0.5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.5) 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
+
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[10px] font-mono tracking-wide text-muted-foreground/90">
+          <span className="px-2 py-1 rounded bg-background/60 border border-border/60">BIOMETRIC SENSOR</span>
+          <span className="px-2 py-1 rounded bg-background/60 border border-border/60">
+            {status === "scanning" ? "SCANNING" : status === "success" ? "VERIFIED" : status === "error" ? "FAILED" : "READY"}
+          </span>
+        </div>
+
         <motion.div
-          className={`relative w-full h-full rounded-full glass-surface flex items-center justify-center overflow-hidden ${
-            status === "success" ? "ring-4 ring-neon-green/60" : status === "error" ? "ring-4 ring-destructive/60" : "ring-2 ring-primary/20"
+          className={`relative mx-auto mt-9 w-[170px] h-[170px] rounded-full glass-surface flex items-center justify-center overflow-hidden ${
+            status === "success" ? "ring-4 ring-neon-green/70" : status === "error" ? "ring-4 ring-destructive/70" : "ring-2 ring-primary/30"
           }`}
           animate={status === "scanning" ? { scale: [1, 1.03, 1] } : {}}
           transition={{ repeat: Infinity, duration: 1.5 }}
         >
+          <div className="absolute inset-3 rounded-full border border-primary/25" />
+          <div className="absolute inset-6 rounded-full border border-primary/20" />
           <ScanEffect type="fingerprint" active={status === "scanning"} />
+
+          {status === "scanning" && (
+            <motion.div
+              className="absolute left-4 right-4 h-1 rounded-full bg-gradient-to-r from-transparent via-primary to-transparent"
+              initial={{ y: -52, opacity: 0.65 }}
+              animate={{ y: 52, opacity: [0.35, 1, 0.35] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+            />
+          )}
+
           <AnimatePresence mode="wait">
             {status === "success" ? (
               <motion.div key="success" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                <CheckCircle className="w-18 h-18 text-neon-green" />
+                <CheckCircle className="w-16 h-16 text-neon-green" />
               </motion.div>
             ) : status === "error" ? (
               <motion.div key="error" initial={{ scale: 0 }} animate={{ scale: 1 }}>
@@ -217,33 +234,38 @@ export function FingerprintScanner({ onSuccess, onError, mode }: FingerprintScan
             )}
           </AnimatePresence>
         </motion.div>
+
+        <div className="absolute inset-x-5 bottom-4">
+          <div className="w-full h-2.5 bg-background/60 rounded-full overflow-hidden border border-primary/20">
+            <motion.div
+              className={`h-full ${status === "error" ? "bg-destructive/80" : "bg-neon-green"} ${status === "scanning" ? "animate-pulse" : ""}`}
+              animate={{
+                width: status === "idle" ? "6%" : status === "scanning" ? ["20%", "78%", "58%", "85%"] : status === "success" ? "100%" : "100%",
+              }}
+              transition={{ duration: status === "scanning" ? 1.2 : 0.35, repeat: status === "scanning" ? Infinity : 0 }}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="w-56 flex flex-col items-center gap-2">
-        <p className="text-muted-foreground font-mono text-sm text-center">{message || "Ready to scan"}</p>
+      <div className="w-full max-w-xs flex flex-col items-center gap-3">
+        <p className="text-center text-sm md:text-base font-medium text-muted-foreground min-h-6">{message || "Ready for biometric verification"}</p>
 
-        <div className="w-full h-2 bg-primary/10 rounded-full overflow-hidden">
-          <div
-            className={`h-full bg-neon-green ${status === "scanning" ? "animate-pulse" : ""}`}
-            style={{ width: status === "scanning" ? "70%" : status === "success" ? "100%" : "0%" }}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2 flex-wrap">
           {status === "idle" && (
-            <Button variant="cyber" onClick={startScan}>
-              {mode === "register" ? "Register Fingerprint" : "Verify Fingerprint"}
+            <Button variant="cyber" size="lg" onClick={startScan}>
+              {mode === "register" ? "Capture Fingerprint" : "Verify Fingerprint"}
             </Button>
           )}
 
           {status === "scanning" && (
-            <Button variant="outline" size="sm" onClick={cancelScan}>
+            <Button variant="outline" size="lg" onClick={cancelScan}>
               Cancel
             </Button>
           )}
 
           {status === "error" && (
-            <Button variant="outline" size="sm" onClick={() => setStatus("idle")}>
+            <Button variant="outline" size="lg" onClick={() => setStatus("idle")}>
               Retry
             </Button>
           )}

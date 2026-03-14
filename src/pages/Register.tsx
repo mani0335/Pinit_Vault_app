@@ -7,6 +7,7 @@ import { FingerprintScanner } from "@/components/FingerprintScanner";
 import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
+import { registerUser } from "@/lib/authService";
 
 type Step = "tempId" | "fingerprint" | "face" | "userId" | "complete";
 
@@ -21,7 +22,10 @@ const Register = () => {
   const [userId] = useState(() => generateId("USR"));
   const [copied, setCopied] = useState(false);
   const [webauthn, setWebauthn] = useState<any | null>(null);
-  const [faceEmbedding, setFaceEmbedding] = useState<string | null>(null);
+  const [faceEmbedding, setFaceEmbedding] = useState<number[] | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   const copyId = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -35,7 +39,7 @@ const Register = () => {
   return (
     <div className="min-h-screen relative overflow-hidden">
       <HexGrid />
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-12">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-4 md:py-8">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <Button variant="ghost" className="mb-6 text-muted-foreground" onClick={() => navigate("/")}>
             <ArrowLeft className="w-4 h-4 mr-2" /> Back
@@ -67,7 +71,7 @@ const Register = () => {
             ))}
           </div>
 
-          <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-surface rounded-xl p-8">
+          <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20">
             {step === "tempId" && (
               <div className="text-center">
                 <h2 className="text-lg font-display tracking-wider mb-6 text-foreground">TEMPORARY ID GENERATED</h2>
@@ -80,21 +84,26 @@ const Register = () => {
                     </button>
                   </div>
                 </div>
-                <Button variant="cyber-secondary" onClick={() => setStep("fingerprint")}>Continue to Biometric Enrollment</Button>
+                <Button
+                  variant="cyber-secondary"
+                  size="sm"
+                  className="w-full max-w-[280px] text-xs tracking-wide"
+                  onClick={() => setStep("fingerprint")}
+                >
+                  Continue Enrollment
+                </Button>
               </div>
             )}
 
             {step === "fingerprint" && (
               <div>
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">FINGERPRINT ENROLLMENT</h2>
                 <FingerprintScanner mode="register" onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
               </div>
             )}
 
             {step === "face" && (
               <div>
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">FACE CAPTURE</h2>
-                <FaceScanner mode="register" onSuccess={(faceData?: string) => { setFaceEmbedding(faceData || null); setStep("userId"); }} />
+                <FaceScanner mode="register" onSuccess={(faceData?: number[]) => { setFaceEmbedding(faceData || null); setStep("userId"); }} />
               </div>
             )}
 
@@ -118,32 +127,38 @@ const Register = () => {
                 </div>
                 <Button
                   variant="cyber"
+                  disabled={isRegistering}
                   onClick={async () => {
+                    setRegisterError(null);
+                    setIsRegistering(true);
+
                     // store userId locally and register device with backend
                     try {
                       const { getDeviceToken } = await import('@/lib/deviceToken');
                       const deviceToken = await getDeviceToken();
                       localStorage.setItem('biovault_userId', userId);
-
-                      // call backend register endpoint with webauthn and faceEmbedding if available
-                      // debug: log values used for registration
-                      // eslint-disable-next-line no-console
-                      console.log('Register: userId, deviceToken', userId, deviceToken);
-                      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-                      const resp = await fetch(`${API_BASE}/api/register`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, deviceToken, webauthn, faceEmbedding }),
-                      });
-                      if (!resp.ok) {
-                        console.warn('Register endpoint returned', resp.status);
+                      if (faceEmbedding && faceEmbedding.length) {
+                        localStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
                       }
+
+                      const data = await registerUser({ userId, deviceToken, webauthn, faceEmbedding });
+                      if (data && data.tempCode) {
+                        setRecoveryCode(String(data.tempCode));
+                      }
+
+                      setStep('complete');
                     } catch (e) {
-                      console.warn('Failed to register with backend', e);
+                      const msg = e instanceof Error ? e.message : 'Registration failed';
+                      const friendly = msg;
+                      setRegisterError(friendly);
+                    } finally {
+                      setIsRegistering(false);
                     }
-                    setStep('complete');
                   }}
-                >Store & Verify</Button>
+                >{isRegistering ? 'Saving...' : 'Store & Verify'}</Button>
+                {registerError && (
+                  <p className="mt-3 text-xs font-mono text-destructive text-center">{registerError}</p>
+                )}
               </div>
             )}
 
@@ -153,7 +168,18 @@ const Register = () => {
                   <span className="text-3xl">✓</span>
                 </div>
                 <h2 className="text-xl font-display tracking-wider text-neon-green mb-2">REGISTRATION COMPLETE</h2>
-                <p className="text-muted-foreground font-mono text-sm mb-6">Identity stored in secure vault</p>
+                <p className="text-muted-foreground font-mono text-sm mb-6">Identity stored. Please login to continue.</p>
+                {recoveryCode && (
+                  <div className="bg-muted rounded-lg p-3 border border-border mb-6">
+                    <p className="text-xs text-muted-foreground font-mono mb-1">TEMP ACCESS CODE</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="font-display text-accent text-xl tracking-widest">{recoveryCode}</span>
+                      <button onClick={() => copyId(recoveryCode)} className="text-muted-foreground hover:text-foreground">
+                        {copied ? <Check className="w-4 h-4 text-neon-green" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-3 justify-center">
                   <Button variant="cyber" onClick={() => navigate("/login")}>Login Now</Button>
                   <Button variant="ghost" className="text-muted-foreground" onClick={() => navigate("/")}>Home</Button>
