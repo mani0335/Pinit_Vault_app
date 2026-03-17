@@ -383,9 +383,14 @@ app.post('/api/fingerprint/verify', (req, res) => {
         return res.json({ ok: true, match });
       } catch (err) {
         console.error('Mongo fingerprint verify error', err);
-        return res.status(500).json({ ok: false, reason: 'Fingerprint verification failed' });
+        return res.status(500).json({ ok: false, reason: 'Fingerprint verification failed', error: err.message });
       }
-    })();
+    })().catch(err => {
+      console.error('IIFE error in fingerprint/verify:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, reason: 'Internal server error', error: err.message });
+      }
+    });
     return;
   }
 
@@ -441,9 +446,14 @@ app.post('/api/face/verify', (req, res) => {
         return res.json({ ok: true, match, score, threshold, token, refreshToken });
       } catch (err) {
         console.error('Mongo face verify error', err);
-        return res.status(500).json({ ok: false, reason: 'Face verification failed' });
+        return res.status(500).json({ ok: false, reason: 'Face verification failed', error: err.message });
       }
-    })();
+    })().catch(err => {
+      console.error('IIFE error in face/verify (mongo):', err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, reason: 'Internal server error', error: err.message });
+      }
+    });
     return;
   }
 
@@ -466,9 +476,14 @@ app.post('/api/face/verify', (req, res) => {
         return res.json({ ok: true, match, score, threshold, token, refreshToken });
       } catch (err) {
         console.error('Firestore face verify error', err);
-        return res.status(500).json({ ok: false, reason: 'Face verification failed' });
+        return res.status(500).json({ ok: false, reason: 'Face verification failed', error: err.message });
       }
-    })();
+    })().catch(err => {
+      console.error('IIFE error in face/verify (firestore):', err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, reason: 'Internal server error', error: err.message });
+      }
+    });
     return;
   }
 
@@ -851,7 +866,21 @@ app.get('/api/user/:userId/biometric-status', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.send('Biovault mock server running'));
+app.get('/', (req, res) => res.json({ status: 'running', message: 'Biovault mock server running' }));
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
+});
+
+// Global error handler - MUST be last
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    status: err.status || 500,
+  });
+});
 
 const port = process.env.PORT || 3333;
 // Bind to all interfaces so the server is reachable from devices on the LAN
