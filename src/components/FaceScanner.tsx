@@ -6,12 +6,6 @@ import { Button } from "./ui/button";
 import { verifyFace } from "@/lib/authService";
 import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
 
-function getApiBase(): string {
-  // Always use Render backend URL
-  const url = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
-  return url;
-}
-
 interface FaceScannerProps {
   onSuccess: (faceData?: number[]) => void;
   onError?: (error: string) => void;
@@ -293,9 +287,8 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       }
 
       // Store face embedding to database
-      const apiBase = getApiBase();
-      const endpoint = apiBase ? `${apiBase}/api/register-face` : '/api/register-face';
-      const response = await fetch(endpoint, {
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+      const response = await fetch(`${API_BASE}/api/register-face`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

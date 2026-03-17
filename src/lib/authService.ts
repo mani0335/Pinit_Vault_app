@@ -20,7 +20,8 @@ type AuthStore = {
 const STORE_KEY = "biovault_auth_store_v1";
 
 function apiBase(): string {
-  return (import.meta.env.VITE_API_URL || "").trim();
+  // Always fallback to Render URL so app works from anywhere
+  return (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
 }
 
 const FORCE_REMOTE = String(import.meta.env.VITE_FORCE_REMOTE || "").toLowerCase() === "true";
@@ -83,12 +84,28 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 export async function registerUser(payload: RegisterPayload): Promise<{ ok: true; tempCode?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/register`, {
+    const apiUrl = apiBase();
+    console.log('🔐 registerUser: Calling', `${apiUrl}/api/register`);
+    const resp = await fetch(`${apiUrl}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = (await resp.json().catch(() => ({}))) as { error?: string; tempCode?: string };
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    console.log('📥 First 200 chars:', responseText.substring(0, 200));
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { error?: string; tempCode?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, tempCode: undefined, mode: "remote" };
+    }
+    
     if (resp.ok) {
       return { ok: true, tempCode: data.tempCode, mode: "remote" };
     }
@@ -101,12 +118,29 @@ export async function registerUser(payload: RegisterPayload): Promise<{ ok: true
 
 export async function validateUser(userId: string, deviceToken: string): Promise<{ authorized: boolean; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/validate`, {
+    const apiUrl = apiBase();
+    console.log('🔐 validateUser: Calling', `${apiUrl}/api/validate`);
+    const resp = await fetch(`${apiUrl}/api/validate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, deviceToken }),
     });
-    const data = (await resp.json().catch(() => ({}))) as { authorized?: boolean; reason?: string };
+    
+    // Must use .text() then parse to catch HTML responses
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    console.log('📥 First 200 chars:', responseText.substring(0, 200));
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { authorized?: boolean; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { authorized: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
     if (resp.ok && data.authorized) return { authorized: true, mode: "remote" };
     return { authorized: false, reason: data.reason || `User not authorized (${resp.status})`, mode: "remote" };
   }
@@ -119,19 +153,36 @@ export async function validateUser(userId: string, deviceToken: string): Promise
 
 export async function verifyFace(userId: string, embedding: number[]): Promise<{ ok: boolean; match: boolean; score: number; token?: string; refreshToken?: string; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/face/verify`, {
+    const apiUrl = apiBase();
+    console.log('🔐 verifyFace: Calling', `${apiUrl}/api/face/verify`);
+    const resp = await fetch(`${apiUrl}/api/face/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, embedding }),
     });
-    const data = (await resp.json().catch(() => ({}))) as {
-      ok?: boolean;
-      match?: boolean;
-      score?: number;
-      token?: string;
-      refreshToken?: string;
-      reason?: string;
-    };
+    
+    // Must use .text() then parse to catch HTML responses
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    console.log('📥 First 200 chars:', responseText.substring(0, 200));
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as {
+        ok?: boolean;
+        match?: boolean;
+        score?: number;
+        token?: string;
+        refreshToken?: string;
+        reason?: string;
+      };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, match: false, score: 0, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
     if (resp.ok && data.ok && data.match) {
       return {
         ok: true,
@@ -158,9 +209,9 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
   }
 
   const score = cosineSimilarity(user.faceEmbedding, embedding);
-  const match = score >= 0.78;
+  const match = score >= 0.90; // Strict threshold: require 90%+ similarity to prevent other faces
   if (!match) {
-    return { ok: false, match: false, score, reason: "Face mismatch", mode: "local" };
+    return { ok: false, match: false, score, reason: "Face does not match. Please ensure only YOUR face is visible.", mode: "local" };
   }
 
   return {
@@ -175,12 +226,27 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
 
 export async function requestTempCode(userId: string): Promise<{ ok: boolean; tempCode?: string; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/temp-code/request`, {
+    const apiUrl = apiBase();
+    console.log('🔐 requestTempCode: Calling', `${apiUrl}/api/temp-code/request`);
+    const resp = await fetch(`${apiUrl}/api/temp-code/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
-    const data = (await resp.json().catch(() => ({}))) as { tempCode?: string; reason?: string };
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { tempCode?: string; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
     if (resp.ok && data.tempCode) return { ok: true, tempCode: data.tempCode, mode: "remote" };
     return { ok: false, reason: data.reason || "Could not issue temp code", mode: "remote" };
   }
@@ -196,12 +262,27 @@ export async function requestTempCode(userId: string): Promise<{ ok: boolean; te
 
 export async function verifyTempCode(userId: string, code: string): Promise<{ ok: boolean; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/temp-code/verify`, {
+    const apiUrl = apiBase();
+    console.log('🔐 verifyTempCode: Calling', `${apiUrl}/api/temp-code/verify`);
+    const resp = await fetch(`${apiUrl}/api/temp-code/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, code }),
     });
-    const data = (await resp.json().catch(() => ({}))) as { ok?: boolean; reason?: string };
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
     if (resp.ok && data.ok) return { ok: true, mode: "remote" };
     return { ok: false, reason: data.reason || "Invalid temp code", mode: "remote" };
   }
@@ -215,12 +296,27 @@ export async function verifyTempCode(userId: string, code: string): Promise<{ ok
 
 export async function rebindDevice(userId: string, deviceToken: string): Promise<{ ok: boolean; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
-    const resp = await fetch(`${apiBase()}/api/device/rebind`, {
+    const apiUrl = apiBase();
+    console.log('🔐 rebindDevice: Calling', `${apiUrl}/api/device/rebind`);
+    const resp = await fetch(`${apiUrl}/api/device/rebind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, deviceToken }),
     });
-    const data = (await resp.json().catch(() => ({}))) as { ok?: boolean; reason?: string };
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
     if (resp.ok && data.ok) return { ok: true, mode: "remote" };
     return { ok: false, reason: data.reason || "Device update failed", mode: "remote" };
   }
@@ -231,4 +327,44 @@ export async function rebindDevice(userId: string, deviceToken: string): Promise
   user.deviceToken = deviceToken;
   saveStore(store);
   return { ok: true, mode: "local" };
+}
+
+export async function verifyFingerprint(userId: string, credential: string): Promise<{ ok: boolean; match: boolean; reason?: string; mode: "remote" | "local" }> {
+  if (shouldUseRemoteApi()) {
+    const apiUrl = apiBase();
+    console.log('🔐 verifyFingerprint: Calling', `${apiUrl}/api/fingerprint/verify`);
+    const resp = await fetch(`${apiUrl}/api/fingerprint/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, credential }),
+    });
+    
+    // Must use .text() then parse to catch HTML responses
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    console.log('📥 First 200 chars:', responseText.substring(0, 200));
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { ok?: boolean; match?: boolean; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      console.error('❌ Response starts with:', responseText.substring(0, 50));
+      return { ok: false, match: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
+    if (resp.ok && data.ok && data.match) {
+      return { ok: true, match: true, mode: "remote" };
+    }
+    return { ok: false, match: false, reason: data.reason || "Fingerprint verification failed", mode: "remote" };
+  }
+
+  // Fallback to local verification
+  const user = loadStore().users[userId];
+  if (!user) return { ok: false, match: false, reason: "User not registered", mode: "local" };
+  if (user.webauthn !== credential) {
+    return { ok: false, match: false, reason: "Fingerprint does not match", mode: "local" };
+  }
+  return { ok: true, match: true, mode: "local" };
 }

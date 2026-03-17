@@ -88,7 +88,11 @@ const Register = () => {
                   variant="cyber-secondary"
                   size="sm"
                   className="w-full max-w-[280px] text-xs tracking-wide"
-                  onClick={() => setStep("fingerprint")}
+                  onClick={() => {
+                    // Store userId early so FaceScanner can find it
+                    localStorage.setItem('biovault_userId', userId);
+                    setStep("fingerprint");
+                  }}
                 >
                   Continue Enrollment
                 </Button>
@@ -97,7 +101,7 @@ const Register = () => {
 
             {step === "fingerprint" && (
               <div>
-                <FingerprintScanner mode="register" onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
+                <FingerprintScanner mode="register" required={true} onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
               </div>
             )}
 
@@ -129,13 +133,11 @@ const Register = () => {
                   variant="cyber"
                   disabled={isRegistering}
                   onClick={async () => {
-                    setRegisterError(null);
-                    setIsRegistering(true);
-
-                    // store userId locally and register device with backend
+                    // userId already stored in tempId step, just confirm registration
                     try {
                       const { getDeviceToken } = await import('@/lib/deviceToken');
                       const deviceToken = await getDeviceToken();
+                      // Ensure userId and face embedding are updated (in case of re-registration)
                       localStorage.setItem('biovault_userId', userId);
                       if (faceEmbedding && faceEmbedding.length) {
                         localStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));

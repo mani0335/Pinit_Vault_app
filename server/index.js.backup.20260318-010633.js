@@ -5,8 +5,27 @@ const jwt = require('jsonwebtoken');
 const { join } = require('path');
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+
+// ✅ CORS Configuration - Allow requests from Android app and web
+const corsOptions = {
+  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:8080'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+
+// ✅ Request logging middleware (for debugging)
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// ✅ Global error handling wrapper
+const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // Mongoose models
 let User;
@@ -132,15 +151,19 @@ try {
 
 // POST /api/register
 // body: { userId, deviceToken }
-app.post('/api/register', (req, res) => {
-  const { userId, deviceToken, webauthn, faceEmbedding } = req.body || {};
-  console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO' });
-  if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
-  const tempCode = generateTempCode();
-  const tempCodeExpiresAt = tempExpiryMs();
+app.post('/api/register', asyncHandler(async (req, res) => {
+  try {
+    const { userId, deviceToken, webauthn, faceEmbedding } = req.body || {};
+    console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO' });
+    
+    if (!userId || !deviceToken) {
+      return res.status(400).json({ error: 'Missing userId or deviceToken' });
+    }
 
-  if (mongoUsers) {
-    (async () => {
+    const tempCode = generateTempCode();
+    const tempCodeExpiresAt = tempExpiryMs();
+
+    if (mongoUsers) {
       try {
         console.log('💾 Saving to MongoDB:', userId);
         await mongoUsers.updateOne(
@@ -168,15 +191,12 @@ app.post('/api/register', (req, res) => {
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
       } catch (err) {
         console.error('❌ Mongo register error:', err.message || err);
-        return res.status(500).json({ error: 'Failed to register' });
+        return res.status(500).json({ error: 'Failed to register: ' + (err?.message || 'Database error') });
       }
-    })();
-    return;
-  }
+    }
 
-  // If Firestore is enabled, persist to Firestore
-  if (firestore) {
-    (async () => {
+    // If Firestore is enabled, persist to Firestore
+    if (firestore) {
       try {
         await firestore.collection('users').doc(userId).set({
           deviceToken,
@@ -194,27 +214,29 @@ app.post('/api/register', (req, res) => {
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
       } catch (err) {
         console.error('Firestore register error', err);
-        return res.status(500).json({ error: 'Failed to register' });
+        return res.status(500).json({ error: 'Failed to register: ' + (err?.message || 'Database error') });
       }
-    })();
-    return;
-  }
+    }
 
-  // Fallback to in-memory Map for demo
-  users.set(userId, {
-    deviceToken,
-    deviceId: deviceToken,
-    biometricEnabled: !!(webauthn || faceEmbedding),
-    webauthn_credential: webauthn || null,
-    face_embedding: normalizeVector(faceEmbedding),
-    temp_code: tempCode,
-    temp_code_expires_at: tempCodeExpiresAt,
-    temp_verified: false,
-    timestamp: Date.now(),
-  });
-  console.log('Registered user', userId, 'device', deviceToken);
-  return res.json({ ok: true, tempCode, tempCodeExpiresAt });
-});
+    // Fallback to in-memory Map for demo
+    users.set(userId, {
+      deviceToken,
+      deviceId: deviceToken,
+      biometricEnabled: !!(webauthn || faceEmbedding),
+      webauthn_credential: webauthn || null,
+      face_embedding: normalizeVector(faceEmbedding),
+      temp_code: tempCode,
+      temp_code_expires_at: tempCodeExpiresAt,
+      temp_verified: false,
+      timestamp: Date.now(),
+    });
+    console.log('Registered user', userId, 'device', deviceToken);
+    return res.json({ ok: true, tempCode, tempCodeExpiresAt });
+  } catch (err) {
+    console.error('Unexpected error in /api/register:', err);
+    return res.status(500).json({ error: 'Internal server error: ' + (err?.message || 'Unknown error') });
+  }
+}));
 
 // POST /api/validate
 // body: { userId, deviceToken, faceEmbedding }
@@ -851,13 +873,68 @@ app.get('/api/user/:userId/biometric-status', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.send('Biovault mock server running'));
+// ✅ Health check endpoint
+app.get('/', (req, res) => {
+  return res.status(200).json({ 
+    status: 'running', 
+    service: 'BioVault API Server',
+    timestamp: new Date().toISOString(),
+    mode: mongoUsers ? 'MongoDB' : firestore ? 'Firestore' : 'In-Memory'
+  });
+});
+
+// ✅ Catch-all 404 handler - returns JSON
+app.use((req, res) => {
+  console.warn(`⚠️  Not Found: ${req.method} ${req.path}`);
+  return res.status(404).json({ 
+    ok: false, 
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method,
+    available_endpoints: [
+      'POST /api/register',
+      'POST /api/validate',
+      'POST /api/face/verify',
+      'POST /api/fingerprint/verify',
+      'GET /api/session/verify',
+      'POST /api/session/refresh',
+      'POST /api/temp-code/request',
+      'POST /api/temp-code/verify',
+      'POST /api/device/rebind',
+      'POST /api/register-fingerprint',
+      'POST /api/register-face',
+      'GET /api/user/:userId/biometric-status',
+    ]
+  });
+});
+
+// ✅ Global error handler - catches all errors and returns JSON
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', {
+    message: err?.message || 'Unknown error',
+    stack: err?.stack,
+    method: req.method,
+    path: req.path,
+  });
+
+  // Ensure we always return JSON
+  return res.status(500).json({
+    ok: false,
+    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err?.message || 'Internal server error',
+    timestamp: new Date().toISOString(),
+  });
+});
 
 const port = process.env.PORT || 3333;
 // Bind to all interfaces so the server is reachable from devices on the LAN
-app.listen(port, '0.0.0.0', () => console.log(`Biovault mock server running on port ${port}`));
+app.listen(port, '0.0.0.0', () => {
+  console.log(`\n✅ Biovault API Server running on port ${port}`);
+  console.log(`📍 Accessible from: http://0.0.0.0:${port}`);
+  console.log(`🔌 Database Mode: ${mongoUsers ? 'MongoDB' : firestore ? 'Firestore' : 'In-Memory'}\n`);
+});
 
 process.on('SIGINT', async () => {
+  console.log('\n⏹️  Shutting down server...');
   try {
     if (mongoClient) await mongoClient.close();
   } catch (e) {

@@ -11,36 +11,18 @@ android {
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // Signing config: use Gradle properties or CI env vars to populate release keystore
-            // To sign: add the following to ~/.gradle/gradle.properties or pass via command line:
-            // RELEASE_STORE_FILE=/path/to/keystore.jks
-            // RELEASE_STORE_PASSWORD=storepassword
-            // RELEASE_KEY_ALIAS=keyalias
-            // RELEASE_KEY_PASSWORD=keypassword
-            if (project.hasProperty('RELEASE_STORE_FILE')) {
-                signingConfig signingConfigs.release
-            }
         }
     }
-
-    signingConfigs {
-        release {
-            if (project.hasProperty('RELEASE_STORE_FILE')) {
-                storeFile file(project.property('RELEASE_STORE_FILE'))
-                storePassword project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD') : ''
-                keyAlias project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS') : ''
-                keyPassword project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD') : ''
-            }
-        }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }
 

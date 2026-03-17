@@ -1,13 +1,7 @@
 import { useState, useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
-import { validateUser } from "@/lib/authService";
-
-function getApiBase(): string {
-  // Always use Render backend URL
-  const url = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
-  return url;
-}
+import { validateUser, verifyFingerprint } from "@/lib/authService";
 import { motion, AnimatePresence } from "framer-motion";
 import { Fingerprint, CheckCircle, XCircle } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
@@ -59,28 +53,8 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 console.log('Verify fingerprint values:', { userId, deviceToken });
                 if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
                 
-                // Call fingerprint verification endpoint
-                const apiBase = getApiBase();
-                const endpoint = apiBase ? `${apiBase}/api/fingerprint/verify` : '/api/fingerprint/verify';
-                console.log('FingerprintScanner login: calling', endpoint);
-                const response = await fetch(endpoint, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ userId, credential: deviceToken })
-                });
-                
-                console.log('FingerprintScanner response status:', response.status);
-                const responseText = await response.text();
-                console.log('FingerprintScanner response:', responseText.substring(0, 100));
-                
-                let result;
-                try {
-                  result = JSON.parse(responseText);
-                } catch (parseErr) {
-                  console.error('Failed to parse JSON:', parseErr);
-                  throw new Error('Server returned invalid response: ' + responseText.substring(0, 100));
-                }
-                
+                // Use authService which has proper error handling and fallback URL
+                const result = await verifyFingerprint(userId, deviceToken);
                 if (result.ok && result.match) {
                   setStatus('success');
                   setMessage('✓ Fingerprint Verified');
@@ -106,29 +80,16 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               const deviceToken = await getDeviceToken();
               const userId = localStorage.getItem('biovault_userId');
               
-              // Store fingerprint registration in backend - use deviceToken as credential
-              const apiBase = getApiBase();
-              const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
-              console.log('FingerprintScanner register: calling', endpoint);
-              const response = await fetch(endpoint, {
+              // Store fingerprint registration in backend
+              const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+              const response = await fetch(`${API_BASE}/api/register-fingerprint`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, deviceToken, credential: deviceToken })
+                body: JSON.stringify({ userId, deviceToken, biometricType: 'fingerprint' })
               });
               
-              console.log('FingerprintScanner register response status:', response.status);
-              const responseText = await response.text();
-              console.log('FingerprintScanner register response:', responseText.substring(0, 100));
-              
               if (!response.ok) {
-                throw new Error(`Failed to register fingerprint (${response.status}): ${responseText.substring(0, 100)}`);
-              }
-              
-              let result;
-              try {
-                result = JSON.parse(responseText);
-              } catch (e) {
-                console.warn('Response is not JSON, continuing anyway');
+                throw new Error('Failed to register fingerprint in database');
               }
               
               setStatus('success');
@@ -213,9 +174,8 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           const deviceToken = await getDeviceToken();
           const storedUserId = localStorage.getItem('biovault_userId');
           
-          const apiBase = getApiBase();
-          const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
-          const response = await fetch(endpoint, {
+          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+          const response = await fetch(`${API_BASE}/api/register-fingerprint`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: storedUserId, deviceToken, credential: attestation })

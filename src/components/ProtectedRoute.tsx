@@ -56,7 +56,18 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
           localStorage.removeItem("biovault_refresh_token");
           return false;
         }
-        const data = await resp.json().catch(() => ({}));
+        
+        const responseText = await resp.text();
+        let data;
+        try {
+          data = JSON.parse(responseText) as { token?: string };
+        } catch (parseErr: any) {
+          console.error('❌ Session refresh: JSON parse failed:', parseErr.message);
+          localStorage.removeItem("biovault_token");
+          localStorage.removeItem("biovault_refresh_token");
+          return false;
+        }
+        
         if (!data?.token) {
           localStorage.removeItem("biovault_token");
           localStorage.removeItem("biovault_refresh_token");

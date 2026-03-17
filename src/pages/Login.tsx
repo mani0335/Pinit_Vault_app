@@ -85,6 +85,7 @@ const Login = () => {
               <div>
                 <FingerprintScanner
                   mode="login"
+                  required={true}
                   onSuccess={() => setStep("face")}
                   onError={(err) => {
                     // route based on server reason: device mismatch -> temp access, user not registered -> register

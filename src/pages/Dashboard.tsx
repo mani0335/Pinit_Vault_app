@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { User, Wallet, ImageIcon, Shield, LogOut, Lock, AlertTriangle } from "lucide-react";
+import { User, Wallet, ImageIcon, Shield, LogOut, Lock, AlertTriangle, FileText } from "lucide-react";
 import { HexGrid } from "@/components/HexGrid";
 import { CyberCard } from "@/components/CyberCard";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
+import PINITDashboard from "@/components/PINITDashboard";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isTemp = searchParams.get("mode") === "temp";
   const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [showPINIT, setShowPINIT] = useState(false);
 
   const handleLogout = () => {
     localStorage.removeItem("biovault_token");
@@ -62,7 +64,7 @@ const Dashboard = () => {
           {/* Module Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-              <CyberCard glowColor="cyan" onClick={() => setActiveModule("profile")} className="h-full">
+              <CyberCard glowColor="cyan" onClick={() => !showPINIT && setActiveModule("profile")} className="h-full">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/30 shrink-0">
                     <User className="w-6 h-6 text-primary" />
@@ -75,34 +77,68 @@ const Dashboard = () => {
               </CyberCard>
             </motion.div>
 
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              <CyberCard glowColor="lime" onClick={() => setShowPINIT(!showPINIT)} className="h-full cursor-pointer hover:border-neon-green/50">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-neon-green/10 flex items-center justify-center border border-neon-green/30 shrink-0">
+                    <FileText className="w-6 h-6 text-neon-green" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sm tracking-wider text-foreground mb-1">DIGITAL VAULT</h3>
+                    <p className="text-xs text-muted-foreground font-mono">My vault, portfolios & access</p>
+                  </div>
+                </div>
+              </CyberCard>
+            </motion.div>
+
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-              <CyberCard glowColor="purple" onClick={() => setActiveModule("wallet")} className="h-full">
+              <CyberCard glowColor="purple" onClick={() => !showPINIT && setActiveModule("wallet")} className="h-full">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center border border-secondary/30 shrink-0">
                     <Wallet className="w-6 h-6 text-secondary" />
                   </div>
                   <div>
                     <h3 className="font-display text-sm tracking-wider text-foreground mb-1">WALLET</h3>
-                    <p className="text-xs text-muted-foreground font-mono">Secure digital asset management</p>
+                    <p className="text-xs text-muted-foreground font-mono">Secure digital assets</p>
                   </div>
                 </div>
               </CyberCard>
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-              <CyberCard glowColor="pink" onClick={() => setActiveModule("encryption")} className="h-full">
+              <CyberCard glowColor="pink" onClick={() => !showPINIT && setActiveModule("encryption")} className="h-full">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center border border-accent/30 shrink-0">
                     <ImageIcon className="w-6 h-6 text-accent" />
                   </div>
                   <div>
                     <h3 className="font-display text-sm tracking-wider text-foreground mb-1">IMAGE ENCRYPTION</h3>
-                    <p className="text-xs text-muted-foreground font-mono">Encrypt & decrypt image files</p>
+                    <p className="text-xs text-muted-foreground font-mono">Encrypt & decrypt files</p>
                   </div>
                 </div>
               </CyberCard>
             </motion.div>
           </div>
+
+          {/* PINIT Dashboard View */}
+          {showPINIT && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-8"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="font-display text-2xl tracking-wider text-foreground mb-1">STUDENT DIGITAL VAULT</h3>
+                  <p className="text-sm font-mono text-muted-foreground">Capture → Secure → Organize → Build → Share → Track → Control</p>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setShowPINIT(false)} className="text-muted-foreground">✕ Exit</Button>
+              </div>
+              <div className="glass-surface rounded-xl p-8">
+                <PINITDashboard userId={localStorage.getItem("biovault_userId") || undefined} />
+              </div>
+            </motion.div>
+          )}
 
           {/* Active Module Panel */}
           {activeModule && (
