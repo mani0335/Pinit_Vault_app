@@ -2,6 +2,10 @@ import { useState, useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
 import { validateUser } from "@/lib/authService";
+
+function getApiBase(): string {
+  return (import.meta.env.VITE_API_URL || "").trim();
+}
 import { motion, AnimatePresence } from "framer-motion";
 import { Fingerprint, CheckCircle, XCircle } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
@@ -12,9 +16,11 @@ interface FingerprintScannerProps {
   onError?: (error: string) => void;
   mode: "register" | "login";
   onCredential?: (webauthn: any) => void;
+  required?: boolean;
+  onScanningStateChange?: (isScanning: boolean) => void;
 }
 
-export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: FingerprintScannerProps) {
+export function FingerprintScanner({ onSuccess, onError, mode, onCredential, required = false }: FingerprintScannerProps) {
   const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const SUCCESS_HOLD_MS = 350;
@@ -31,57 +37,107 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: F
       const win: any = window as any;
       const hasNativePlugin = !!(win.FingerprintAIO || win.Fingerprint);
 
-      // Prefer native biometric plugin when available (WebView may expose PublicKeyCredential
-      // but not implement full WebAuthn -- prefer plugin for installed apps)
+      // Prefer native biometric plugin when available
       if (hasNativePlugin) {
         try {
           const avail = await isBiometricAvailable();
           if (avail.available) {
-            // eslint-disable-next-line no-console
             console.log('FingerprintScanner: using native biometric plugin');
+            // IMPORTANT: This will throw an error if user cancels
             await showBiometricPrompt({ clientId: 'SecureSweet' });
-            // On native biometric success, validate with backend if this is login
-            setStatus('success');
-            setMessage(mode === 'register' ? 'Biometric registered' : 'Biometric verified');
+            
+            setMessage('Fingerprint verified. Registering...');
+            
+            // On native biometric success, verify fingerprint with backend if this is login
             if (mode === 'login') {
               try {
                 const { getDeviceToken } = await import('@/lib/deviceToken');
                 const deviceToken = await getDeviceToken();
                 const userId = localStorage.getItem('biovault_userId');
-                // debug
-                // eslint-disable-next-line no-console
-                console.log('Validate (native) values:', { userId, deviceToken });
+                console.log('Verify fingerprint values:', { userId, deviceToken });
                 if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
-                const result = await validateUser(userId, deviceToken);
-                if (result.authorized) {
+                
+                // Call fingerprint verification endpoint
+                const apiBase = getApiBase();
+                const endpoint = apiBase ? `${apiBase}/api/fingerprint/verify` : '/api/fingerprint/verify';
+                const response = await fetch(endpoint, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId, credential: deviceToken })
+                });
+                
+                const result = await response.json();
+                if (result.ok && result.match) {
+                  setStatus('success');
+                  setMessage('✓ Fingerprint Verified');
                   setTimeout(onSuccess, SUCCESS_HOLD_MS);
                   return;
                 } else {
-                  throw new Error(result.reason || 'User not authorized');
+                  throw new Error(result.reason || 'Fingerprint does not match');
                 }
               } catch (e: any) {
                 const msg = (e?.message || '').toString();
-                const friendly = msg || 'User not authorized. Please register first.';
+                const friendly = msg || 'Fingerprint verification failed. Please try again.';
                 setStatus('error');
-                setMessage(friendly);
-                onError?.(friendly || 'User not authorized');
+                setMessage('❌ ' + friendly);
+                onError?.(friendly || 'Fingerprint verification failed');
                 setTimeout(() => setStatus('idle'), 3000);
                 return;
               }
             }
-            setTimeout(onSuccess, SUCCESS_HOLD_MS);
-            return;
+            
+            // For register mode: verify fingerprint was successfully registered in database
+            try {
+              const { getDeviceToken } = await import('@/lib/deviceToken');
+              const deviceToken = await getDeviceToken();
+              const userId = localStorage.getItem('biovault_userId');
+              
+              // Store fingerprint registration in backend
+              const apiBase = getApiBase();
+              const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, deviceToken, biometricType: 'fingerprint' })
+              });
+              
+              if (!response.ok) {
+                throw new Error('Failed to register fingerprint in database');
+              }
+              
+              setStatus('success');
+              setMessage('✓ Fingerprint Registered');
+              setTimeout(onSuccess, SUCCESS_HOLD_MS);
+              return;
+            } catch (dbErr: any) {
+              const msg = (dbErr?.message || 'Failed to register fingerprint').toString();
+              setStatus('error');
+              setMessage('❌ ' + msg);
+              onError?.(msg);
+              setTimeout(() => setStatus('idle'), 3000);
+              return;
+            }
           }
-        } catch (nativeErr) {
-          // If native plugin check fails, fall back to WebAuthn below
-          // eslint-disable-next-line no-console
-          console.warn('Native biometric check failed, falling back to WebAuthn', nativeErr);
+        } catch (nativeErr: any) {
+          // User cancelled or biometric failed
+          const errMsg = nativeErr?.message || '';
+          if (errMsg.includes('cancel') || errMsg.includes('Cancel') || errMsg.includes('Touched')) {
+            setStatus('error');
+            setMessage('❌ Fingerprint scan cancelled. Please try again.');
+            onError?.('Fingerprint scan was cancelled');
+          } else {
+            setStatus('error');
+            setMessage('❌ Fingerprint not recognized. Please try again.');
+            onError?.('Fingerprint authentication failed');
+          }
+          setTimeout(() => setStatus('idle'), 2500);
+          return;
         }
       }
 
       // Fallback to WebAuthn if available
       if (!window.PublicKeyCredential || typeof navigator.credentials === 'undefined') {
-        throw new Error('Native biometric plugin not available and WebAuthn is unsupported');
+        throw new Error('Biometric authentication not available on this device');
       }
 
       if (mode === "register") {
@@ -109,28 +165,49 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: F
           },
         });
 
-        if (credential) {
-          // build attestation object and notify parent so it can be stored with userId
-          try {
-            const abToBase64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-            const attestation = {
-              id: credential.id,
-              rawId: abToBase64(credential.rawId as ArrayBuffer),
-              type: credential.type,
-              response: {
-                attestationObject: credential.response && (credential.response as any).attestationObject ? abToBase64((credential.response as any).attestationObject) : null,
-                clientDataJSON: credential.response && (credential.response as any).clientDataJSON ? abToBase64((credential.response as any).clientDataJSON) : null,
-              },
-            };
-            // pass credential to parent for registration payload
-            onCredential?.(attestation);
-          } catch (e) {
-            // ignore conversion errors
+        if (!credential) {
+          throw new Error('Biometric registration was cancelled');
+        }
+
+        try {
+          const abToBase64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+          const attestation = {
+            id: credential.id,
+            rawId: abToBase64(credential.rawId as ArrayBuffer),
+            type: credential.type,
+            response: {
+              attestationObject: credential.response && (credential.response as any).attestationObject ? abToBase64((credential.response as any).attestationObject) : null,
+              clientDataJSON: credential.response && (credential.response as any).clientDataJSON ? abToBase64((credential.response as any).clientDataJSON) : null,
+            },
+          };
+          onCredential?.(attestation);
+          
+          // Store in database
+          const { getDeviceToken } = await import('@/lib/deviceToken');
+          const deviceToken = await getDeviceToken();
+          const storedUserId = localStorage.getItem('biovault_userId');
+          
+          const apiBase = getApiBase();
+          const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: storedUserId, deviceToken, credential: attestation })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to save fingerprint to database');
           }
 
           setStatus("success");
-          setMessage("Fingerprint registered successfully!");
+          setMessage("✓ Fingerprint Registered");
           setTimeout(onSuccess, SUCCESS_HOLD_MS);
+        } catch (e: any) {
+          const msg = (e?.message || 'Failed to register fingerprint').toString();
+          setStatus('error');
+          setMessage('❌ ' + msg);
+          onError?.(msg);
+          setTimeout(() => setStatus('idle'), 3000);
         }
       } else {
         const challenge = crypto.getRandomValues(new Uint8Array(32));
@@ -142,39 +219,38 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: F
           },
         });
 
-        if (credential) {
-          // On WebAuthn success validate with backend
-          setStatus("success");
-          setMessage("Fingerprint verified!");
-          if (mode === "login") {
-            try {
-              const { getDeviceToken } = await import('@/lib/deviceToken');
-              const deviceToken = await getDeviceToken();
-              const userId = localStorage.getItem('biovault_userId');
-              if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
-              const result = await validateUser(userId, deviceToken);
-              if (result.authorized) {
-                setTimeout(onSuccess, SUCCESS_HOLD_MS);
-              } else {
-                throw new Error(result.reason || 'User not authorized');
-              }
-            } catch (e: any) {
-              const msg = (e?.message || '').toString();
-              const friendly = msg || 'User not authorized. Please register first.';
-              setStatus('error');
-              setMessage(friendly);
-              onError?.(friendly);
-              setTimeout(() => setStatus('idle'), 3000);
-            }
-          } else {
+        if (!credential) {
+          throw new Error('Biometric verification was cancelled');
+        }
+
+        setMessage('Verifying with backend...');
+        try {
+          const { getDeviceToken } = await import('@/lib/deviceToken');
+          const deviceToken = await getDeviceToken();
+          const userId = localStorage.getItem('biovault_userId');
+          if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
+          const result = await validateUser(userId, deviceToken);
+          if (result.authorized) {
+            setStatus('success');
+            setMessage('✓ Verified');
             setTimeout(onSuccess, SUCCESS_HOLD_MS);
+          } else {
+            throw new Error(result.reason || 'User not authorized');
           }
+        } catch (e: any) {
+          const msg = (e?.message || '').toString();
+          const friendly = msg || 'User not authorized. Please register first.';
+          setStatus('error');
+          setMessage('❌ ' + friendly);
+          onError?.(friendly);
+          setTimeout(() => setStatus('idle'), 3000);
         }
       }
     } catch (err: any) {
       setStatus("error");
-      setMessage(err.message || "Fingerprint scan failed");
-      onError?.(err.message);
+      const errMsg = err.message || "Fingerprint authentication failed";
+      setMessage('❌ ' + errMsg);
+      onError?.(errMsg);
       setTimeout(() => setStatus("idle"), 3000);
     }
   }, [mode, onSuccess, onError, SUCCESS_HOLD_MS]);
@@ -191,19 +267,27 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: F
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--neon-glow)/0.16),transparent_62%)]" />
         <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "linear-gradient(hsl(var(--border)/0.5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.5) 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
 
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[10px] font-mono tracking-wide text-muted-foreground/90">
-          <span className="px-2 py-1 rounded bg-background/60 border border-border/60">BIOMETRIC SENSOR</span>
-          <span className="px-2 py-1 rounded bg-background/60 border border-border/60">
-            {status === "scanning" ? "SCANNING" : status === "success" ? "VERIFIED" : status === "error" ? "FAILED" : "READY"}
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-xs font-mono tracking-widest font-semibold text-white">
+          <span className="px-3 py-1.5 rounded bg-primary/80 border border-primary">BIOMETRIC</span>
+          <span className={`px-3 py-1.5 rounded border ${
+            status === "scanning" ? "bg-primary/80 border-primary text-white animate-pulse" :
+            status === "success" ? "bg-neon-green/80 border-neon-green text-black" :
+            status === "error" ? "bg-destructive/80 border-destructive text-white" :
+            "bg-background/60 border-border/60 text-foreground/90"
+          }`}>
+            {status === "scanning" ? "SCANNING" : status === "success" ? "✓ VERIFIED" : status === "error" ? "❌ FAILED" : "READY"}
           </span>
         </div>
 
         <motion.div
           className={`relative mx-auto mt-9 w-[170px] h-[170px] rounded-full glass-surface flex items-center justify-center overflow-hidden ${
-            status === "success" ? "ring-4 ring-neon-green/70" : status === "error" ? "ring-4 ring-destructive/70" : "ring-2 ring-primary/30"
+            status === "success" ? "ring-4 ring-neon-green shadow-[0_0_20px_hsl(var(--neon-green)/0.8)]" : 
+            status === "error" ? "ring-4 ring-destructive shadow-[0_0_20px_hsl(var(--destructive)/0.6)]" : 
+            status === "scanning" ? "ring-4 ring-primary shadow-[0_0_20px_hsl(var(--neon-glow)/0.8)]" :
+            "ring-2 ring-primary/30"
           }`}
-          animate={status === "scanning" ? { scale: [1, 1.03, 1] } : {}}
-          transition={{ repeat: Infinity, duration: 1.5 }}
+          animate={status === "scanning" ? { scale: [1, 1.05, 1] } : {}}
+          transition={{ repeat: Infinity, duration: 1.2 }}
         >
           <div className="absolute inset-3 rounded-full border border-primary/25" />
           <div className="absolute inset-6 rounded-full border border-primary/20" />
@@ -258,7 +342,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential }: F
             </Button>
           )}
 
-          {status === "scanning" && (
+          {status === "scanning" && !required && (
             <Button variant="outline" size="lg" onClick={cancelScan}>
               Cancel
             </Button>

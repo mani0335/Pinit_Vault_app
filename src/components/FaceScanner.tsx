@@ -1,20 +1,27 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, CheckCircle, XCircle, ScanFace } from "lucide-react";
+import { Camera as CameraIcon, CheckCircle, XCircle, ScanFace } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
 import { Button } from "./ui/button";
 import { verifyFace } from "@/lib/authService";
+import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
+
+function getApiBase(): string {
+  return (import.meta.env.VITE_API_URL || "").trim();
+}
 
 interface FaceScannerProps {
   onSuccess: (faceData?: number[]) => void;
   onError?: (error: string) => void;
   mode: "register" | "login";
+  required?: boolean;
 }
 
-export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
+export function FaceScanner({ onSuccess, onError, mode, required = false }: FaceScannerProps) {
   const [status, setStatus] = useState<"idle" | "camera" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [cameraReady, setCameraReady] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -69,7 +76,10 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
     try {
       setStatus("camera");
       setCameraReady(false);
-      setMessage("Initializing secure camera...");
+      setModelReady(false);
+      setMessage("Initializing secure camera and face detection...");
+      
+      // Request camera stream - this will prompt for permission on first access
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
       });
@@ -82,12 +92,29 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
           // Some WebViews will auto-play once metadata is ready.
         }
       }
-      setMessage("Preparing camera feed...");
+      
+      // Load face detection model
+      try {
+        await loadFaceDetectionModel();
+        setModelReady(true);
+        setMessage("Preparing camera feed and face detection...");
+      } catch (err) {
+        console.error("Face detection model load error:", err);
+        setMessage("⚠️ Face detection unavailable. Please ensure stable internet connection.");
+        // Allow camera to continue even if model fails to load
+        setModelReady(false);
+      }
     } catch (err: any) {
       setStatus("error");
-      setMessage("Camera permission denied");
-      onError?.("Camera access denied");
-      setTimeout(() => setStatus("idle"), 3000);
+      const errorMsg = err?.message || err?.name || "";
+      if (errorMsg.includes("Permission") || errorMsg.includes("permission") || errorMsg.includes("NotAllowed")) {
+        setMessage("❌ Camera permission denied. Please enable camera in app settings and retry.");
+        onError?.("Camera permission denied");
+      } else {
+        setMessage("❌ Camera access failed. Please check device settings and retry.");
+        onError?.("Camera access failed");
+      }
+      setTimeout(() => setStatus("idle"), 3500);
     }
   }, [onError]);
 
@@ -102,7 +129,7 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
     const video = videoRef.current;
     if (!video || !cameraReady || video.readyState < 2) {
       setStatus("error");
-      setMessage("Camera is not ready. Please wait a moment and retry.");
+      setMessage("❌ Camera is not ready. Please wait a moment and retry.");
       setTimeout(() => {
         setStatus("camera");
         setMessage("Align your face inside the frame");
@@ -113,21 +140,101 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
     setStatus("scanning");
     setMessage("Detecting face...");
 
-    await new Promise((r) => setTimeout(r, PROCESSING_MS));
+    // Strict face validation - require consistent face detection
+    let consecutiveValidDetections = 0;
+    const requiredConsecutiveDetections = 2; // Reduced from 3 to 2 for easier detection
+    let faceIsValid = false;
+    let lastFaceError = "";
+    let totalAttempts = 0;
+    const maxTotalAttempts = 35; // Increased from 25 to 35 attempts
+    let validatedFaceData = null;
 
-    const embedding = extractEmbedding(video);
-    if (!embedding) {
+    while (consecutiveValidDetections < requiredConsecutiveDetections && totalAttempts < maxTotalAttempts) {
+      totalAttempts++;
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Use face detection to validate that only a face is in the frame
+      const faceDetection = await detectFaceInVideo(video);
+
+      if (faceDetection.hasFace && faceDetection.confidence >= 0.40) {
+        // Very lenient confidence threshold for real device conditions
+        consecutiveValidDetections++;
+        validatedFaceData = faceDetection;
+        console.log(
+          `✓ Valid face detected (${consecutiveValidDetections}/${requiredConsecutiveDetections}, confidence: ${Math.round(faceDetection.confidence * 100)}%)`
+        );
+        
+        if (consecutiveValidDetections >= requiredConsecutiveDetections) {
+          faceIsValid = true;
+          break;
+        }
+      } else {
+        // Reset counter if detection is not reliable
+        if (consecutiveValidDetections > 0) {
+          console.warn(`Face detection interrupted. Restarting validation...`);
+          consecutiveValidDetections = 0;
+        }
+        lastFaceError = faceDetection.error || "Face validation failed";
+      }
+    }
+
+    if (!faceIsValid) {
       setStatus("error");
-      setMessage("Failed to capture face frame. Please retry.");
+      setMessage(
+        `❌ Could not verify face. Make sure only your REAL FACE is visible. No walls, objects, or multiple faces.`
+      );
+      onError?.("Face validation failed - cannot detect a clear face");
       setTimeout(() => {
         setStatus("camera");
         setMessage("Align your face inside the frame");
-      }, 1200);
+      }, 2000);
       return;
     }
 
-    setMessage("Face detected. Matching face...");
+    setMessage("✓ Face detected. Capturing face profile...");
     await new Promise((r) => setTimeout(r, 350));
+
+    // Try multiple times to get a good face capture
+    let embedding = null;
+    let attempts = 0;
+    const maxAttempts = 8; // Increased attempts
+
+    while (!embedding && attempts < maxAttempts) {
+      attempts++;
+      await new Promise((r) => setTimeout(r, 400)); // Shorter wait between attempts
+
+      embedding = extractEmbedding(video);
+
+      // Validate embedding quality - VERY lenient for real devices
+      if (embedding) {
+        const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
+        // Accept almost any non-zero embedding (0.05 to 50.0 range)
+        if (embeddingSum < 0.05 || embeddingSum > 50.0) {
+          console.warn(
+            `Attempt ${attempts}: Embedding sum out of range (sum=${embeddingSum.toFixed(2)}). Retrying...`
+          );
+          embedding = null;
+        } else {
+          console.log(
+            `Face captured successfully on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
+          );
+          break;
+        }
+      }
+    }
+
+    if (!embedding) {
+      setStatus("error");
+      setMessage(
+        "❌ Unable to capture face profile. Please ensure your face is well-lit and clearly visible."
+      );
+      onError?.("Face capture failed");
+      setTimeout(() => {
+        setStatus("camera");
+        setMessage("Align your face inside the frame");
+      }, 1500);
+      return;
+    }
 
     if (mode === "login") {
       try {
@@ -137,7 +244,7 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
         const data = await verifyFace(userId, embedding);
 
         if (!data.ok || !data.match) {
-          throw new Error(data.reason || "Face authentication failed");
+          throw new Error(data.reason || "Face does not match registered profile. Please retry.");
         }
         if (!data.token) {
           throw new Error("Session token missing from server");
@@ -150,7 +257,7 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
         localStorage.setItem("biovault_refresh_token", data.refreshToken);
 
         setStatus("success");
-        setMessage(`Authentication success (${Math.round((data.score || 0) * 100)}%)`);
+        setMessage(`✓ Verified (${Math.round((data.score || 0) * 100)}%)`);
         stopCamera();
         setCameraReady(false);
         setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
@@ -159,7 +266,7 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
         const msg = (err?.message || "").toString();
         const friendly = msg || "Face authentication failed. Please retry.";
         setStatus("error");
-        setMessage(friendly);
+        setMessage('❌ ' + friendly);
         onError?.(friendly || "Face authentication failed");
         setTimeout(() => {
           setStatus("camera");
@@ -169,11 +276,56 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
       }
     }
 
-    setStatus("success");
-    setMessage("Face profile captured successfully");
-    stopCamera();
-    setCameraReady(false);
-    setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
+    // Registration mode: Store face to database
+    try {
+      const { getDeviceToken } = await import('@/lib/deviceToken');
+      const userId = localStorage.getItem('biovault_userId');
+      const deviceToken = await getDeviceToken();
+      
+      if (!userId || !deviceToken) {
+        throw new Error('User not properly initialized');
+      }
+      
+      if (!embedding || !embedding.length) {
+        throw new Error('No face embedding captured');
+      }
+
+      // Store face embedding to database
+      const apiBase = getApiBase();
+      const endpoint = apiBase ? `${apiBase}/api/register-face` : '/api/register-face';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          deviceToken, 
+          faceEmbedding: embedding,
+          qualityScore: validatedFaceData?.confidence || 0
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to register face in database');
+      }
+
+      setStatus("success");
+      setMessage("✓ Face registered successfully");
+      stopCamera();
+      setCameraReady(false);
+      setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
+      return;
+    } catch (dbErr: any) {
+      const msg = (dbErr?.message || 'Failed to register face').toString();
+      setStatus('error');
+      setMessage('❌ ' + msg);
+      onError?.(msg);
+      stopCamera();
+      setCameraReady(false);
+      setTimeout(() => {
+        setStatus("camera");
+        setMessage("Align your face inside the frame");
+      }, 2000);
+    }
   }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
 
   return (
@@ -212,7 +364,7 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
               <div className="px-2.5 py-1 rounded-full bg-background/70 border border-border/70 text-foreground/90">Live Camera</div>
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-background/70 border border-border/70 text-foreground/90">
                 <span className={`w-2 h-2 rounded-full ${status === "scanning" ? "bg-primary animate-pulse" : "bg-neon-green"}`} />
-                {status === "scanning" ? "Processing" : cameraReady ? "Ready" : "Loading"}
+                {status === "scanning" ? "Processing" : cameraReady && modelReady ? "Ready" : "Loading"}
               </div>
             </div>
 
@@ -251,24 +403,26 @@ export function FaceScanner({ onSuccess, onError, mode }: FaceScannerProps) {
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {status === "idle" && (
             <Button variant="cyber" size="lg" onClick={startCamera}>
-              <Camera className="w-4 h-4 mr-2" />
+              <CameraIcon className="w-4 h-4 mr-2" />
               Start Camera
             </Button>
           )}
 
           {status === "camera" && (
             <>
-              <Button variant="cyber" size="lg" onClick={startScan} disabled={!cameraReady}>
+              <Button variant="cyber" size="lg" onClick={startScan} disabled={!cameraReady || !modelReady}>
                 <ScanFace className="w-4 h-4 mr-2" />
-                {cameraReady ? (mode === "register" ? "Capture Face Profile" : "Verify Face") : "Camera Loading..."}
+                {!cameraReady ? "Camera Loading..." : !modelReady ? "Face Detection Loading..." : mode === "register" ? "Capture Face Profile" : "Verify Face"}
               </Button>
-              <Button variant="outline" size="lg" onClick={cancelCamera}>
-                Cancel
-              </Button>
+              {!required && (
+                <Button variant="outline" size="lg" onClick={cancelCamera}>
+                  Cancel
+                </Button>
+              )}
             </>
           )}
 
-          {status === "scanning" && (
+          {status === "scanning" && !required && (
             <Button variant="outline" size="lg" onClick={() => { setStatus("camera"); setMessage("Verification cancelled"); }}>
               Cancel
             </Button>
