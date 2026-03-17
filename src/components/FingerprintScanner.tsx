@@ -4,7 +4,9 @@ import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
 import { validateUser } from "@/lib/authService";
 
 function getApiBase(): string {
-  return (import.meta.env.VITE_API_URL || "").trim();
+  // Always use Render backend URL
+  const url = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
+  return url;
 }
 import { motion, AnimatePresence } from "framer-motion";
 import { Fingerprint, CheckCircle, XCircle } from "lucide-react";

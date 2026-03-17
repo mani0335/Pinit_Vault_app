@@ -7,7 +7,9 @@ import { verifyFace } from "@/lib/authService";
 import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
 
 function getApiBase(): string {
-  return (import.meta.env.VITE_API_URL || "").trim();
+  // Always use Render backend URL
+  const url = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
+  return url;
 }
 
 interface FaceScannerProps {
