@@ -60,13 +60,25 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 // Call fingerprint verification endpoint
                 const apiBase = getApiBase();
                 const endpoint = apiBase ? `${apiBase}/api/fingerprint/verify` : '/api/fingerprint/verify';
+                console.log('FingerprintScanner login: calling', endpoint);
                 const response = await fetch(endpoint, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ userId, credential: deviceToken })
                 });
                 
-                const result = await response.json();
+                console.log('FingerprintScanner response status:', response.status);
+                const responseText = await response.text();
+                console.log('FingerprintScanner response:', responseText.substring(0, 100));
+                
+                let result;
+                try {
+                  result = JSON.parse(responseText);
+                } catch (parseErr) {
+                  console.error('Failed to parse JSON:', parseErr);
+                  throw new Error('Server returned invalid response: ' + responseText.substring(0, 100));
+                }
+                
                 if (result.ok && result.match) {
                   setStatus('success');
                   setMessage('✓ Fingerprint Verified');
@@ -95,15 +107,26 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               // Store fingerprint registration in backend - use deviceToken as credential
               const apiBase = getApiBase();
               const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
+              console.log('FingerprintScanner register: calling', endpoint);
               const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, deviceToken, credential: deviceToken })
               });
-              });
+              
+              console.log('FingerprintScanner register response status:', response.status);
+              const responseText = await response.text();
+              console.log('FingerprintScanner register response:', responseText.substring(0, 100));
               
               if (!response.ok) {
-                throw new Error('Failed to register fingerprint in database');
+                throw new Error(`Failed to register fingerprint (${response.status}): ${responseText.substring(0, 100)}`);
+              }
+              
+              let result;
+              try {
+                result = JSON.parse(responseText);
+              } catch (e) {
+                console.warn('Response is not JSON, continuing anyway');
               }
               
               setStatus('success');
