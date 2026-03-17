@@ -134,6 +134,7 @@ try {
 // body: { userId, deviceToken }
 app.post('/api/register', (req, res) => {
   const { userId, deviceToken, webauthn, faceEmbedding } = req.body || {};
+  console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO' });
   if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
   const tempCode = generateTempCode();
   const tempCodeExpiresAt = tempExpiryMs();
@@ -141,6 +142,7 @@ app.post('/api/register', (req, res) => {
   if (mongoUsers) {
     (async () => {
       try {
+        console.log('💾 Saving to MongoDB:', userId);
         await mongoUsers.updateOne(
           { userId },
           {
@@ -162,9 +164,10 @@ app.post('/api/register', (req, res) => {
           },
           { upsert: true }
         );
+        console.log('✅ Successfully saved to MongoDB:', userId);
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
       } catch (err) {
-        console.error('Mongo register error', err);
+        console.error('❌ Mongo register error:', err.message || err);
         return res.status(500).json({ error: 'Failed to register' });
       }
     })();
@@ -214,21 +217,51 @@ app.post('/api/register', (req, res) => {
 });
 
 // POST /api/validate
-// body: { userId, deviceToken }
+// body: { userId, deviceToken, faceEmbedding }
+// Validates user is registered and device/biometric match
 app.post('/api/validate', (req, res) => {
-  const { userId, deviceToken } = req.body || {};
-  if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
+  const { userId, deviceToken, faceEmbedding } = req.body || {};
+  if (!userId || !deviceToken) return res.status(400).json({ authorized: false, reason: 'Missing userId or deviceToken' });
 
   if (mongoUsers) {
     (async () => {
       try {
         const record = await mongoUsers.findOne({ userId });
-        if (!record) return res.status(403).json({ authorized: false, reason: 'User not registered' });
-        if (!record.biometricEnabled) return res.status(403).json({ authorized: false, reason: 'Biometric not enabled' });
-        if (record.deviceToken !== deviceToken) return res.status(403).json({ authorized: false, reason: 'Device mismatch' });
-        return res.json({ authorized: true });
+        if (!record) {
+          console.log(`❌ User '${userId}' not registered`);
+          return res.status(403).json({ authorized: false, reason: 'User not registered' });
+        }
+        if (!record.biometricEnabled) {
+          console.log(`❌ User '${userId}' has no biometric`);
+          return res.status(403).json({ authorized: false, reason: 'Biometric not enabled' });
+        }
+        if (record.deviceToken !== deviceToken) {
+          console.log(`❌ Device mismatch for '${userId}'`);
+          return res.status(403).json({ authorized: false, reason: 'Device mismatch' });
+        }
+        
+        // Verify face if embedding provided
+        if (faceEmbedding && record.face_embedding && record.face_embedding.length > 0) {
+          const similarity = cosineSimilarity(normalizeVector(faceEmbedding), record.face_embedding);
+          const FACE_MATCH_THRESHOLD = 0.90; // 90% match required
+          
+          console.log(`🔍 Face verification: similarity=${similarity.toFixed(3)}, threshold=${FACE_MATCH_THRESHOLD}`);
+          
+          if (similarity < FACE_MATCH_THRESHOLD) {
+            console.log(`❌ Face doesn't match for '${userId}' (${similarity.toFixed(3)} < ${FACE_MATCH_THRESHOLD})`);
+            return res.json({ 
+              authorized: false, 
+              reason: `Credentials don't match (similarity: ${(similarity * 100).toFixed(1)}%)`,
+              similarity
+            });
+          }
+          console.log(`✅ Face match successful for '${userId}'`);
+        }
+        
+        console.log(`✅ User '${userId}' authorized`);
+        return res.json({ authorized: true, userId });
       } catch (err) {
-        console.error('Mongo validate error', err);
+        console.error('❌ Mongo validate error:', err.message);
         return res.status(500).json({ authorized: false, reason: 'Validation failure' });
       }
     })();
@@ -257,7 +290,19 @@ app.post('/api/validate', (req, res) => {
   if (!record.biometricEnabled) return res.status(403).json({ authorized: false, reason: 'Biometric not enabled' });
   if (record.deviceToken !== deviceToken) return res.status(403).json({ authorized: false, reason: 'Device mismatch' });
 
-  return res.json({ authorized: true });
+  // Verify face if embedding provided (in-memory fallback)
+  if (faceEmbedding && record.face_embedding && record.face_embedding.length > 0) {
+    const similarity = cosineSimilarity(normalizeVector(faceEmbedding), record.face_embedding);
+    if (similarity < 0.90) {
+      return res.json({ 
+        authorized: false, 
+        reason: `Credentials don't match (similarity: ${(similarity * 100).toFixed(1)}%)`,
+        similarity
+      });
+    }
+  }
+
+  return res.json({ authorized: true, userId });
 });
 
 // POST /api/face - store face embedding separately
@@ -304,6 +349,53 @@ app.post('/api/face', (req, res) => {
   rec.face_embedding = normalizeVector(embedding);
   users.set(userId, rec);
   return res.json({ ok: true });
+});
+
+// POST /api/fingerprint/verify
+// body: { userId, credential }
+// Verifies fingerprint matches registered credential
+app.post('/api/fingerprint/verify', (req, res) => {
+  const { userId, credential } = req.body || {};
+  if (!userId || !credential) return res.status(400).json({ ok: false, reason: 'Missing userId or credential' });
+
+  if (mongoUsers) {
+    (async () => {
+      try {
+        const rec = await mongoUsers.findOne({ userId });
+        if (!rec) return res.status(404).json({ ok: false, reason: 'User not found' });
+        if (!rec.webauthn_credential) return res.status(403).json({ ok: false, reason: 'No fingerprint registered' });
+
+        // Simple credential matching (in production use proper WebAuthn verification)
+        const match = rec.webauthn_credential === credential;
+
+        await mongoUsers.updateOne(
+          { userId },
+          {
+            $set: {
+              last_fingerprint_match: match,
+              last_fingerprint_verify_at: Date.now(),
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        console.log(`🔍 Fingerprint verify for ${userId}: match=${match}`);
+        return res.json({ ok: true, match });
+      } catch (err) {
+        console.error('Mongo fingerprint verify error', err);
+        return res.status(500).json({ ok: false, reason: 'Fingerprint verification failed' });
+      }
+    })();
+    return;
+  }
+
+  const record = users.get(userId);
+  if (!record) return res.status(404).json({ ok: false, reason: 'User not found' });
+  if (!record.webauthn_credential) return res.status(403).json({ ok: false, reason: 'No fingerprint registered' });
+
+  const match = record.webauthn_credential === credential;
+  console.log(`🔍 Fingerprint verify for ${userId}: match=${match}`);
+  return res.json({ ok: true, match });
 });
 
 // POST /api/face/verify
@@ -621,6 +713,142 @@ app.post('/register', async (req, res) => {
     console.error('Mongoose save error', err);
     return res.status(500).json({ ok: false, error: 'Failed to save user' });
   }
+});
+
+// POST /api/register-fingerprint
+// body: { userId, deviceToken, credential }
+app.post('/api/register-fingerprint', (req, res) => {
+  const { userId, deviceToken, credential } = req.body || {};
+  if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
+
+  if (mongoUsers) {
+    (async () => {
+      try {
+        const result = await mongoUsers.updateOne(
+          { userId, deviceToken },
+          {
+            $set: {
+              webauthn_credential: credential || null,
+              fingerprintRegistered: true,
+              lastBiometricUpdate: Date.now(),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: false }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ error: 'User not found or device mismatch' });
+        }
+        return res.json({ ok: true, message: 'Fingerprint registered' });
+      } catch (err) {
+        console.error('Mongo fingerprint register error', err);
+        return res.status(500).json({ error: 'Failed to register fingerprint' });
+      }
+    })();
+    return;
+  }
+
+  const record = users.get(userId);
+  if (!record || record.deviceToken !== deviceToken) {
+    return res.status(404).json({ error: 'User not found or device mismatch' });
+  }
+  record.webauthn_credential = credential || null;
+  record.fingerprintRegistered = true;
+  record.lastBiometricUpdate = Date.now();
+  users.set(userId, record);
+  return res.json({ ok: true, message: 'Fingerprint registered' });
+});
+
+// POST /api/register-face
+// body: { userId, deviceToken, faceEmbedding, qualityScore }
+app.post('/api/register-face', (req, res) => {
+  const { userId, deviceToken, faceEmbedding, qualityScore } = req.body || {};
+  if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
+  if (!faceEmbedding || !Array.isArray(faceEmbedding)) return res.status(400).json({ error: 'Invalid face embedding' });
+
+  if (mongoUsers) {
+    (async () => {
+      try {
+        const result = await mongoUsers.updateOne(
+          { userId, deviceToken },
+          {
+            $set: {
+              face_embedding: normalizeVector(faceEmbedding),
+              faceRegistered: true,
+              faceQualityScore: qualityScore || 0,
+              lastBiometricUpdate: Date.now(),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: false }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ error: 'User not found or device mismatch' });
+        }
+        return res.json({ ok: true, message: 'Face registered successfully' });
+      } catch (err) {
+        console.error('Mongo face register error', err);
+        return res.status(500).json({ error: 'Failed to register face' });
+      }
+    })();
+    return;
+  }
+
+  const record = users.get(userId);
+  if (!record || record.deviceToken !== deviceToken) {
+    return res.status(404).json({ error: 'User not found or device mismatch' });
+  }
+  record.face_embedding = normalizeVector(faceEmbedding);
+  record.faceRegistered = true;
+  record.faceQualityScore = qualityScore || 0;
+  record.lastBiometricUpdate = Date.now();
+  users.set(userId, record);
+  return res.json({ ok: true, message: 'Face registered successfully' });
+});
+
+// GET /api/user/:userId/biometric-status
+// Get biometric registration status for user
+app.get('/api/user/:userId/biometric-status', (req, res) => {
+  const { userId } = req.params;
+  const { deviceToken } = req.query;
+
+  if (!userId || !deviceToken) {
+    return res.status(400).json({ error: 'Missing userId or deviceToken' });
+  }
+
+  if (mongoUsers) {
+    (async () => {
+      try {
+        const record = await mongoUsers.findOne({ userId });
+        if (!record || record.deviceToken !== deviceToken) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        return res.json({
+          userId,
+          fingerprintRegistered: !!record.fingerprintRegistered,
+          faceRegistered: !!record.faceRegistered,
+          biometricEnabled: record.biometricEnabled || false,
+          lastBiometricUpdate: record.lastBiometricUpdate || null,
+        });
+      } catch (err) {
+        console.error('Mongo biometric status error', err);
+        return res.status(500).json({ error: 'Failed to retrieve status' });
+      }
+    })();
+    return;
+  }
+
+  const record = users.get(userId);
+  if (!record || record.deviceToken !== deviceToken) {
+    return res.status(404).json({ error: 'User not found or device mismatch' });
+  }
+  return res.json({
+    userId,
+    fingerprintRegistered: !!record.fingerprintRegistered,
+    faceRegistered: !!record.faceRegistered,
+    biometricEnabled: record.biometricEnabled || false,
+    lastBiometricUpdate: record.lastBiometricUpdate || null,
+  });
 });
 
 app.get('/', (req, res) => res.send('Biovault mock server running'));
