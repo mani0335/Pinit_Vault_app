@@ -92,13 +92,14 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               const deviceToken = await getDeviceToken();
               const userId = localStorage.getItem('biovault_userId');
               
-              // Store fingerprint registration in backend
+              // Store fingerprint registration in backend - use deviceToken as credential
               const apiBase = getApiBase();
               const endpoint = apiBase ? `${apiBase}/api/register-fingerprint` : '/api/register-fingerprint';
               const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, deviceToken, biometricType: 'fingerprint' })
+                body: JSON.stringify({ userId, deviceToken, credential: deviceToken })
+              });
               });
               
               if (!response.ok) {
