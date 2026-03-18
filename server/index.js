@@ -734,11 +734,8 @@ app.post('/api/register-fingerprint', (req, res) => {
               updatedAt: new Date(),
             },
           },
-          { upsert: false }
+          { upsert: true }
         );
-        if (result.matchedCount === 0) {
-          return res.status(404).json({ error: 'User not found or device mismatch' });
-        }
         return res.json({ ok: true, message: 'Fingerprint registered' });
       } catch (err) {
         console.error('Mongo fingerprint register error', err);
@@ -748,9 +745,13 @@ app.post('/api/register-fingerprint', (req, res) => {
     return;
   }
 
-  const record = users.get(userId);
-  if (!record || record.deviceToken !== deviceToken) {
-    return res.status(404).json({ error: 'User not found or device mismatch' });
+  let record = users.get(userId);
+  if (!record) {
+    // Create user record if not exists (during registration)
+    record = { userId, deviceToken, fingerprintRegistered: false, faceRegistered: false, tempCode: null, createdAt: Date.now() };
+  }
+  if (record.deviceToken !== deviceToken) {
+    return res.status(400).json({ error: 'Device token mismatch' });
   }
   record.webauthn_credential = credential || null;
   record.fingerprintRegistered = true;
@@ -780,11 +781,8 @@ app.post('/api/register-face', (req, res) => {
               updatedAt: new Date(),
             },
           },
-          { upsert: false }
+          { upsert: true }
         );
-        if (result.matchedCount === 0) {
-          return res.status(404).json({ error: 'User not found or device mismatch' });
-        }
         return res.json({ ok: true, message: 'Face registered successfully' });
       } catch (err) {
         console.error('Mongo face register error', err);
@@ -794,9 +792,13 @@ app.post('/api/register-face', (req, res) => {
     return;
   }
 
-  const record = users.get(userId);
-  if (!record || record.deviceToken !== deviceToken) {
-    return res.status(404).json({ error: 'User not found or device mismatch' });
+  let record = users.get(userId);
+  if (!record) {
+    // Create user record if not exists (during registration)
+    record = { userId, deviceToken, fingerprintRegistered: false, faceRegistered: false, tempCode: null, createdAt: Date.now() };
+  }
+  if (record.deviceToken !== deviceToken) {
+    return res.status(400).json({ error: 'Device token mismatch' });
   }
   record.face_embedding = normalizeVector(faceEmbedding);
   record.faceRegistered = true;

@@ -80,16 +80,36 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               const deviceToken = await getDeviceToken();
               const userId = localStorage.getItem('biovault_userId');
               
+              console.log('📍 Registering Fingerprint - userId:', userId, 'deviceToken:', deviceToken);
+              
               // Store fingerprint registration in backend
-              const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
-              const response = await fetch(`${API_BASE}/api/register-fingerprint`, {
+              // Always use Render URL fallback so app works from anywhere (especially on phone)
+              const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
+              const url = `${API_BASE}/api/register-fingerprint`;
+              console.log('🔐 Calling:', url);
+              
+              const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, deviceToken, biometricType: 'fingerprint' })
+                body: JSON.stringify({ userId, deviceToken, credential: null })
               });
               
+              console.log('📥 Response status:', response.status);
+              
+              const responseText = await response.text();
+              console.log('📄 Response text:', responseText.substring(0, 200));
+              
+              let data;
+              try {
+                data = JSON.parse(responseText);
+                console.log('✅ Parsed JSON:', data);
+              } catch (parseErr: any) {
+                console.error('❌ JSON parse error:', parseErr.message);
+                throw new Error(`Server error: ${responseText.substring(0, 100)}`);
+              }
+              
               if (!response.ok) {
-                throw new Error('Failed to register fingerprint in database');
+                throw new Error(data.error || 'Failed to register fingerprint');
               }
               
               setStatus('success');
@@ -97,6 +117,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               setTimeout(onSuccess, SUCCESS_HOLD_MS);
               return;
             } catch (dbErr: any) {
+              console.error('❌ Fingerprint registration error:', dbErr);
               const msg = (dbErr?.message || 'Failed to register fingerprint').toString();
               setStatus('error');
               setMessage('❌ ' + msg);
@@ -174,15 +195,34 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           const deviceToken = await getDeviceToken();
           const storedUserId = localStorage.getItem('biovault_userId');
           
+          console.log('📍 Saving fingerprint credential - userId:', storedUserId, 'deviceToken:', deviceToken);
+          
           const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
-          const response = await fetch(`${API_BASE}/api/register-fingerprint`, {
+          const url = `${API_BASE}/api/register-fingerprint`;
+          console.log('🔐 Calling:', url);
+          
+          const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: storedUserId, deviceToken, credential: attestation })
           });
           
+          console.log('📥 Response status:', response.status);
+          
+          const responseText = await response.text();
+          console.log('📄 Response text:', responseText.substring(0, 200));
+          
+          let data;
+          try {
+            data = JSON.parse(responseText);
+            console.log('✅ Parsed JSON:', data);
+          } catch (parseErr: any) {
+            console.error('❌ JSON parse error:', parseErr.message);
+            throw new Error(`Server error: ${responseText.substring(0, 100)}`);
+          }
+          
           if (!response.ok) {
-            throw new Error('Failed to save fingerprint to database');
+            throw new Error(data.error || 'Failed to save fingerprint to database');
           }
 
           setStatus("success");
