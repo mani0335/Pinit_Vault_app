@@ -47,21 +47,19 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             // On native biometric success, verify fingerprint with backend if this is login
             if (mode === 'login') {
               try {
-                const { getDeviceToken } = await import('@/lib/deviceToken');
-                const deviceToken = await getDeviceToken();
                 const userId = localStorage.getItem('biovault_userId');
-                console.log('Verify fingerprint values:', { userId, deviceToken });
-                if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
+                if (!userId) throw new Error('User not authorized. Please register first.');
                 
-                // Use authService which has proper error handling and fallback URL
-                const result = await verifyFingerprint(userId, deviceToken);
-                if (result.ok && result.match) {
+                // Check if user exists with registered fingerprint
+                const { checkUserRegistered } = await import('@/lib/authService');
+                const result = await checkUserRegistered(userId);
+                if (result.ok) {
                   setStatus('success');
                   setMessage('✓ Fingerprint Verified');
                   setTimeout(onSuccess, SUCCESS_HOLD_MS);
                   return;
                 } else {
-                  throw new Error(result.reason || 'Fingerprint does not match');
+                  throw new Error(result.reason || 'User not found');
                 }
               } catch (e: any) {
                 const msg = (e?.message || '').toString();

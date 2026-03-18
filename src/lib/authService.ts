@@ -368,3 +368,38 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
   }
   return { ok: true, match: true, mode: "local" };
 }
+
+// POST /api/user/check - Check if user exists with registered fingerprint (for login)
+export async function checkUserRegistered(userId: string): Promise<{ ok: boolean; reason?: string; mode: "remote" | "local" }> {
+  if (shouldUseRemoteApi()) {
+    const apiUrl = apiBase();
+    console.log('🔐 checkUserRegistered: Calling', `${apiUrl}/api/user/check`);
+    const resp = await fetch(`${apiUrl}/api/user/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      return { ok: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
+    }
+    
+    if (resp.ok && data.ok) {
+      return { ok: true, mode: "remote" };
+    }
+    return { ok: false, reason: data.reason || "User check failed", mode: "remote" };
+  }
+
+  // Fallback to local verification
+  const user = loadStore().users[userId];
+  if (!user) return { ok: false, reason: "User not found", mode: "local" };
+  return { ok: true, mode: "local" };
+}

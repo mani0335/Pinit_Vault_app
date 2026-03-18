@@ -351,6 +351,34 @@ app.post('/api/face', (req, res) => {
   return res.json({ ok: true });
 });
 
+// POST /api/user/check
+// body: { userId }
+// Checks if user exists and has fingerprint registered (for login)
+app.post('/api/user/check', (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ ok: false, reason: 'Missing userId' });
+
+  if (mongoUsers) {
+    (async () => {
+      try {
+        const rec = await mongoUsers.findOne({ userId });
+        if (!rec) return res.status(404).json({ ok: false, reason: 'User not found' });
+        if (!rec.fingerprintRegistered) return res.status(403).json({ ok: false, reason: 'Fingerprint not registered' });
+        return res.json({ ok: true, message: 'User authenticated' });
+      } catch (err) {
+        console.error('Mongo user check error', err);
+        return res.status(500).json({ ok: false, reason: 'Failed to verify user' });
+      }
+    })();
+    return;
+  }
+
+  const record = users.get(userId);
+  if (!record) return res.status(404).json({ ok: false, reason: 'User not found' });
+  if (!record.fingerprintRegistered) return res.status(403).json({ ok: false, reason: 'Fingerprint not registered' });
+  return res.json({ ok: true, message: 'User authenticated' });
+});
+
 // POST /api/fingerprint/verify
 // body: { userId, credential }
 // Verifies fingerprint matches registered credential
