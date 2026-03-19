@@ -53,6 +53,55 @@ flowchart TD
     Q --> G
 ```
 
+### Detailed Flow Diagram
+
+```
+Fingerprint Scan
+   │
+   ▼
+Check Fingerprint
+   │
+   ├──► Found
+   │       │
+   │       ▼
+   │   Device ID Check
+   │       │
+   │   ┌───────────────┬───────────────┐
+   │   │                               │
+   │   ▼                               ▼
+   │ Device Match             Device Mismatch
+   │   │                               │
+   │   ▼                               ▼
+   │ Biometric + Face Auth    Temporary Access
+   │   │                               │
+   │   ▼                               ▼
+   │ Dashboard               Biometric + Face Auth (if matched)
+   │                                   │
+   │                                   ▼
+   │                     Restricted Dashboard Access
+   │
+   │
+   └──► Not Found
+           │
+           ▼
+     Generate Temporary Code
+           │
+           ▼
+     Register Biometrics
+           │
+           ▼
+     Register Face Authentication
+           │
+           ▼
+     Generate Unique ID
+           │
+           ▼
+        Login Again
+           │
+           ▼
+        Dashboard
+```
+
 ## What Was Changed In This Phase
 
 - `src/pages/Login.tsx`: Updated routing and error handling to match the workflow.
