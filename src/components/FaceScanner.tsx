@@ -287,7 +287,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       }
 
       // Store face embedding to database
-      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3333';
+      const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
       const response = await fetch(`${API_BASE}/api/register-face`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

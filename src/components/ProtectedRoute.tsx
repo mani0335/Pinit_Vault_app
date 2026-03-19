@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       }
 
       try {
-        const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3333";
+        const API_BASE = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
         const resp = await fetch(`${API_BASE}/api/session/verify`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -45,7 +45,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       }
 
       try {
-        const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3333";
+        const API_BASE = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
         const resp = await fetch(`${API_BASE}/api/session/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
