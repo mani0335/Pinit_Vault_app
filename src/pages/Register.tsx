@@ -133,27 +133,35 @@ const Register = () => {
                   variant="cyber"
                   disabled={isRegistering}
                   onClick={async () => {
-                    // userId already stored in tempId step, just confirm registration
+                    setIsRegistering(true);
+                    setRegisterError(null);
                     try {
                       const { getDeviceToken } = await import('@/lib/deviceToken');
                       const deviceToken = await getDeviceToken();
-                      // Ensure userId and face embedding are updated (in case of re-registration)
+                      
+                      // Store userId in localStorage BEFORE registration
                       localStorage.setItem('biovault_userId', userId);
+                      
+                      // Store face embedding
                       if (faceEmbedding && faceEmbedding.length) {
                         localStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
                       }
-
+                      
+                      console.log('📝 Registering user:', userId, 'with device:', deviceToken);
+                      
+                      // Call backend to register user with all biometric data
                       const data = await registerUser({ userId, deviceToken, webauthn, faceEmbedding });
+                      console.log('✅ Registration successful:', data);
+                      
                       if (data && data.tempCode) {
                         setRecoveryCode(String(data.tempCode));
                       }
-
+                      
                       setStep('complete');
                     } catch (e) {
                       const msg = e instanceof Error ? e.message : 'Registration failed';
-                      const friendly = msg;
-                      setRegisterError(friendly);
-                    } finally {
+                      console.error('❌ Registration error:', msg);
+                      setRegisterError(msg);
                       setIsRegistering(false);
                     }
                   }}

@@ -82,38 +82,34 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / denom;
 }
 
-export async function registerUser(payload: RegisterPayload): Promise<{ ok: true; tempCode?: string; mode: "remote" | "local" }> {
-  if (shouldUseRemoteApi()) {
-    const apiUrl = apiBase();
-    console.log('🔐 registerUser: Calling', `${apiUrl}/api/register`);
-    const resp = await fetch(`${apiUrl}/api/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    
-    const responseText = await resp.text();
-    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
-    console.log('📥 First 200 chars:', responseText.substring(0, 200));
-    
-    let data;
-    try {
-      data = JSON.parse(responseText) as { error?: string; tempCode?: string };
-      console.log('✅ JSON parsed:', data);
-    } catch (parseErr: any) {
-      console.error('❌ JSON parse failed:', parseErr.message);
-      console.error('❌ Response starts with:', responseText.substring(0, 50));
-      return { ok: false, tempCode: undefined, mode: "remote" };
-    }
-    
-    if (resp.ok) {
-      return { ok: true, tempCode: data.tempCode, mode: "remote" };
-    }
-    return { ok: false, tempCode: undefined, mode: "remote" };
+export async function registerUser(payload: RegisterPayload): Promise<{ ok: true; tempCode?: string; mode: "remote" }> {
+  // ALWAYS use remote API - no local fallback
+  const apiUrl = apiBase(); // Will always be Render URL
+  console.log('🔐 registerUser: Calling', `${apiUrl}/api/register`);
+  const resp = await fetch(`${apiUrl}/api/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  
+  const responseText = await resp.text();
+  console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+  console.log('📥 First 200 chars:', responseText.substring(0, 200));
+  
+  let data;
+  try {
+    data = JSON.parse(responseText) as { error?: string; tempCode?: string };
+    console.log('✅ JSON parsed:', data);
+  } catch (parseErr: any) {
+    console.error('❌ JSON parse failed:', parseErr.message);
+    throw new Error(`Failed to parse server response: ${parseErr.message}`);
   }
-
-  const result = upsertLocalUser(payload);
-  return { ok: true, tempCode: result.tempCode, mode: "local" };
+  
+  if (!resp.ok) {
+    throw new Error(data.error || `Registration failed (${resp.status})`);
+  }
+  
+  return { ok: true, tempCode: data.tempCode, mode: "remote" };
 }
 
 export async function validateUser(userId: string, deviceToken: string): Promise<{ authorized: boolean; reason?: string; mode: "remote" | "local" }> {
@@ -370,36 +366,35 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
 }
 
 // POST /api/user/check - Check if user exists with registered fingerprint (for login)
-export async function checkUserRegistered(userId: string): Promise<{ ok: boolean; reason?: string; mode: "remote" | "local" }> {
-  if (shouldUseRemoteApi()) {
-    const apiUrl = apiBase();
-    console.log('🔐 checkUserRegistered: Calling', `${apiUrl}/api/user/check`);
-    const resp = await fetch(`${apiUrl}/api/user/check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    
-    const responseText = await resp.text();
-    console.log('📥 Response status:', resp.status);
-    
-    let data;
-    try {
-      data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
-      console.log('✅ JSON parsed:', data);
-    } catch (parseErr: any) {
-      console.error('❌ JSON parse failed:', parseErr.message);
-      return { ok: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
-    }
-    
-    if (resp.ok && data.ok) {
-      return { ok: true, mode: "remote" };
-    }
-    return { ok: false, reason: data.reason || "User check failed", mode: "remote" };
+export async function checkUserRegistered(userId: string): Promise<{ ok: boolean; reason?: string; mode: "remote" }> {
+  // ALWAYS use remote API - no local fallback
+  const apiUrl = apiBase(); // Will always be Render URL
+  console.log('🔐 checkUserRegistered: Calling', `${apiUrl}/api/user/check`);
+  const resp = await fetch(`${apiUrl}/api/user/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  
+  const responseText = await resp.text();
+  console.log('📥 Response status:', resp.status);
+  
+  let data;
+  try {
+    data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
+    console.log('✅ JSON parsed:', data);
+  } catch (parseErr: any) {
+    console.error('❌ JSON parse failed:', parseErr.message);
+    throw new Error(`Failed to parse server response: ${parseErr.message}`);
   }
-
-  // Fallback to local verification
-  const user = loadStore().users[userId];
-  if (!user) return { ok: false, reason: "User not found", mode: "local" };
-  return { ok: true, mode: "local" };
+  
+  if (!resp.ok) {
+    throw new Error(data.reason || `Check failed (${resp.status})`);
+  }
+  
+  if (!data.ok) {
+    throw new Error(data.reason || 'User check failed');
+  }
+  
+  return { ok: true, mode: "remote" };
 }
