@@ -48,10 +48,15 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             if (mode === 'login') {
               try {
                 const userId = localStorage.getItem('biovault_userId');
-                if (!userId) throw new Error('User not authorized. Please register first.');
+                console.log('🔍 FingerprintScanner LOGIN mode - userId from storage:', userId);
+                
+                if (!userId) {
+                  throw new Error('User ID not found in localStorage. Please register first.');
+                }
                 
                 const { getDeviceToken } = await import('@/lib/deviceToken');
                 const deviceToken = await getDeviceToken();
+                console.log('✅ Got device token, checking user registration');
                 
                 // Check with backend if user has fingerprint registered
                 const { checkUserRegistered } = await import('@/lib/authService');
@@ -60,7 +65,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 console.log('📍 Fingerprint verification result:', result);
                 
                 if (!result.ok) {
-                  throw new Error(result.reason || 'User or fingerprint not found');
+                  throw new Error(result.reason || 'User or fingerprint not found in database');
                 }
                 
                 // Success - fingerprint verified locally, user has fingerprint in database
@@ -71,6 +76,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               } catch (e: any) {
                 const msg = (e?.message || '').toString();
                 const friendly = msg || 'Fingerprint verification failed. Please try again.';
+                console.error('❌ Fingerprint login error:', friendly);
                 setStatus('error');
                 setMessage('❌ ' + friendly);
                 onError?.(friendly || 'Fingerprint verification failed');

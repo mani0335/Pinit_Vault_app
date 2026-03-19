@@ -18,11 +18,15 @@ const Login = () => {
   useEffect(() => {
     // Check if user has already registered (userId exists in localStorage)
     const savedUserId = localStorage.getItem("biovault_userId");
+    console.log('📍 Login: checking saved userId:', savedUserId);
+    
     if (!savedUserId) {
-      // No registered user, redirect to register
+      console.log('❌ Login: No saved userId found - redirecting to register');
       navigate("/register");
       return;
     }
+    
+    console.log('✅ Login: User is registered with ID:', savedUserId);
     // User exists, ready to login with biometrics
     setIsLoading(false);
   }, [navigate]);
