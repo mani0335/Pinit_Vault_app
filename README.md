@@ -56,48 +56,42 @@ flowchart TD
 ### Detailed Flow Diagram
 
 ```
-                           ┌─────────────────────┐
-                           │  Fingerprint Scan   │
-                           └──────────┬──────────┘
-                                      │
-                           ┌──────────▼──────────┐
-                           │ Check Fingerprint   │
-                           └─────┬──────────┬────┘
-                                 │          │
-                    ┌────────────┬┴┐    ┌──┴────────────────┐
-                    │                   │                   │
-                    │                   │                   │
-        ┌───────────▼──────────┐    ┌─────────────▼───────────┐
-        │  Found (Green)        │    │  Not Found (Red)        │
-        └───────────┬──────────┘    └─────────────┬───────────┘
-                    │                             │
-        ┌───────────▼──────────────┐   ┌─────────▼──────────┐
-        │  Device ID Check         │   │ Generate Temp Code │
-        └───┬──────────────────┬───┘   └─────────┬──────────┘
-            │                  │                  │
-     ┌──────▼──┐        ┌──────▼─────┐   ┌───────▼──────────┐
-     │ Match   │        │  Mismatch  │   │ Register         │
-     │(Green)  │        │  (Red)     │   │ Biometrics       │
-     └──────┬──┘        └──────┬─────┘   └───────┬──────────┘
-            │                  │                  │
-     ┌──────▼──────────┐  ┌────▼──────────┐  ┌────▼──────────────┐
-     │ Biometric +     │  │ Temporary     │  │ Register Face     │
-     │ Face Auth       │  │ Access        │  │ Authentication    │
-     └──────┬──────────┘  └────┬──────────┘  └────┬──────────────┘
-            │                  │                  │
-     ┌──────▼──────────┐  ┌────▼────────────┐  ┌──▼───────────────┐
-     │ Dashboard       │  │ Face Auth       │  │ Generate Unique  │
-     │ (Green)         │  │ Verify          │  │ ID               │
-     └─────────────────┘  └────┬────────────┘  └────┬──────────────┘
-                                │                    │
-                          ┌─────▼──────────────┐   ┌─▼────────────┐
-                          │ Restricted        │   │ Login Again  │
-                          │ Dashboard (Red)   │   └─────┬────────┘
-                          └───────────────────┘         │
-                                                 ┌──────▼─────────┐
-                                                 │ Dashboard      │
-                                                 │ (Green)        │
-                                                 └────────────────┘
+APP START
+    |
+    ▼
+Splash Screen
+    |
+    ▼
+Fingerprint Scan
+    |
+    ▼
+Check Fingerprint
+    |
+    |─────────────────────┬──────────────────────┐
+    |                     |                      |
+    ▼                     ▼                      ▼
+Fingerprint Found    Device ID Check      Fingerprint Not Found
+    |                     |                   (New User)
+    |             ┌───────┴────────┐            |
+    |             |                |            ▼
+    |             ▼                ▼       TempAccess.tsx
+    |         Device Match    Device Mismatch  |
+    |             |                |           ▼
+    |             ▼                ▼      Register Fingerprint
+    |         Face Auth         TempAccess     |
+    |             |               Code         ▼
+    |             ▼                |       Register Face
+    |         ✅ Verified          ▼           |
+    |             |            Face Auth       ▼
+    |             |                |      Generate ID + Bind
+    |             |                ▼            |
+    |             |            Device Rebind    ▼
+    |             |                |       Dashboard
+    |             |                |      (Full Access) ✓
+    |             ▼                ▼
+    └──────► Dashboard          Dashboard
+           (Full Access)      (Restricted)
+                ✓              (Temp)
 ```
 
 ## App Current Implementation Status
