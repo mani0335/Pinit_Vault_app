@@ -134,8 +134,12 @@ try {
 // body: { userId, deviceToken }
 app.post('/api/register', (req, res) => {
   const { userId, deviceToken, webauthn, faceEmbedding } = req.body || {};
-  console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO' });
-  if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
+  console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO', webauthn: !!webauthn, faceEmbedding: !!faceEmbedding });
+  if (!userId || !deviceToken) {
+    console.error('❌ /api/register: Missing userId or deviceToken');
+    return res.status(400).json({ error: 'Missing userId or deviceToken' });
+  }
+  
   const tempCode = generateTempCode();
   const tempCodeExpiresAt = tempExpiryMs();
 
@@ -168,7 +172,7 @@ app.post('/api/register', (req, res) => {
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
       } catch (err) {
         console.error('❌ Mongo register error:', err.message || err);
-        return res.status(500).json({ error: 'Failed to register' });
+        return res.status(500).json({ error: 'Failed to register: ' + (err.message || 'Unknown error') });
       }
     })();
     return;
@@ -356,17 +360,22 @@ app.post('/api/face', (req, res) => {
 // Checks if user exists and has fingerprint registered (for login)
 app.post('/api/user/check', (req, res) => {
   const { userId } = req.body || {};
+  console.log('🔍 POST /api/user/check:', userId);
   if (!userId) return res.status(400).json({ ok: false, reason: 'Missing userId' });
 
   if (mongoUsers) {
     (async () => {
       try {
         const rec = await mongoUsers.findOne({ userId });
-        if (!rec) return res.status(404).json({ ok: false, reason: 'User not found' });
-        if (!rec.fingerprintRegistered) return res.status(403).json({ ok: false, reason: 'Fingerprint not registered' });
-        return res.json({ ok: true, message: 'User authenticated' });
+        if (!rec) {
+          console.error('❌ /api/user/check - User not found:', userId);
+          return res.status(404).json({ ok: false, reason: 'User not found' });
+        }
+        console.log('✅ /api/user/check - User exists:', userId, '| fingerprintRegistered:', !!rec.fingerprintRegistered, '| faceRegistered:', !!rec.face_embedding);
+        // Just check if user exists, don't require fingerprint during registration check
+        return res.json({ ok: true, message: 'User found', fingerprintRegistered: !!rec.fingerprintRegistered, faceRegistered: !!rec.face_embedding });
       } catch (err) {
-        console.error('Mongo user check error', err);
+        console.error('❌ /api/user/check - Mongo error:', err.message || err);
         return res.status(500).json({ ok: false, reason: 'Failed to verify user' });
       }
     })();
@@ -374,9 +383,12 @@ app.post('/api/user/check', (req, res) => {
   }
 
   const record = users.get(userId);
-  if (!record) return res.status(404).json({ ok: false, reason: 'User not found' });
-  if (!record.fingerprintRegistered) return res.status(403).json({ ok: false, reason: 'Fingerprint not registered' });
-  return res.json({ ok: true, message: 'User authenticated' });
+  if (!record) {
+    console.log('❌ User check: User not found -', userId);
+    return res.status(404).json({ ok: false, reason: 'User not found' });
+  }
+  console.log('✅ User check: User exists -', userId, '- fingerprint registered:', record.fingerprintRegistered);
+  return res.json({ ok: true, message: 'User found', fingerprintRegistered: !!record.fingerprintRegistered });
 });
 
 // POST /api/fingerprint/verify

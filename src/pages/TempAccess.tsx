@@ -7,6 +7,7 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { FingerprintScanner } from "@/components/FingerprintScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
+import { appStorage } from "@/lib/storage";
 import { requestTempCode, verifyTempCode, rebindDevice } from "@/lib/authService";
 
 type Step = "code" | "face" | "fingerprint" | "update" | "success";
@@ -18,11 +19,29 @@ const TempAccess = () => {
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string>("Enter your temporary access code to continue");
   const [busy, setBusy] = useState(false);
-  const userId = localStorage.getItem("biovault_userId");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Load userId from Capacitor storage
+    const loadUserId = async () => {
+      try {
+        const id = await appStorage.getItem("biovault_userId");
+        if (!id) {
+          navigate("/register");
+          return;
+        }
+        setUserId(id);
+      } catch (err) {
+        console.error('❌ Failed to load userId:', err);
+        navigate("/register");
+      }
+    };
+    
+    loadUserId();
+  }, [navigate]);
 
   useEffect(() => {
     if (!userId) {
-      navigate("/register");
       return;
     }
 

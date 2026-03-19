@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Capacitor } from "@capacitor/core";
 import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
 import { validateUser, verifyFingerprint } from "@/lib/authService";
+import { appStorage } from "@/lib/storage";
 import { motion, AnimatePresence } from "framer-motion";
 import { Fingerprint, CheckCircle, XCircle } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
@@ -47,11 +48,11 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             // On native biometric success, verify fingerprint with backend if this is login
             if (mode === 'login') {
               try {
-                const userId = localStorage.getItem('biovault_userId');
+                const userId = await appStorage.getItem('biovault_userId');
                 console.log('🔍 FingerprintScanner LOGIN mode - userId from storage:', userId);
                 
                 if (!userId) {
-                  throw new Error('User ID not found in localStorage. Please register first.');
+                  throw new Error('User ID not found in storage. Please register first.');
                 }
                 
                 const { getDeviceToken } = await import('@/lib/deviceToken');
@@ -89,15 +90,25 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             try {
               const { getDeviceToken } = await import('@/lib/deviceToken');
               const deviceToken = await getDeviceToken();
-              const userId = localStorage.getItem('biovault_userId');
+              const userId = await appStorage.getItem('biovault_userId');
               
               console.log('📍 Registering Fingerprint - userId:', userId, 'deviceToken:', deviceToken);
+              
+              // CRITICAL: Validate both userId and deviceToken exist
+              if (!userId || userId.trim() === '') {
+                throw new Error('❌ User ID is missing. Please complete registration form first.');
+              }
+              if (!deviceToken || deviceToken.trim() === '') {
+                throw new Error('❌ Device token is missing. Please restart app and try again.');
+              }
+              
+              console.log('✅ STEP 1: userId and deviceToken validated');
               
               // Store fingerprint registration in backend
               // Always use Render URL fallback so app works from anywhere (especially on phone)
               const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
               const url = `${API_BASE}/api/register-fingerprint`;
-              console.log('🔐 Calling:', url);
+              console.log('🔐 STEP 2: Calling:', url);
               
               const response = await fetch(url, {
                 method: 'POST',
@@ -105,7 +116,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 body: JSON.stringify({ userId, deviceToken, credential: null })
               });
               
-              console.log('📥 Response status:', response.status);
+              console.log('📥 STEP 3: Response status:', response.status);
               
               const responseText = await response.text();
               console.log('📄 Response text:', responseText.substring(0, 200));
@@ -113,7 +124,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               let data;
               try {
                 data = JSON.parse(responseText);
-                console.log('✅ Parsed JSON:', data);
+                console.log('✅ STEP 4: Parsed JSON:', data);
               } catch (parseErr: any) {
                 console.error('❌ JSON parse error:', parseErr.message);
                 throw new Error(`Server error: ${responseText.substring(0, 100)}`);
@@ -123,6 +134,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 throw new Error(data.error || 'Failed to register fingerprint');
               }
               
+              console.log('✅ STEP 5: Fingerprint registered successfully');
               setStatus('success');
               setMessage('✓ Fingerprint Registered');
               setTimeout(onSuccess, SUCCESS_HOLD_MS);
@@ -204,7 +216,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           // Store in database
           const { getDeviceToken } = await import('@/lib/deviceToken');
           const deviceToken = await getDeviceToken();
-          const storedUserId = localStorage.getItem('biovault_userId');
+          const storedUserId = await appStorage.getItem('biovault_userId');
           
           console.log('📍 Saving fingerprint credential - userId:', storedUserId, 'deviceToken:', deviceToken);
           
@@ -264,7 +276,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
         try {
           const { getDeviceToken } = await import('@/lib/deviceToken');
           const deviceToken = await getDeviceToken();
-          const userId = localStorage.getItem('biovault_userId');
+          const userId = await appStorage.getItem('biovault_userId');
           if (!userId || !deviceToken) throw new Error('User not authorized. Please register first.');
           const result = await validateUser(userId, deviceToken);
           if (result.authorized) {

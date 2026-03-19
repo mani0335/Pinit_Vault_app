@@ -11,6 +11,7 @@ apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capacitor-camera')
     implementation project(':capacitor-device')
+    implementation project(':capacitor-preferences')
 
 }
 apply from: "../../node_modules/cordova-plugin-fingerprint-aio/src/android/build.gradle"

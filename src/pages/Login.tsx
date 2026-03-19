@@ -7,6 +7,7 @@ import { FingerprintScanner } from "@/components/FingerprintScanner";
 import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
+import { appStorage } from "@/lib/storage";
 
 type Step = "fingerprint" | "face" | "success";
 
@@ -16,19 +17,28 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user has already registered (userId exists in localStorage)
-    const savedUserId = localStorage.getItem("biovault_userId");
-    console.log('📍 Login: checking saved userId:', savedUserId);
+    // Check if user has already registered (userId exists in Capacitor storage)
+    const checkRegistration = async () => {
+      try {
+        const savedUserId = await appStorage.getItem("biovault_userId");
+        console.log('📍 Login: checking saved userId:', savedUserId);
+        
+        if (!savedUserId) {
+          console.log('❌ Login: No saved userId found - redirecting to register');
+          navigate("/register");
+          return;
+        }
+        
+        console.log('✅ Login: User is registered with ID:', savedUserId);
+        // User exists, ready to login with biometrics
+        setIsLoading(false);
+      } catch (err) {
+        console.error('❌ Login: Error checking registration:', err);
+        navigate("/register");
+      }
+    };
     
-    if (!savedUserId) {
-      console.log('❌ Login: No saved userId found - redirecting to register');
-      navigate("/register");
-      return;
-    }
-    
-    console.log('✅ Login: User is registered with ID:', savedUserId);
-    // User exists, ready to login with biometrics
-    setIsLoading(false);
+    checkRegistration();
   }, [navigate]);
 
   return (

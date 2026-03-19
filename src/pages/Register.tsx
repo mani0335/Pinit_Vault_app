@@ -8,6 +8,7 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
 import { registerUser } from "@/lib/authService";
+import { appStorage } from "@/lib/storage";
 
 type Step = "tempId" | "fingerprint" | "face" | "userId" | "complete";
 
@@ -88,10 +89,17 @@ const Register = () => {
                   variant="cyber-secondary"
                   size="sm"
                   className="w-full max-w-[280px] text-xs tracking-wide"
-                  onClick={() => {
-                    // Store userId early so FaceScanner can find it
-                    localStorage.setItem('biovault_userId', userId);
-                    setStep("fingerprint");
+                  onClick={async () => {
+                    // Store userId using Capacitor Preferences (proper mobile storage)
+                    try {
+                      console.log('💾 STEP 0: Saving userId to Capacitor storage:', userId);
+                      await appStorage.setItem('biovault_userId', userId);
+                      console.log('✅ STEP 0: userId saved successfully');
+                      setStep("fingerprint");
+                    } catch (err) {
+                      console.error('❌ Failed to save userId:', err);
+                      setRegisterError('Failed to save user ID');
+                    }
                   }}
                 >
                   Continue Enrollment
@@ -139,38 +147,53 @@ const Register = () => {
                       const { getDeviceToken } = await import('@/lib/deviceToken');
                       const deviceToken = await getDeviceToken();
                       
-                      console.log('📝 STEP 1: Saving userId to localStorage:', userId);
-                      // CRITICAL: Save userId FIRST, before any async operations
-                      localStorage.setItem('biovault_userId', userId);
+                      console.log('📝 STEP 1: Saving userId to storage:', userId);
+                      // CRITICAL: Save userId FIRST using dual storage
+                      await appStorage.setItem('biovault_userId', userId);
                       
                       // Verify it was saved
-                      const verifyUserId = localStorage.getItem('biovault_userId');
+                      const verifyUserId = await appStorage.getItem('biovault_userId');
                       console.log('✅ STEP 2: Verified userId saved:', verifyUserId);
                       if (verifyUserId !== userId) {
-                        throw new Error('Failed to save userId to localStorage');
+                        throw new Error('Failed to save userId to storage - verification failed');
                       }
                       
-                      // Store face embedding
+                      // Store face embedding if available
                       if (faceEmbedding && faceEmbedding.length) {
-                        localStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
+                        await appStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
+                        console.log('✅ Face embedding saved');
                       }
                       
-                      console.log('📝 STEP 3: Registering with backend:', userId, 'device:', deviceToken);
+                      console.log('📝 STEP 3: Registering user with backend:', { userId, deviceToken, hasFaceEmbedding: !!faceEmbedding });
                       
-                      // Call backend to register user with all biometric data
+                      // Call backend to create user account - CRITICAL STEP
                       const data = await registerUser({ userId, deviceToken, webauthn, faceEmbedding });
-                      console.log('✅ STEP 4: Registration successful with backend:', data);
+                      console.log('✅ STEP 4: User registration successful with backend:', data);
                       
-                      if (data && data.tempCode) {
+                      if (!data || !data.ok) {
+                        throw new Error('Backend registration returned invalid response');
+                      }
+                      
+                      // Verify user was actually created on backend
+                      console.log('📝 STEP 5: Verifying user was created on backend...');
+                      const { checkUserRegistered } = await import('@/lib/authService');
+                      const checkResult = await checkUserRegistered(userId);
+                      console.log('✅ STEP 6: User verified on backend:', checkResult);
+                      
+                      if (!checkResult.ok) {
+                        throw new Error('User registration verification failed: ' + (checkResult.reason || 'Unknown error'));
+                      }
+                      
+                      if (data?.tempCode) {
                         setRecoveryCode(String(data.tempCode));
                       }
                       
-                      console.log('✅ STEP 5: Setting complete step - ready for login');
+                      console.log('✅ STEP 7: Registration complete - user ready for login');
                       setStep('complete');
                     } catch (e) {
                       const msg = e instanceof Error ? e.message : 'Registration failed';
                       console.error('❌ Registration error:', msg);
-                      setRegisterError(msg);
+                      setRegisterError('Registration Error: ' + msg);
                       setIsRegistering(false);
                     }
                   }}
@@ -200,21 +223,20 @@ const Register = () => {
                   </div>
                 )}
                 <div className="flex gap-3 justify-center">
-                  <Button variant="cyber" onClick={() => {
+                  <Button variant="cyber" onClick={async () => {
                     // CRITICAL: Ensure userId is persisted before navigating
-                    const savedId = localStorage.getItem('biovault_userId');
+                    const savedId = await appStorage.getItem('biovault_userId');
                     console.log('🔐 About to login - stored userId:', savedId);
                     
                     if (!savedId) {
-                      console.error('❌ ERROR: userId not in localStorage!');
+                      console.error('❌ ERROR: userId not in storage!');
                       setRegisterError('User ID not saved. Please try again.');
                       return;
                     }
                     
-                    // Wait 500ms to ensure localStorage is flushed before navigation
-                    setTimeout(() => {
-                      navigate("/login");
-                    }, 500);
+                    // userId is confirmed saved - navigate immediately
+                    console.log('✅ userId confirmed in storage - navigating to login');
+                    navigate("/login");
                   }}>Login Now</Button>
                   <Button variant="ghost" className="text-muted-foreground" onClick={() => navigate("/")}>Home</Button>
                 </div>

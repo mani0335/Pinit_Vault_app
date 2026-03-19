@@ -4,6 +4,7 @@ import { Camera as CameraIcon, CheckCircle, XCircle, ScanFace } from "lucide-rea
 import { ScanEffect } from "./ScanEffect";
 import { Button } from "./ui/button";
 import { verifyFace } from "@/lib/authService";
+import { appStorage } from "@/lib/storage";
 import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
 
 interface FaceScannerProps {
@@ -234,7 +235,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
     if (mode === "login") {
       try {
-        const userId = localStorage.getItem("biovault_userId");
+        const userId = await appStorage.getItem("biovault_userId");
         if (!userId) throw new Error("User not registered on this device.");
 
         const data = await verifyFace(userId, embedding);
@@ -275,7 +276,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     // Registration mode: Store face to database
     try {
       const { getDeviceToken } = await import('@/lib/deviceToken');
-      const userId = localStorage.getItem('biovault_userId');
+      const userId = await appStorage.getItem('biovault_userId');
       const deviceToken = await getDeviceToken();
       
       if (!userId || !deviceToken) {
