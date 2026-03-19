@@ -8,26 +8,24 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
 
-type Step = "userId" | "fingerprint" | "face" | "success";
+type Step = "fingerprint" | "face" | "success";
 
 const Login = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("userId");
-  const [inputUserId, setInputUserId] = useState("");
-  const [userIdError, setUserIdError] = useState("");
+  const [step, setStep] = useState<Step>("fingerprint");
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleUserIdSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const id = inputUserId.trim();
-    if (!id) {
-      setUserIdError("Please enter your User ID");
+  useEffect(() => {
+    // Check if user has already registered (userId exists in localStorage)
+    const savedUserId = localStorage.getItem("biovault_userId");
+    if (!savedUserId) {
+      // No registered user, redirect to register
+      navigate("/register");
       return;
     }
-    // Store the userId and proceed
-    localStorage.setItem("biovault_userId", id);
-    setUserIdError("");
-    setStep("fingerprint");
-  };
+    // User exists, ready to login with biometrics
+    setIsLoading(false);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -50,65 +48,41 @@ const Login = () => {
             <StatusIndicator status="scanning" label="Biometric Verification" />
           </div>
 
-          {/* Steps indicator */}
+          {/* Steps indicator - Only Fingerprint and Face */}
           <div className="flex items-center justify-center gap-2 mb-8">
-            {["userId", "fingerprint", "face"].map((s, i) => (
+            {["fingerprint", "face"].map((s, i) => (
               <div key={s} className="flex items-center gap-2">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-mono border ${
                   step === s ? "bg-primary/20 border-primary text-primary" :
-                  ((s === "userId" && step !== "userId") || (s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "bg-neon-green/20 border-neon-green text-neon-green" :
+                  ((s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "bg-neon-green/20 border-neon-green text-neon-green" :
                   "bg-muted border-border text-muted-foreground"
                 }`}>
-                  {((s === "userId" && step !== "userId") || (s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "✓" : i + 1}
+                  {((s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "✓" : i + 1}
                 </div>
-                {i < 2 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                {i < 1 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
               </div>
             ))}
           </div>
 
           {/* Content */}
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20"
-          >
-            {step === "userId" && (
-              <form onSubmit={handleUserIdSubmit} className="space-y-6">
-                <div>
-                  <h2 className="text-lg font-display tracking-wider text-center mb-2 text-foreground">ENTER USER ID</h2>
-                  <p className="text-muted-foreground font-mono text-xs text-center mb-6">You received this ID during registration</p>
-                </div>
-                
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    value={inputUserId}
-                    onChange={(e) => {
-                      setInputUserId(e.target.value);
-                      setUserIdError("");
-                    }}
-                    placeholder="Enter your USER_ID"
-                    className="w-full px-4 py-3 bg-background border border-primary/30 rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 font-mono text-sm"
-                    autoFocus
-                  />
-                  {userIdError && (
-                    <p className="text-red-500 text-xs font-mono">{userIdError}</p>
-                  )}
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-display tracking-wider"
-                  disabled={!inputUserId.trim()}
-                >
-                  Continue to Fingerprint
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              </form>
-            )}
-
-            {step === "fingerprint" && (
+          {isLoading ? (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20 text-center py-8"
+            >
+              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">LOADING BIOMETRIC DATA</h2>
+              <p className="text-muted-foreground font-mono text-sm">Verifying registered user...</p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20"
+            >
+              {step === "fingerprint" && (
               <div>
                 <FingerprintScanner
                   mode="login"
@@ -159,7 +133,8 @@ const Login = () => {
                 <p className="text-muted-foreground font-mono text-sm">Redirecting to dashboard...</p>
               </motion.div>
             )}
-          </motion.div>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     </div>
