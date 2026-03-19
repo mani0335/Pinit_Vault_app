@@ -109,26 +109,27 @@ try {
 }
 
 // Initialize MongoDB if URI provided
-try {
-  const mongoUri = process.env.MONGODB_URI;
-  if (mongoUri) {
+const mongoInitPromise = (async () => {
+  try {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      console.log('⚠️  MONGODB_URI not set - using in-memory storage (data will NOT persist)');
+      return;
+    }
+    
     const { MongoClient } = require('mongodb');
     const dbName = process.env.MONGODB_DB || 'biovault';
     mongoClient = new MongoClient(mongoUri);
-    mongoClient.connect()
-      .then(async () => {
-        const db = mongoClient.db(dbName);
-        mongoUsers = db.collection('users');
-        await mongoUsers.createIndex({ userId: 1 }, { unique: true });
-        console.log(`MongoDB connected (${dbName})`);
-      })
-      .catch((err) => {
-        console.warn('MongoDB connection failed:', err && err.message ? err.message : err);
-      });
+    await mongoClient.connect();
+    const db = mongoClient.db(dbName);
+    mongoUsers = db.collection('users');
+    await mongoUsers.createIndex({ userId: 1 }, { unique: true });
+    console.log(`✅ MongoDB connected to ${dbName}`);
+  } catch (e) {
+    console.error('❌ MongoDB init error:', e && e.message ? e.message : e);
+    console.error('⚠️  Will use in-memory storage - data will NOT persist');
   }
-} catch (e) {
-  console.warn('MongoDB init error:', e && e.message ? e.message : e);
-}
+})();
 
 // POST /api/register
 // body: { userId, deviceToken }
@@ -896,8 +897,13 @@ app.get('/api/user/:userId/biometric-status', (req, res) => {
 app.get('/', (req, res) => res.send('Biovault mock server running'));
 
 const port = process.env.PORT || 3333;
-// Bind to all interfaces so the server is reachable from devices on the LAN
-app.listen(port, '0.0.0.0', () => console.log(`Biovault mock server running on port ${port}`));
+
+// Wait for MongoDB to initialize before starting server
+(async () => {
+  await mongoInitPromise;
+  // Bind to all interfaces so the server is reachable from devices on the LAN
+  app.listen(port, '0.0.0.0', () => console.log(`Biovault mock server running on port ${port}`));
+})();
 
 process.on('SIGINT', async () => {
   try {
