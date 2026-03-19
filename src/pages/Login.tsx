@@ -111,7 +111,7 @@ const Login = () => {
                         navigate('/temp-access');
                         return;
                       }
-                      if (msg.includes('user not registered') || msg.includes('not registered') || msg.includes('not authorized')) {
+                      if (msg.includes('user not registered') || msg.includes('not registered') || msg.includes('not authorized') || msg.includes('user not found') || msg.includes('not found')) {
                         navigate('/register');
                         return;
                       }
