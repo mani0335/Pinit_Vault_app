@@ -121,9 +121,9 @@ const Register = () => {
 
             {step === "userId" && (
               <div className="text-center">
-                <h2 className="text-lg font-display tracking-wider mb-6 text-foreground">USER ID ASSIGNED</h2>
+                <h2 className="text-lg font-display tracking-wider mb-6 text-foreground">UNIQUE ID CREATED</h2>
                 <div className="bg-muted rounded-lg p-4 mb-4 border border-border">
-                  <p className="text-xs text-muted-foreground font-mono mb-1">YOUR USER ID</p>
+                  <p className="text-xs text-muted-foreground font-mono mb-1">YOUR UNIQUE ID</p>
                   <div className="flex items-center justify-center gap-2">
                     <span className="text-2xl font-display text-primary font-bold tracking-widest">{userId}</span>
                     <button onClick={() => copyId(userId)} className="text-muted-foreground hover:text-foreground">
