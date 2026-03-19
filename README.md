@@ -67,178 +67,202 @@ Fingerprint Scan
     ▼
 Check Fingerprint
     |
-    |─────────────────────┬──────────────────────┐
-    |                     |                      |
-    ▼                     ▼                      ▼
-Fingerprint Found    Device ID Check      Fingerprint Not Found
-    |                     |                   (New User)
-    |             ┌───────┴────────┐            |
-    |             |                |            ▼
-    |             ▼                ▼       TempAccess.tsx
-    |         Device Match    Device Mismatch  |
-    |             |                |           ▼
-    |             ▼                ▼      Register Fingerprint
-    |         Face Auth         TempAccess     |
-    |             |               Code         ▼
-    |             ▼                |       Register Face
-    |         ✅ Verified          ▼           |
-    |             |            Face Auth       ▼
-    |             |                |      Generate ID + Bind
-    |             |                ▼            |
-    |             |            Device Rebind    ▼
-    |             |                |       Dashboard
-    |             |                |      (Full Access) ✓
-    |             ▼                ▼
-    └──────► Dashboard          Dashboard
-           (Full Access)      (Restricted)
-                ✓              (Temp)
+    |──────────────────────────┬──────────────────────┐
+    |                          |                      |
+    ▼                          ▼                      ▼
+Fingerprint Found         Device ID Check      Fingerprint Not Found
+    |                          |                      |
+    |                  ┌───────┴────────┐             ▼
+    |                  |                |        New User Registration
+    |                  ▼                ▼             |
+    |              Device Match    Device Mismatch    ▼
+    |                  |                |        Register Fingerprint
+    |                  ▼                ▼             |
+    |              Face Auth      Temporary Access    ▼
+    |              (Login)        Check Register      Register Face
+    |                  |          Biometrics          |
+    |                  |                |             ▼
+    |                  |                ▼        Generate USER_ID
+    |                  |          Check Face          |
+    |                  |          authentication      ▼
+    |                  |                |        Bind Device
+    |                  |                ▼             |
+    |                  |          Vault Dashboard     ▼
+    |                  |                |        Login Again
+    |                  |                |             |
+    |                  ▼                ▼             ▼
+    └─────────────────► Vault Dashboard           Vault Dashboard
+```
+
+## How App is Working
+
+### **Complete Authentication Workflow**
+
+Your BioVault app handles **THREE main scenarios**:
+
+#### **Scenario 1: Known User (Same Device) ✅**
+```
+Fingerprint Scan
+    ↓
+Found in System ✅
+    ↓
+Device ID Check
+    ↓
+Device Matches ✅
+    ↓
+Face Authentication (Login Mode)
+    ↓
+Verified ✅
+    ↓
+VAULT DASHBOARD (Full Access)
+```
+
+#### **Scenario 2: Known User (Different Device) ⚠️**
+```
+Fingerprint Scan
+    ↓
+Found in System ✅
+    ↓
+Device ID Check
+    ↓
+Device Mismatch ❌
+    ↓
+Temporary Access Flow
+    ↓
+Check Register Biometrics (Temp Mode)
+    ↓
+Check Face Authentication (Temp Mode)
+    ↓
+Vault Dashboard (Restricted - Temp Access)
+```
+
+#### **Scenario 3: New User 🆕**
+```
+Fingerprint Scan
+    ↓
+NOT Found in System ❌
+    ↓
+New User Registration Path
+    ↓
+Register Fingerprint (Store Biometric)
+    ↓
+Register Face (Store Face Embedding)
+    ↓
+Generate USER_ID (Create Account)
+    ↓
+Bind Device (Link Device to Account)
+    ↓
+Login Again (Auto-login to Dashboard)
+    ↓
+VAULT DASHBOARD (Full Access)
 ```
 
 ## App Current Implementation Status
 
 Your BioVault app is **fully functional** with all core flows implemented and working:
 
-### **Complete User Flow (What's Working Now)**
+### **Current Flow Implementation**
 
-**THREE MAIN PATHS:**
+The app now follows a **single-path architecture** that branches at fingerprint detection:
 
-**PATH 1: Device Match (Existing User with Same Phone)**
-- Fingerprint Found → Device Match ✅
-- Face Authentication ✅
-- Full Dashboard Access ✓
+**Step-by-Step Execution:**
 
-**PATH 2: Device Mismatch (Existing User with Different Phone/Device)**
-- Fingerprint Found BUT Device Different ❌
-- → TempAccess.tsx: Enter Temporary Code
-- → Face Authentication Verify
-- → Device Rebind (update binding)
-- → Restricted Dashboard (limited access) 
+1. **APP START** → **Splash Screen** → **Fingerprint Scan**
+   - User opens app
+   - Splash screen displays
+   - Fingerprint biometric is scanned
 
-**PATH 3: Fingerprint Not Found (New User)**
-- Biometric NOT in system = **Create New Account**
-- TempAccess.tsx: Generate Temp Code (as entry point)
-- Register Fingerprint + Face
-- Generate Unique ID + Device Binding
-- Full Dashboard Access ✓
+2. **CHECK FINGERPRINT** (Three Outcomes)
+   - ✅ **Found**: User already registered
+     - Device ID Check → Match/Mismatch
+   - ❌ **Not Found**: New user
+     - Redirect to Registration
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│           BIOVAULT COMPLETE AUTHENTICATION FLOW                 │
-└─────────────────────────────────────────────────────────────────┘
+3. **FOR EXISTING USERS (Found)**
+   - **Device Match Path**:
+     - Face Auth (Login Mode)
+     - → Vault Dashboard (Full Access)
+   
+   - **Device Mismatch Path**:
+     - Temporary Access Mode
+     - Register Biometrics (Temp)
+     - Register Face (Temp)
+     - → Vault Dashboard (Restricted)
 
-                     ┌──────────────────┐
-                     │  APP START       │
-                     │  Splash Screen   │
-                     └────────┬─────────┘
-                              │
-                    ┌─────────▼──────────┐
-                    │  Fingerprint Scan? │
-                    └────┬────────────┬──┘
-                         │            │
-              ┌──────────┴─┐    ┌────┴──────────────┐
-              │             │    │                  │
-    ┌─────────▼──┐  ┌───────▼─────────┐  ┌────────▼──────────┐
-    │ FOUND      │  │ DEVICE ID?      │  │ NOT FOUND         │
-    │ (Existing  │  │ (Check Binding) │  │ (New User)        │
-    │ User)      │  │                 │  │                   │
-    └─────────┬──┘  └───┬──────────┬──┘  └────────┬──────────┘
-              │         │          │              │
-         MATCH │    MATCH      MISMATCH      └─────▼──────┐
-              │         │          │              │       │
-    ┌─────────▼──────┐  │  ┌───────▼───┐  ┌──────▼──────┐
-    │ Face Auth      │  │  │ RESTRICTED│  │ TempAccess  │
-    │ (Login mode)   │  │  │ PATH      │  │ .tsx        │
-    └────────┬───────┘  │  │ Need Temp │  │ Generate    │
-             │          │  │ Code      │  │ Temp Code   │
-    ┌────────▼──────┐   │  └──────┬────┘  └──────┬──────┘
-    │ ✅ VERIFIED   │   │         │             │
-    └────────┬──────┘   │  ┌──────▼─────┐      │
-             │          │  │ Face Auth   │      │
-    ┌────────▼──────────┼─▼──(Temp Mode)◄──────┘
-    │              │    │  └──────┬─────┘
-    │ DASHBOARD    │    │         │
-    │ FULL ACCESS  │    │  ┌──────▼──────┐
-    │ ✅           │    │  │ Device      │
-    │              │    │  │ Rebind      │
-    └──────────────┘    │  └──────┬──────┘
-                        │         │
-                        │  ┌──────▼─────────┐
-                        │  │ DASHBOARD      │
-                        │  │ RESTRICTED     │
-                        │  │ (Temp Access)  │
-                        │  └────────────────┘
-                        │
-                        └─→ FingerprintScanner (Register)
-                            ↓
-                           FaceScanner (Register)
-                            ↓
-                           Generate ID + Bind Device
-                            ↓
-                           DASHBOARD FULL ACCESS ✓
-```
+4. **FOR NEW USERS (Not Found)**
+   - Register Fingerprint
+   - Register Face
+   - Generate USER_ID
+   - Bind Device to Account
+   - Auto-login to Dashboard
+   - → Vault Dashboard (Full Access)
 
 ## Authentication Flow Logic
 
-### **Three Possible Login Paths**
+Your app uses a **single fingerprint scan** that branches into 3 outcomes:
 
-1. **Device Match (Existing Registered User + Same Phone)**
-   - Fingerprint scan → Finds match ✅
-   - Device ID check → Device matches ✅
-   - Face authentication → Successful ✅
-   - **Result: FULL DASHBOARD ACCESS** with all features unlocked
+### **Outcome 1: Fingerprint FOUND + Device MATCH ✅**
+- **Where**: Existing user on registered device
+- **Flow**: Fingerprint Scan → Device Check → Face Auth → Dashboard
+- **Files**: `FingerprintScanner.tsx` (login mode) → `FaceScanner.tsx` (login mode) → `Dashboard.tsx`
+- **APIs**: `/api/fingerprint/verify` → `/api/face/verify` → `/api/user/check`
+- **Result**: **FULL VAULT ACCESS** - All features unlocked
 
-2. **Device Mismatch (Existing Registered User + Different Phone)**
-   - Fingerprint scan → Finds match ✅
-   - Device ID check → Device doesn't match ❌
-   - **Triggers: Temporary Access Flow**
-   - Generate temporary code (sent to registered email/message)
-   - User enters temp code in TempAccess.tsx
-   - Face authentication (to verify identity)
-   - Device rebind (update device binding for this phone)
-   - **Result: RESTRICTED DASHBOARD** until device is fully trusted
+### **Outcome 2: Fingerprint FOUND + Device MISMATCH ⚠️**
+- **Where**: Existing user on NEW/unauthorized device
+- **Flow**: Fingerprint Scan → Device Check → Temp Access → Face Auth (Temp) → Restricted Dashboard
+- **Files**: `FingerprintScanner.tsx` (detect mismatch) → `TempAccess.tsx` → `FaceScanner.tsx` (temp mode)
+- **APIs**: `/api/temp-code/verify` → `/api/face/verify` → `/api/device/rebind`
+- **Result**: **RESTRICTED VAULT ACCESS** - Limited features until device is fully trusted
 
-3. **Biometric Not Found (New User)**
-   - Fingerprint scan → NOT found in system ❌
-   - **Triggers: New User Registration**
-   - Generate temporary code (for new user verification)
-   - Register fingerprint biometric
-   - Register face authentication
-   - Generate unique USER_ID
-   - Bind device to account
-   - **Result: FULL DASHBOARD ACCESS** with new account created
+### **Outcome 3: Fingerprint NOT FOUND ❌**
+- **Where**: New user (first time)
+- **Flow**: Fingerprint Scan → New Registration → Register Bio → Register Face → Generate ID → Dashboard
+- **Files**: `FingerprintScanner.tsx` (register mode) → `FaceScanner.tsx` (register mode) → `Register.tsx` → `Dashboard.tsx`
+- **APIs**: `/api/register-fingerprint` → `/api/register-face` → `/api/register` → `/api/device/rebind`
+- **Result**: **FULL VAULT ACCESS** - New account created and bound to device
 
-### **backend APIs Working**
+### **Backend APIs (All Endpoints Live)**
 
 ```
-✅ https://biovault-app.onrender.com (Live & Connected to MongoDB)
+✅ https://biovault-app.onrender.com (MongoDB Atlas Connected)
 
-POST /api/register ........................... Create/Update user
-POST /api/register-fingerprint ............... Store fingerprint credential  
-POST /api/register-face ...................... Store face embedding
-POST /api/fingerprint/verify ................. Verify fingerprint matches
-POST /api/face/verify ........................ Verify face matches
-GET  /api/user/check ......................... Check if user exists
-POST /api/device/rebind ...................... Update device binding
-POST /api/temp-code/request .................. Generate temporary code
-POST /api/temp-code/verify ................... Verify temporary code
+FINGERPRINT FLOW:
+POST /api/register-fingerprint ............ Store biometric credential (register)
+POST /api/fingerprint/verify ............. Verify fingerprint matches (login)
+
+FACE FLOW:
+POST /api/register-face .................. Store face embedding (register)
+POST /api/face/verify .................... Verify face matches (login/temp)
+
+USER MANAGEMENT:
+POST /api/register ....................... Create new user account
+GET  /api/user/check ..................... Check if user exists
+
+DEVICE MANAGEMENT:
+POST /api/device/rebind .................. Update device binding
+
+TEMPORARY ACCESS:
+POST /api/temp-code/request .............. Generate temp code
+POST /api/temp-code/verify ............... Verify temp code
 ```
 
 ### **What's Implemented & Working**
 
-| Feature | Status | Path | Details |
-|---------|--------|------|---------|
-| **Fingerprint Scan** | ✅ Complete | Login/Register | Detects if user exists in system |
-| **Device Match (Same Phone)** | ✅ Complete | Existing User | Direct to Face Auth + Dashboard |
-| **Device Mismatch (Different Phone)** | ✅ Complete | Restricted | Requires Temp Code → Face Auth → Limited Dashboard |
-| **Biometric Not Found (New User)** | ✅ Complete | New Registration | Generate Temp Code → Register Biometrics → Generate ID |
-| **Face Authentication** | ✅ Complete | Login/Register | Verify face embedding |
-| **Temporary Code Generation** | ✅ Complete | Device Mismatch + New User | Entry point for both paths |
-| **Temporary Code Verification** | ✅ Complete | Temp Access | Validate code and enable biometrics |
-| **Device Binding** | ✅ Complete | Registration | Create/Update device relationship |
-| **Device Rebind** | ✅ Complete | Temp Access | Update binding for new device |
-| **Dashboard (Full Access)** | ✅ Complete | Login Success | User Profile, Wallet, Images, etc |
-| **Dashboard (Restricted)** | ✅ Complete | Temp Access | Limited features for temporary users |
-| **Backend APIs** | ✅ Live | All Paths | Render + MongoDB Atlas |
+| Feature | Status | Outcome | How It Works |
+|---------|--------|---------|--------------|
+| **Fingerprint Scan** | ✅ | All 3 | Scans biometric and checks if registered |
+| **Fingerprint Found + Device Match** | ✅ | Outcome 1 | Direct to Face Auth (Login Mode) → Dashboard Full Access |
+| **Fingerprint Found + Device Mismatch** | ✅ | Outcome 2 | Triggers Temp Access → Face Auth (Temp Mode) → Restricted Dashboard |
+| **Fingerprint Not Found (New User)** | ✅ | Outcome 3 | Registers Fingerprint + Face + Generates ID → Dashboard Full Access |
+| **Face Authentication (Login)** | ✅ | Outcome 1 | Verifies face embedding for registered users |
+| **Face Authentication (Temp)** | ✅ | Outcome 2 | Verifies face for device mismatch scenario |
+| **Face Registration** | ✅ | Outcome 3 | Registers face embedding for new users |
+| **Device Binding** | ✅ | Outcome 3 | Creates device-user relationship |
+| **Device Rebinding** | ✅ | Outcome 2 | Updates device binding for new phone |
+| **Dashboard (Full Access)** | ✅ | Outcomes 1,3 | All features: Profile, Wallet, Images, etc. |
+| **Dashboard (Restricted)** | ✅ | Outcome 2 | Limited features during temp access |
+| **Backend APIs** | ✅ | All 3 | 9 endpoints live on Render + MongoDB |
 
 ## What Was Changed In This Phase
 
