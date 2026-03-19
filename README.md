@@ -106,87 +106,114 @@ Your BioVault app is **fully functional** with all core flows implemented and wo
 
 ### **Complete User Flow (What's Working Now)**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        BIOVAULT APP - CURRENT FLOW                          │
-└─────────────────────────────────────────────────────────────────────────────┘
+**THREE MAIN PATHS:**
 
-┌──────────────────────────────────┐
-│     APP STARTS                   │
-│  (Index.tsx → Splash Screen)     │
-└────────────┬─────────────────────┘
-             │
-      ┌──────▼──────┐
-      │   LOGIN OR  │
-      │  REGISTER?  │
-      └──┬──────┬───┘
-         │      │
-    ┌────▼──┐   └─────────────────────────────────────┐
-    │ LOGIN │                                         │ REGISTER
-    └────┬──┘                                         │
-         │                                    ┌───────▼──────────┐
-         │                                    │ Register.tsx     │
-         │                                    │ Step 1: TempID   │
-         │                                    └───────┬──────────┘
-         │                                            │
-         │                       ┌────────────────────▼──────────────┐
-         │                       │ FingerprintScanner (mode=register) │
-         │                       │ Step 2: Register Fingerprint      │
-         │                       │ → POST /api/register-fingerprint  │
-         │                       └────────────────────┬──────────────┘
-         │                                            │
-         │                       ┌────────────────────▼──────────────┐
-         │                       │ FaceScanner (mode=register)       │
-         │                       │ Step 3: Register Face             │
-         │                       │ → POST /api/register-face         │
-         │                       └────────────────────┬──────────────┘
-         │                                            │
-         │                       ┌────────────────────▼──────────────┐
-         │                       │ Register.tsx                      │
-         │                       │ Step 4: UserID & Complete         │
-         │                       │ → POST /api/register              │
-         │                       └────────────────────┬──────────────┘
-         │                                            │
-         │                                            │
-    ┌────▼──────────────────────┐        ┌───────────▼──────────┐
-    │ Login.tsx                 │        │ localStorage:        │
-    │ Auto-load saved UserID    │        │ - biovault_userId    │
-    │ (from registration)       │        │ - deviceToken        │
-    └────┬──────────────────────┘        └──────────┬───────────┘
-         │
-    ┌────▼──────────────────────────────────────────────────────┐
-    │ FingerprintScanner (mode=login)                            │
-    │ → Uses stored userId automatically                        │
-    │ → Fingerprint must match registration                     │
-    │ → POST /api/fingerprint/verify (with stored userId)       │
-    │ → Backend checks: GET /api/user/check                      │
-    └────────────┬──────────────────────────────┬────────────────┘
-                 │                                  │
-        ┌────────▼───────────┐           ┌─────────▼────────────────┐
-        │ ✅ VERIFIED        │           │ ❌ MISMATCH OR NOT FOUND │
-        └────────┬───────────┘           └─────────┬────────────────┘
-                 │                                 │
-        ┌────────▼───────────────────┐    ┌────────▼──────────────┐
-        │ FaceScanner (mode=login)    │    │ TempAccess.tsx       │
-        │ → Face must match           │    │ Step: Enter Temp Code│
-        │ → POST /api/face/verify     │    │ → Temporary device   │
-        └────────┬───────────────────┘    │   binding            │
-                 │                        └────────┬──────────────┘
-        ┌────────▼───────────┐                    │
-        │ ✅ ALL VERIFIED    │           ┌────────▼──────────────┐
-        └────────┬───────────┘           │ Face Auth Verify      │
-                 │                       │ + Device Binding      │
-        ┌────────▼───────────────────┐   │ (restricted access)   │
-        │ Dashboard.tsx               │   └────────┬──────────────┘
-        │ ✅ FULL ACCESS GRANTED      │           │
-        │ - Shows User Profile        │    ┌──────▼──────┐
-        │ - Wallet Module             │    │ RESTRICTED  │
-        │ - Images Module             │    │ DASHBOARD   │
-        │ - Settings & More           │    └─────────────┘
-        └─────────────────────────────┘
+**PATH 1: Device Match (Existing User with Same Phone)**
+- Fingerprint Found → Device Match ✅
+- Face Authentication ✅
+- Full Dashboard Access ✓
+
+**PATH 2: Device Mismatch (Existing User with Different Phone/Device)**
+- Fingerprint Found BUT Device Different ❌
+- → TempAccess.tsx: Enter Temporary Code
+- → Face Authentication Verify
+- → Device Rebind (update binding)
+- → Restricted Dashboard (limited access) 
+
+**PATH 3: Fingerprint Not Found (New User)**
+- Biometric NOT in system = **Create New Account**
+- TempAccess.tsx: Generate Temp Code (as entry point)
+- Register Fingerprint + Face
+- Generate Unique ID + Device Binding
+- Full Dashboard Access ✓
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           BIOVAULT COMPLETE AUTHENTICATION FLOW                 │
+└─────────────────────────────────────────────────────────────────┘
+
+                     ┌──────────────────┐
+                     │  APP START       │
+                     │  Splash Screen   │
+                     └────────┬─────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │  Fingerprint Scan? │
+                    └────┬────────────┬──┘
+                         │            │
+              ┌──────────┴─┐    ┌────┴──────────────┐
+              │             │    │                  │
+    ┌─────────▼──┐  ┌───────▼─────────┐  ┌────────▼──────────┐
+    │ FOUND      │  │ DEVICE ID?      │  │ NOT FOUND         │
+    │ (Existing  │  │ (Check Binding) │  │ (New User)        │
+    │ User)      │  │                 │  │                   │
+    └─────────┬──┘  └───┬──────────┬──┘  └────────┬──────────┘
+              │         │          │              │
+         MATCH │    MATCH      MISMATCH      └─────▼──────┐
+              │         │          │              │       │
+    ┌─────────▼──────┐  │  ┌───────▼───┐  ┌──────▼──────┐
+    │ Face Auth      │  │  │ RESTRICTED│  │ TempAccess  │
+    │ (Login mode)   │  │  │ PATH      │  │ .tsx        │
+    └────────┬───────┘  │  │ Need Temp │  │ Generate    │
+             │          │  │ Code      │  │ Temp Code   │
+    ┌────────▼──────┐   │  └──────┬────┘  └──────┬──────┘
+    │ ✅ VERIFIED   │   │         │             │
+    └────────┬──────┘   │  ┌──────▼─────┐      │
+             │          │  │ Face Auth   │      │
+    ┌────────▼──────────┼─▼──(Temp Mode)◄──────┘
+    │              │    │  └──────┬─────┘
+    │ DASHBOARD    │    │         │
+    │ FULL ACCESS  │    │  ┌──────▼──────┐
+    │ ✅           │    │  │ Device      │
+    │              │    │  │ Rebind      │
+    └──────────────┘    │  └──────┬──────┘
+                        │         │
+                        │  ┌──────▼─────────┐
+                        │  │ DASHBOARD      │
+                        │  │ RESTRICTED     │
+                        │  │ (Temp Access)  │
+                        │  └────────────────┘
+                        │
+                        └─→ FingerprintScanner (Register)
+                            ↓
+                           FaceScanner (Register)
+                            ↓
+                           Generate ID + Bind Device
+                            ↓
+                           DASHBOARD FULL ACCESS ✓
 ```
 
-### **Backend API Status (Running on Render)**
+## Authentication Flow Logic
+
+### **Three Possible Login Paths**
+
+1. **Device Match (Existing Registered User + Same Phone)**
+   - Fingerprint scan → Finds match ✅
+   - Device ID check → Device matches ✅
+   - Face authentication → Successful ✅
+   - **Result: FULL DASHBOARD ACCESS** with all features unlocked
+
+2. **Device Mismatch (Existing Registered User + Different Phone)**
+   - Fingerprint scan → Finds match ✅
+   - Device ID check → Device doesn't match ❌
+   - **Triggers: Temporary Access Flow**
+   - Generate temporary code (sent to registered email/message)
+   - User enters temp code in TempAccess.tsx
+   - Face authentication (to verify identity)
+   - Device rebind (update device binding for this phone)
+   - **Result: RESTRICTED DASHBOARD** until device is fully trusted
+
+3. **Biometric Not Found (New User)**
+   - Fingerprint scan → NOT found in system ❌
+   - **Triggers: New User Registration**
+   - Generate temporary code (for new user verification)
+   - Register fingerprint biometric
+   - Register face authentication
+   - Generate unique USER_ID
+   - Bind device to account
+   - **Result: FULL DASHBOARD ACCESS** with new account created
+
+### **backend APIs Working**
 
 ```
 ✅ https://biovault-app.onrender.com (Live & Connected to MongoDB)
@@ -204,18 +231,20 @@ POST /api/temp-code/verify ................... Verify temporary code
 
 ### **What's Implemented & Working**
 
-| Feature | Status | Location |
-|---------|--------|----------|
-| **Registration Flow** | ✅ Complete | `src/pages/Register.tsx` |
-| **Login with UserID** | ✅ Complete | `src/pages/Login.tsx` |
-| **Fingerprint Scan** | ✅ Complete | `src/components/FingerprintScanner.tsx` |
-| **Face Authentication** | ✅ Complete | `src/components/FaceScanner.tsx` |
-| **Device Binding** | ✅ Complete | `src/lib/authService.ts` |
-| **Temp Access Flow** | ✅ Complete | `src/pages/TempAccess.tsx` |
-| **Dashboard** | ✅ Complete | `src/pages/Dashboard.tsx` |
-| **Backend APIs** | ✅ Live | `server/index.js` on Render |
-| **MongoDB Storage** | ✅ Connected | MongoDB Atlas |
-| **Android Build** | ✅ Success | APK ready to install |
+| Feature | Status | Path | Details |
+|---------|--------|------|---------|
+| **Fingerprint Scan** | ✅ Complete | Login/Register | Detects if user exists in system |
+| **Device Match (Same Phone)** | ✅ Complete | Existing User | Direct to Face Auth + Dashboard |
+| **Device Mismatch (Different Phone)** | ✅ Complete | Restricted | Requires Temp Code → Face Auth → Limited Dashboard |
+| **Biometric Not Found (New User)** | ✅ Complete | New Registration | Generate Temp Code → Register Biometrics → Generate ID |
+| **Face Authentication** | ✅ Complete | Login/Register | Verify face embedding |
+| **Temporary Code Generation** | ✅ Complete | Device Mismatch + New User | Entry point for both paths |
+| **Temporary Code Verification** | ✅ Complete | Temp Access | Validate code and enable biometrics |
+| **Device Binding** | ✅ Complete | Registration | Create/Update device relationship |
+| **Device Rebind** | ✅ Complete | Temp Access | Update binding for new device |
+| **Dashboard (Full Access)** | ✅ Complete | Login Success | User Profile, Wallet, Images, etc |
+| **Dashboard (Restricted)** | ✅ Complete | Temp Access | Limited features for temporary users |
+| **Backend APIs** | ✅ Live | All Paths | Render + MongoDB Atlas |
 
 ## What Was Changed In This Phase
 
