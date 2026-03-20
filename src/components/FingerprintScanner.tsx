@@ -66,10 +66,21 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 console.log('📍 Fingerprint verification result:', result);
                 
                 if (!result.ok) {
-                  throw new Error(result.reason || 'User or fingerprint not found in database');
+                  throw new Error(result.reason || 'User not found in database');
                 }
                 
-                // Success - fingerprint verified locally, user has fingerprint in database
+                // STRICT: Require fingerprint to be registered
+                if (!result.fingerprintRegistered) {
+                  throw new Error('❌ Fingerprint not registered for this user. Please re-register.');
+                }
+                
+                // STRICT: Require face to be registered
+                if (!result.faceRegistered) {
+                  throw new Error('❌ Face data not registered. Please re-register.');
+                }
+                
+                console.log('✅ User has both fingerprint and face registered - proceeding to face verification');
+                // Success - fingerprint verified locally, user has fingerprint + face in database
                 setStatus('success');
                 setMessage('✓ Fingerprint Verified');
                 setTimeout(onSuccess, SUCCESS_HOLD_MS);

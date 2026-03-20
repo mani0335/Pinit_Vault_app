@@ -358,7 +358,7 @@ app.post('/api/face', (req, res) => {
 
 // POST /api/user/check
 // body: { userId }
-// Checks if user exists and has fingerprint registered (for login)
+// Checks if user exists and has fingerprint + face registered (for login)
 app.post('/api/user/check', (req, res) => {
   const { userId } = req.body || {};
   console.log('🔍 POST /api/user/check:', userId);
@@ -372,9 +372,16 @@ app.post('/api/user/check', (req, res) => {
           console.error('❌ /api/user/check - User not found:', userId);
           return res.status(404).json({ ok: false, reason: 'User not found' });
         }
-        console.log('✅ /api/user/check - User exists:', userId, '| fingerprintRegistered:', !!rec.fingerprintRegistered, '| faceRegistered:', !!rec.face_embedding);
-        // Just check if user exists, don't require fingerprint during registration check
-        return res.json({ ok: true, message: 'User found', fingerprintRegistered: !!rec.fingerprintRegistered, faceRegistered: !!rec.face_embedding });
+        const hasFingerprintRegistered = !!(rec.webauthn_credential);
+        const hasFaceRegistered = !!(rec.face_embedding && rec.face_embedding.length > 0);
+        console.log('✅ /api/user/check - User exists:', userId, '| fingerprintRegistered:', hasFingerprintRegistered, '| faceRegistered:', hasFaceRegistered);
+        // Check if both fingerprint and face are registered
+        return res.json({ 
+          ok: true, 
+          message: 'User found', 
+          fingerprintRegistered: hasFingerprintRegistered,
+          faceRegistered: hasFaceRegistered 
+        });
       } catch (err) {
         console.error('❌ /api/user/check - Mongo error:', err.message || err);
         return res.status(500).json({ ok: false, reason: 'Failed to verify user' });
@@ -388,8 +395,13 @@ app.post('/api/user/check', (req, res) => {
     console.log('❌ User check: User not found -', userId);
     return res.status(404).json({ ok: false, reason: 'User not found' });
   }
-  console.log('✅ User check: User exists -', userId, '- fingerprint registered:', record.fingerprintRegistered);
-  return res.json({ ok: true, message: 'User found', fingerprintRegistered: !!record.fingerprintRegistered });
+  console.log('✅ User check: User exists -', userId, '- fingerprint registered:', !!record.webauthn_credential, '- face registered:', !!(record.face_embedding && record.face_embedding.length > 0));
+  return res.json({ 
+    ok: true, 
+    message: 'User found', 
+    fingerprintRegistered: !!record.webauthn_credential,
+    faceRegistered: !!(record.face_embedding && record.face_embedding.length > 0)
+  });
 });
 
 // POST /api/fingerprint/verify
