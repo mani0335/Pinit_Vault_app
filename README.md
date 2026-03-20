@@ -161,6 +161,82 @@ VAULT DASHBOARD (Full Access)
 
 Your BioVault app is **fully functional** with all core flows implemented and working:
 
+### **Current App Flow (With MongoDB Integration) ✅**
+
+```mermaid
+graph TD
+    A["🏠 Index<br/>Splash Screen<br/>Auto-navigate 1.8s"] -->|navigate| B["🔑 Login Page"]
+    
+    B -->|Check Storage| C{userId<br/>Exists?}
+    C -->|NO| D["📝 Register Page"]
+    C -->|YES| E["📱 Fingerprint Scan"]
+    
+    E -->|Success| F["👤 Face Scan"]
+    E -->|Error: user not found| D
+    E -->|Error: device mismatch| G["🔄 Temp Access"]
+    
+    F -->|Success| H["✅ Access Granted<br/>Auto-navigate 800ms"]
+    F -->|Error| F
+    
+    H -->|navigate| I["📊 Dashboard<br/>Protected Route"]
+    
+    D -->|Step 1| J["🎫 Temp ID Generated"]
+    J -->|Continue| K["📱 Fingerprint Scan"]
+    K -->|Success| L["👤 Face Scan"]
+    L -->|Success| M["🆔 Unique ID Created<br/>from MongoDB"]
+    M -->|Click Store & Verify| N["💾 Save to MongoDB"]
+    N -->|Success| O["✅ Registration Complete"]
+    O -->|Login Now| B
+    O -->|Home| A
+    
+    G -->|Recovery Flow| P["Temp Code Entry<br/>or Alternative Auth"]
+    P -->|Success| I
+    
+    I -->|Logout| B
+    
+    style A fill:#667eea,stroke:#333,color:#fff
+    style B fill:#1e40af,stroke:#333,color:#fff
+    style D fill:#16a34a,stroke:#333,color:#fff
+    style E fill:#2563eb,stroke:#333,color:#fff
+    style F fill:#2563eb,stroke:#333,color:#fff
+    style H fill:#15803d,stroke:#333,color:#fff
+    style I fill:#1e3a8a,stroke:#333,color:#fff
+    style G fill:#ea580c,stroke:#333,color:#fff
+    style N fill:#7c3aed,stroke:#333,color:#fff
+    style O fill:#059669,stroke:#333,color:#fff
+```
+
+### **Flow Summary:**
+
+#### **New User Registration:**
+1. Splash Screen → Auto-navigate to Login
+2. Login checks for saved `userId` → NOT found → Redirect to Register
+3. Register Page (7 Steps):
+   - 🎫 Generate temporary ID
+   - 📱 Fingerprint scan
+   - 👤 Face scan
+   - 🆔 **UNIQUE ID CREATED** (generated from MongoDB)
+   - 💾 Click "Store & Verify" → Save to MongoDB with face embedding
+   - ✅ Registration Complete
+   - 🔑 "Login Now" → Back to Login page
+
+#### **Returning User Login:**
+1. Splash Screen → Auto-navigate to Login
+2. Login page checks storage → userId FOUND ✅
+3. 📱 Fingerprint scan → Verify against MongoDB
+4. 👤 Face scan → Verify face embedding similarity
+5. ✅ Access Granted → Auto-navigate to Dashboard
+
+#### **Error Handling:**
+- **User Not Found** → Redirect to Register
+- **Device Mismatch** → Redirect to Temp Access
+- **Face Scan Failed** → Retry face scan
+
+### **Data Storage:**
+- ✅ **Local**: userId + faceEmbedding saved in Capacitor Preferences
+- ✅ **Database**: User profile, fingerprint, and face data stored in MongoDB Atlas
+- ✅ **Dual Storage**: Capacitor Preferences (primary) + localStorage (fallback)
+
 ### **Current Flow Implementation**
 
 The app now follows a **single-path architecture** that branches at fingerprint detection:
