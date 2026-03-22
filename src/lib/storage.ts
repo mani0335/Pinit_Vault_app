@@ -38,26 +38,15 @@ export const appStorage = {
 
   /**
    * Get a value from persistent storage
-   * Tries localStorage FIRST (instant, always available), then Capacitor Preferences
+   * Tries Capacitor Preferences FIRST (permanent Android storage), then falls back to localStorage
    */
   async getItem(key: string): Promise<string | null> {
-    // Try localStorage FIRST (synchronous, always available)
-    try {
-      const value = localStorage.getItem(key);
-      if (value !== null) {
-        console.log(`✅ Storage: Retrieved from localStorage - ${key}`);
-        return value;
-      }
-    } catch (localErr) {
-      console.warn(`⚠️ Storage: localStorage retrieval failed:`, localErr);
-    }
-
-    // Fallback to Capacitor Preferences if not in localStorage
+    // Try Capacitor Preferences FIRST (permanent storage on Android)
     try {
       const { value } = await Preferences.get({ key });
       if (value !== null) {
-        console.log(`✅ Storage: Retrieved from Capacitor Preferences - ${key}`);
-        // Sync back to localStorage
+        console.log(`✅ Storage: Retrieved from Capacitor Preferences (PERSISTENT) - ${key}`);
+        // Also sync to localStorage for fast access
         localStorage.setItem(key, value);
         return value;
       }
@@ -65,7 +54,18 @@ export const appStorage = {
       console.warn(`⚠️ Storage: Capacitor Preferences retrieval failed:`, capErr);
     }
 
-    console.log(`⚠️ Storage: Key not found - ${key}`);
+    // Fallback to localStorage if not in Capacitor (web environment)
+    try {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        console.log(`✅ Storage: Retrieved from localStorage (FALLBACK) - ${key}`);
+        return value;
+      }
+    } catch (localErr) {
+      console.warn(`⚠️ Storage: localStorage retrieval failed:`, localErr);
+    }
+
+    console.log(`⚠️ Storage: Key not found in either storage - ${key}`);
     return null;
   },
 
