@@ -1,0 +1,41 @@
+services:
+  # Backend API Service
+  - type: web
+    name: biovault-app
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    envVars:
+      - key: MONGODB_URI
+        scope: build
+        value: mongodb+srv://manish:Manish%401614@cluster0.jwchpax.mongodb.net/biovault?appName=Cluster0&retryWrites=true&w=majority
+      - key: MONGODB_DB
+        scope: build
+        value: biovault
+      - key: JWT_SECRET
+        scope: build
+        value: biovault-secret-key-production
+      - key: NODE_ENV
+        scope: build
+        value: production
+      - key: PORT
+        scope: build
+        value: "3333"
+
+  # Frontend Static Site
+  - type: static_site
+    name: biovault-web
+    runtime: static
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - path: /api/*
+        destination: https://biovault-app.onrender.com/api/:path
+    headers:
+      - path: "/*"
+        name: "Cache-Control"
+        value: "no-cache"
