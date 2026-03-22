@@ -16,13 +16,14 @@ const Login = () => {
   const [step, setStep] = useState<Step>("fingerprint");
   const [isLoading, setIsLoading] = useState(true);
   const [notRegisteredError, setNotRegisteredError] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if user has already registered (userId exists in Capacitor storage)
     const checkRegistration = async () => {
       try {
         const savedUserId = await appStorage.getItem("biovault_userId");
-        console.log('📍 Login: checking saved userId:', savedUserId);
+        console.log('📍 Login: Checking saved userId:', savedUserId);
         
         if (!savedUserId) {
           console.log('❌ Login: No saved userId found');
@@ -32,6 +33,7 @@ const Login = () => {
         }
         
         console.log('✅ Login: User is registered with ID:', savedUserId);
+        setUserId(savedUserId);
         // User exists, ready to login with biometrics
         setIsLoading(false);
       } catch (err) {
@@ -42,7 +44,7 @@ const Login = () => {
     };
     
     checkRegistration();
-  }, [navigate]);
+  }, []);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -120,21 +122,28 @@ const Login = () => {
                 <FingerprintScanner
                   mode="login"
                   required={true}
-                  onSuccess={() => setStep("face")}
+                  onSuccess={() => {
+                    console.log('✅ Fingerprint verified - proceeding to face authentication');
+                    setStep("face");
+                  }}
                   onError={(err) => {
+                    console.log('❌ Fingerprint authentication error:', err);
                     // route based on server reason: device mismatch -> temp access, user not registered -> register
                     try {
                       const msg = (err || '').toString().toLowerCase();
                       if (msg.includes('device mismatch')) {
+                        console.log('🔄 Device mismatch - redirecting to temp access');
                         // go to temp access flow
                         navigate('/temp-access');
                         return;
                       }
                       if (msg.includes('user not registered') || msg.includes('not registered') || msg.includes('not authorized') || msg.includes('user not found') || msg.includes('not found')) {
+                        console.log('🔄 User not found - redirecting to register');
                         navigate('/register');
                         return;
                       }
                     } catch (e) {
+                      console.error('🔄 Error in error handler - redirecting to register');
                       // fallback: send user to register
                       navigate('/register');
                     }
@@ -148,9 +157,16 @@ const Login = () => {
                 <h2 className="text-xl md:text-2xl font-display tracking-wide text-center mb-6 text-foreground">Face Verification</h2>
                 <FaceScanner
                   mode="login"
-                  onSuccess={() => { setStep("success"); setTimeout(() => navigate("/dashboard"), 800); }}
+                  onSuccess={(faceData) => {
+                    console.log('✅ Face authentication successful - navigating to dashboard');
+                    setStep("success");
+                    setTimeout(() => {
+                      console.log('🚀 Redirecting to dashboard...');
+                      navigate("/dashboard");
+                    }, 1000);
+                  }}
                   onError={() => {
-                    // Keep user in face step so they can retry immediately.
+                    console.log('❌ Face authentication failed - allowing retry');
                     setStep("face");
                   }}
                 />
