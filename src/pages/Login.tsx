@@ -18,6 +18,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [notRegisteredError, setNotRegisteredError] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [hasNavigatedToDashboard, setHasNavigatedToDashboard] = useState(false);
 
   useEffect(() => {
     // Check if user has already registered (userId exists in Capacitor storage OR passed via navigation)
@@ -147,25 +148,19 @@ const Login = () => {
                   }}
                   onError={(err) => {
                     console.log('❌ Fingerprint authentication error:', err);
-                    // route based on server reason: device mismatch -> temp access, user not registered -> register
-                    try {
-                      const msg = (err || '').toString().toLowerCase();
-                      if (msg.includes('device mismatch')) {
-                        console.log('🔄 Device mismatch - redirecting to temp access');
-                        // go to temp access flow
-                        navigate('/temp-access');
-                        return;
-                      }
-                      if (msg.includes('user not registered') || msg.includes('not registered') || msg.includes('not authorized') || msg.includes('user not found') || msg.includes('not found')) {
-                        console.log('🔄 User not found - redirecting to register');
-                        navigate('/register');
-                        return;
-                      }
-                    } catch (e) {
-                      console.error('🔄 Error in error handler - redirecting to register');
-                      // fallback: send user to register
-                      navigate('/register');
+                    // Only redirect on VERY specific errors
+                    const msg = (err || '').toString().toLowerCase();
+                    
+                    // DEVICE MISMATCH - send to temp access
+                    if (msg.includes('device mismatch')) {
+                      console.log('🔄 Device mismatch detected - redirecting to temp access');
+                      navigate('/temp-access', { replace: false });
+                      return;
                     }
+                    
+                    // For other errors, STAY ON LOGIN PAGE and let user retry
+                    // Do NOT redirect to /register - user is already registered!
+                    console.log('⚠️ Fingerprint error but user is registered - staying on login for retry');
                   }}
                 />
               </div>
@@ -177,15 +172,27 @@ const Login = () => {
                 <FaceScanner
                   mode="login"
                   onSuccess={(faceData) => {
-                    console.log('✅ Face authentication successful - navigating to dashboard');
+                    // CRITICAL: Prevent multiple navigations
+                    if (hasNavigatedToDashboard) {
+                      console.log('⚠️ Already navigating to dashboard, ignoring duplicate success');
+                      return;
+                    }
+                    
+                    console.log('✅ Face authentication successful - preparing dashboard navigation');
+                    setHasNavigatedToDashboard(true);
                     setStep("success");
+                    
+                    // Wait for success animation, then navigate
                     setTimeout(() => {
-                      console.log('🚀 Redirecting to dashboard...');
-                      navigate("/dashboard");
-                    }, 1000);
+                      console.log('🚀 NAVIGATING TO DASHBOARD NOW');
+                      // Use absolute path and replace history to prevent going back
+                      navigate("/dashboard", { replace: true });
+                    }, 1500);
                   }}
                   onError={() => {
                     console.log('❌ Face authentication failed - allowing retry');
+                    // Reset navigation flag to allow retry
+                    setHasNavigatedToDashboard(false);
                     setStep("face");
                   }}
                 />
