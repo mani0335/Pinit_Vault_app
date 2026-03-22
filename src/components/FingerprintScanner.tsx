@@ -90,6 +90,20 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                 const msg = (e?.message || '').toString();
                 const friendly = msg || 'Fingerprint verification failed. Please try again.';
                 console.error('❌ Fingerprint login error:', friendly);
+                
+                // CRITICAL: If user not found, clear storage and signal to parent
+                if (msg.includes('User not found')) {
+                  console.log('⚠️ User not found in database - clearing stale userId from storage');
+                  await appStorage.removeItem('biovault_userId');
+                  
+                  // Signal parent component with special error code
+                  const directedMessage = 'REDIRECT_TO_REGISTER:User account not found. Please register first.';
+                  setStatus('error');
+                  setMessage('❌ Account not found. Redirecting...');
+                  onError?.(directedMessage);
+                  return;
+                }
+                
                 setStatus('error');
                 setMessage('❌ ' + friendly);
                 onError?.(friendly || 'Fingerprint verification failed');

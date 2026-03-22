@@ -150,6 +150,13 @@ const Login = () => {
                     // Only redirect on VERY specific errors
                     const msg = (err || '').toString().toLowerCase();
                     
+                    // SPECIAL: User not registered in database
+                    if (msg.includes('redirect_to_register')) {
+                      console.log('🔄 User account not found - clearing cache and redirecting to registration');
+                      navigate('/register', { replace: true });
+                      return;
+                    }
+                    
                     // DEVICE MISMATCH - send to temp access
                     if (msg.includes('device mismatch')) {
                       console.log('🔄 Device mismatch detected - redirecting to temp access');
