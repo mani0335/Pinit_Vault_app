@@ -4,7 +4,9 @@ const userSchema = new mongoose.Schema({
   userId: {
     type: String,
     unique: true,
-    required: true
+    sparse: true,
+    required: true,
+    index: true
   },
   deviceId: String,
   deviceToken: String,

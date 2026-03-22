@@ -125,7 +125,24 @@ const mongoInitPromise = (async () => {
     await mongoClient.connect();
     const db = mongoClient.db(dbName);
     mongoUsers = db.collection('users');
-    await mongoUsers.createIndex({ userId: 1 }, { unique: true });
+    
+    // Drop conflicting index if it exists
+    try {
+      const indexList = await mongoUsers.listIndexes().toArray();
+      console.log('📋 Existing indexes:', indexList.map(i => i.name));
+      
+      for (const idx of indexList) {
+        if (idx.name === 'userId_1') {
+          await mongoUsers.dropIndex('userId_1');
+          console.log('🔄 Dropped existing userId_1 index');
+        }
+      }
+    } catch (err) {
+      console.log('ℹ️  No indexes to drop:', err.message);
+    }
+    
+    // Create index with sparse: true to match expected schema
+    await mongoUsers.createIndex({ userId: 1 }, { unique: true, sparse: true });
     console.log(`✅ MongoDB connected to ${dbName}`);
   } catch (e) {
     console.error('❌ MongoDB init error:', e && e.message ? e.message : e);
