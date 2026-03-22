@@ -18,9 +18,8 @@ interface FingerprintScannerProps {
 }
 
 export function FingerprintScanner({ onSuccess, onError, mode, onCredential, required = false }: FingerprintScannerProps) {
-  const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error" | "not-available">("idle");
+  const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(null);
   const SUCCESS_HOLD_MS = 350;
   
   const cancelScan = useCallback(() => {
@@ -28,32 +27,11 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
     setMessage("Scan cancelled");
   }, []);
 
-  const skipFingerprint = useCallback(async () => {
-    console.log('⏭️ Skipping fingerprint verification - device has no biometric hardware');
-    setStatus('success');
-    setMessage('✓ Fingerprint Skipped');
-    setTimeout(onSuccess, SUCCESS_HOLD_MS);
-  }, [onSuccess]);
-
   const startScan = useCallback(async () => {
     setStatus("scanning");
-    setMessage("Checking biometric availability...");
+    setMessage("Place your finger on the sensor...");
 
     try {
-      // First, check if biometric is actually available on this device
-      const avail = await isBiometricAvailable();
-      
-      if (!avail.available) {
-        console.log('⚠️ Biometric not available on this device');
-        setBiometricAvailable(false);
-        setStatus('not-available');
-        setMessage('This device does not have biometric authentication available. You can skip this step or use face recognition instead.');
-        return;
-      }
-      
-      setBiometricAvailable(true);
-      setMessage("Place your finger on the sensor...");
-
       const win: any = window as any;
       const hasNativePlugin = !!(win.FingerprintAIO || win.Fingerprint);
 
@@ -435,17 +413,6 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             <Button variant="outline" size="lg" onClick={() => setStatus("idle")}>
               Retry
             </Button>
-          )}
-
-          {status === "not-available" && (
-            <>
-              <Button variant="cyber" size="lg" onClick={skipFingerprint}>
-                Skip Fingerprint
-              </Button>
-              <Button variant="outline" size="lg" onClick={() => setStatus("idle")}>
-                Try Again
-              </Button>
-            </>
           )}
         </div>
       </div>
