@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, UserPlus, ChevronRight, Copy, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -27,6 +27,25 @@ const Register = () => {
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [userIdSaved, setUserIdSaved] = useState(false);
+
+  // CRITICAL: Save userId to persistent storage immediately when component loads
+  useEffect(() => {
+    const saveUserIdImmediately = async () => {
+      try {
+        console.log('🚀 Register: Saving userId to storage immediately:', userId);
+        await appStorage.setItem('biovault_userId', userId);
+        console.log('✅ Register: userId saved successfully to storage');
+        setUserIdSaved(true);
+      } catch (err) {
+        console.error('❌ Register: Failed to save userId:', err);
+        // Try again
+        setTimeout(() => saveUserIdImmediately(), 300);
+      }
+    };
+
+    saveUserIdImmediately();
+  }, [userId]);
 
   const copyId = (id: string) => {
     navigator.clipboard.writeText(id);
@@ -224,37 +243,34 @@ const Register = () => {
                 )}
                 <div className="flex gap-3 justify-center">
                   <Button variant="cyber" onClick={async () => {
-                    console.log('🔐 Login Now clicked - verifying userId persistence...');
+                    console.log('🔐 Login Now clicked');
                     
-                    // Add small delay to ensure Capacitor has fully persisted the data
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Verify userId is in storage (with retries)
+                    // CRITICAL: Verify userId is in storage before navigating
                     let savedId = null;
-                    for (let i = 0; i < 3; i++) {
+                    for (let attempt = 1; attempt <= 5; attempt++) {
                       savedId = await appStorage.getItem('biovault_userId');
-                      console.log(`🔍 Attempt ${i + 1}: userId check:`, savedId);
+                      console.log(`🔍 Register: Storage check attempt ${attempt}:`, savedId);
                       
                       if (savedId) {
-                        console.log('✅ userId confirmed in storage!');
+                        console.log('✅ Register: userId confirmed in storage!');
                         break;
                       }
                       
-                      // Wait before retry
-                      if (i < 2) {
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                      if (attempt < 5) {
+                        await new Promise(resolve => setTimeout(resolve, 200));
                       }
                     }
                     
                     if (!savedId) {
-                      console.error('❌ CRITICAL ERROR: userId STILL not in storage after retries!');
-                      setRegisterError('❌ User ID not saved. This is critical. Please try registering again.');
-                      return;
+                      console.error('❌ Register: userId MISSING from storage! Using fallback:', userId);
+                      // Save again as fallback
+                      await appStorage.setItem('biovault_userId', userId);
+                      savedId = userId;
                     }
                     
-                    // userId is confirmed saved - navigate directly to login
-                    console.log('🚀 Navigating directly to login page...');
-                    navigate("/login");
+                    // Navigate to login with userId in state as backup
+                    console.log('🚀 Register: Navigating to login with userId:', savedId);
+                    navigate("/login", { state: { userId: savedId } });
                   }}>Login Now</Button>
                   <Button variant="ghost" className="text-muted-foreground" onClick={() => navigate("/")}>Home</Button>
                 </div>

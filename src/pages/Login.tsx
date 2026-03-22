@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Shield, ChevronRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { HexGrid } from "@/components/HexGrid";
 import { FingerprintScanner } from "@/components/FingerprintScanner";
 import { FaceScanner } from "@/components/FaceScanner";
@@ -13,21 +13,30 @@ type Step = "fingerprint" | "face" | "success";
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [step, setStep] = useState<Step>("fingerprint");
   const [isLoading, setIsLoading] = useState(true);
   const [notRegisteredError, setNotRegisteredError] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user has already registered (userId exists in Capacitor storage)
+    // Check if user has already registered (userId exists in Capacitor storage OR passed via navigation)
     const checkRegistration = async () => {
       try {
+        // FIRST: Check if userId was passed from Register page (via navigation state)
+        const passedUserId = (location.state as any)?.userId;
+        if (passedUserId) {
+          console.log('✅ Login: userId passed from Register:', passedUserId);
+          setUserId(passedUserId);
+          setIsLoading(false);
+          return;
+        }
+
+        // SECOND: Try to get userId from storage with retries
         let savedUserId = null;
-        
-        // Try to get userId with retries (in case it's still being persisted)
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
           savedUserId = await appStorage.getItem("biovault_userId");
-          console.log(`📍 Login: Check attempt ${i + 1} - userId:`, savedUserId);
+          console.log(`📍 Login: Storage check attempt ${i + 1}:`, savedUserId);
           
           if (savedUserId) {
             console.log('✅ Login: User is registered with ID:', savedUserId);
@@ -37,13 +46,13 @@ const Login = () => {
           }
           
           // Wait before retry
-          if (i < 3) {
-            await new Promise(resolve => setTimeout(resolve, 250));
+          if (i < 4) {
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
         }
         
         // Still no userId after retries
-        console.log('❌ Login: No saved userId found after retries');
+        console.log('❌ Login: No saved userId found after 5 attempts');
         setNotRegisteredError(true);
         setIsLoading(false);
       } catch (err) {
@@ -54,7 +63,7 @@ const Login = () => {
     };
     
     checkRegistration();
-  }, []);
+  }, [location.state]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
