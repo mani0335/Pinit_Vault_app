@@ -46,7 +46,30 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             
             setMessage('Fingerprint verified. Registering...');
             
-            // On native biometric success, verify fingerprint with backend if this is login
+            // CRITICAL FOR REGISTRATION: Create credential object for native biometric
+            if (mode === 'register') {
+              console.log('📍 Register mode: Creating credential object for native fingerprint');
+              const nativeCredential = {
+                id: `native-${Date.now()}-${Math.random()}`,
+                type: 'public-key',
+                biometricType: 'fingerprint',
+                enrolledAt: Date.now(),
+                verified: true
+              };
+              onCredential?.(nativeCredential);
+              console.log('✅ Native fingerprint credential created and passed to parent');
+            }
+            
+            // For register mode: skip separate fingerprint registration (will be done in main /api/register)
+            if (mode === 'register') {
+              console.log('✅ Fingerprint registered locally for registration flow');
+              setStatus('success');
+              setMessage('✓ Fingerprint Registered');
+              setTimeout(onSuccess, SUCCESS_HOLD_MS);
+              return;
+            }
+            
+            // For login mode: verify fingerprint with backend if this is login
             if (mode === 'login') {
               try {
                 const userId = await appStorage.getItem('biovault_userId');
@@ -112,68 +135,8 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               }
             }
             
-            // For register mode: verify fingerprint was successfully registered in database
-            try {
-              const { getDeviceToken } = await import('@/lib/deviceToken');
-              const deviceToken = await getDeviceToken();
-              const userId = await appStorage.getItem('biovault_userId');
-              
-              console.log('📍 Registering Fingerprint - userId:', userId, 'deviceToken:', deviceToken);
-              
-              // CRITICAL: Validate both userId and deviceToken exist
-              if (!userId || userId.trim() === '') {
-                throw new Error('❌ User ID is missing. Please complete registration form first.');
-              }
-              if (!deviceToken || deviceToken.trim() === '') {
-                throw new Error('❌ Device token is missing. Please restart app and try again.');
-              }
-              
-              console.log('✅ STEP 1: userId and deviceToken validated');
-              
-              // Store fingerprint registration in backend
-              // Always use Render URL fallback so app works from anywhere (especially on phone)
-              const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
-              const url = `${API_BASE}/api/register-fingerprint`;
-              console.log('🔐 STEP 2: Calling:', url);
-              
-              const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, deviceToken, credential: null })
-              });
-              
-              console.log('📥 STEP 3: Response status:', response.status);
-              
-              const responseText = await response.text();
-              console.log('📄 Response text:', responseText.substring(0, 200));
-              
-              let data;
-              try {
-                data = JSON.parse(responseText);
-                console.log('✅ STEP 4: Parsed JSON:', data);
-              } catch (parseErr: any) {
-                console.error('❌ JSON parse error:', parseErr.message);
-                throw new Error(`Server error: ${responseText.substring(0, 100)}`);
-              }
-              
-              if (!response.ok) {
-                throw new Error(data.error || 'Failed to register fingerprint');
-              }
-              
-              console.log('✅ STEP 5: Fingerprint registered successfully');
-              setStatus('success');
-              setMessage('✓ Fingerprint Registered');
-              setTimeout(onSuccess, SUCCESS_HOLD_MS);
-              return;
-            } catch (dbErr: any) {
-              console.error('❌ Fingerprint registration error:', dbErr);
-              const msg = (dbErr?.message || 'Failed to register fingerprint').toString();
-              setStatus('error');
-              setMessage('❌ ' + msg);
-              onError?.(msg);
-              setTimeout(() => setStatus('idle'), 3000);
-              return;
-            }
+            // If we get here, neither register nor login mode was handled properly
+            throw new Error('Invalid fingerprint scanner mode');
           }
         } catch (nativeErr: any) {
           // User cancelled or biometric failed
