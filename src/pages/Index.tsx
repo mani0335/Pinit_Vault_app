@@ -3,16 +3,39 @@ import { motion } from "framer-motion";
 import { Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HexGrid } from "@/components/HexGrid";
+import { appStorage } from "@/lib/storage";
 
 const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // auto-navigate to fingerprint scan after splash animation
-    const t = setTimeout(() => {
-      navigate('/login');
-    }, 1800);
-    return () => clearTimeout(t);
+    // Check if user is registered FIRST, then route accordingly
+    const checkAndRoute = async () => {
+      try {
+        // Check if userId exists in device storage
+        const userId = await appStorage.getItem("biovault_userId");
+        console.log('🔍 Index: Checking registration status...', { userId });
+        
+        // Wait for splash animation (1.8s)
+        await new Promise(resolve => setTimeout(resolve, 1800));
+        
+        if (userId) {
+          // User is registered - go to LOGIN
+          console.log('✅ User registered (userId:', userId, ') → Going to Login');
+          navigate('/login');
+        } else {
+          // User is NOT registered - go to REGISTER
+          console.log('❌ No userId found → Going to Register');
+          navigate('/register');
+        }
+      } catch (err) {
+        console.error('❌ Index: Error checking registration:', err);
+        // On error, default to register (safer)
+        navigate('/register');
+      }
+    };
+    
+    checkAndRoute();
   }, [navigate]);
 
   return (

@@ -15,6 +15,7 @@ const Login = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("fingerprint");
   const [isLoading, setIsLoading] = useState(true);
+  const [notRegisteredError, setNotRegisteredError] = useState(false);
 
   useEffect(() => {
     // Check if user has already registered (userId exists in Capacitor storage)
@@ -24,8 +25,9 @@ const Login = () => {
         console.log('📍 Login: checking saved userId:', savedUserId);
         
         if (!savedUserId) {
-          console.log('❌ Login: No saved userId found - redirecting to register');
-          navigate("/register");
+          console.log('❌ Login: No saved userId found');
+          setNotRegisteredError(true);
+          setIsLoading(false);
           return;
         }
         
@@ -34,7 +36,8 @@ const Login = () => {
         setIsLoading(false);
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);
-        navigate("/register");
+        setNotRegisteredError(true);
+        setIsLoading(false);
       }
     };
     
@@ -88,6 +91,22 @@ const Login = () => {
             >
               <h2 className="text-lg font-display tracking-wider text-foreground mb-2">LOADING BIOMETRIC DATA</h2>
               <p className="text-muted-foreground font-mono text-sm">Verifying registered user...</p>
+            </motion.div>
+          ) : notRegisteredError ? (
+            <motion.div
+              key="not-registered"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="glass-surface rounded-2xl p-6 md:p-8 border border-accent/40 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-accent/20 border-2 border-accent flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">⚠️</span>
+              </div>
+              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">NOT REGISTERED</h2>
+              <p className="text-muted-foreground font-mono text-sm mb-6">No user account found. Please register first.</p>
+              <Button variant="cyber" className="w-full" onClick={() => navigate('/register')}>
+                Go to Registration
+              </Button>
             </motion.div>
           ) : (
             <motion.div
