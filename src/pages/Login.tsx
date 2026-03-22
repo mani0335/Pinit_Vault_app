@@ -22,19 +22,29 @@ const Login = () => {
     // Check if user has already registered (userId exists in Capacitor storage)
     const checkRegistration = async () => {
       try {
-        const savedUserId = await appStorage.getItem("biovault_userId");
-        console.log('📍 Login: Checking saved userId:', savedUserId);
+        let savedUserId = null;
         
-        if (!savedUserId) {
-          console.log('❌ Login: No saved userId found');
-          setNotRegisteredError(true);
-          setIsLoading(false);
-          return;
+        // Try to get userId with retries (in case it's still being persisted)
+        for (let i = 0; i < 4; i++) {
+          savedUserId = await appStorage.getItem("biovault_userId");
+          console.log(`📍 Login: Check attempt ${i + 1} - userId:`, savedUserId);
+          
+          if (savedUserId) {
+            console.log('✅ Login: User is registered with ID:', savedUserId);
+            setUserId(savedUserId);
+            setIsLoading(false);
+            return;
+          }
+          
+          // Wait before retry
+          if (i < 3) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+          }
         }
         
-        console.log('✅ Login: User is registered with ID:', savedUserId);
-        setUserId(savedUserId);
-        // User exists, ready to login with biometrics
+        // Still no userId after retries
+        console.log('❌ Login: No saved userId found after retries');
+        setNotRegisteredError(true);
         setIsLoading(false);
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);

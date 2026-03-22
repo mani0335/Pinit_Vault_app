@@ -224,18 +224,36 @@ const Register = () => {
                 )}
                 <div className="flex gap-3 justify-center">
                   <Button variant="cyber" onClick={async () => {
-                    // CRITICAL: Ensure userId is persisted before navigating
-                    const savedId = await appStorage.getItem('biovault_userId');
-                    console.log('🔐 About to login - stored userId:', savedId);
+                    console.log('🔐 Login Now clicked - verifying userId persistence...');
+                    
+                    // Add small delay to ensure Capacitor has fully persisted the data
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Verify userId is in storage (with retries)
+                    let savedId = null;
+                    for (let i = 0; i < 3; i++) {
+                      savedId = await appStorage.getItem('biovault_userId');
+                      console.log(`🔍 Attempt ${i + 1}: userId check:`, savedId);
+                      
+                      if (savedId) {
+                        console.log('✅ userId confirmed in storage!');
+                        break;
+                      }
+                      
+                      // Wait before retry
+                      if (i < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                      }
+                    }
                     
                     if (!savedId) {
-                      console.error('❌ ERROR: userId not in storage!');
-                      setRegisterError('User ID not saved. Please try again.');
+                      console.error('❌ CRITICAL ERROR: userId STILL not in storage after retries!');
+                      setRegisterError('❌ User ID not saved. This is critical. Please try registering again.');
                       return;
                     }
                     
-                    // userId is confirmed saved - navigate immediately
-                    console.log('✅ userId confirmed in storage - navigating to login');
+                    // userId is confirmed saved - navigate directly to login
+                    console.log('🚀 Navigating directly to login page...');
                     navigate("/login");
                   }}>Login Now</Button>
                   <Button variant="ghost" className="text-muted-foreground" onClick={() => navigate("/")}>Home</Button>
