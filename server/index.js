@@ -378,6 +378,7 @@ app.post('/api/face', (req, res) => {
 // POST /api/user/check
 // body: { userId }
 // Checks if user exists and has fingerprint + face registered (for login)
+// WITH FALLBACK: If MongoDB is down, check in-memory storage
 app.post('/api/user/check', (req, res) => {
   const { userId } = req.body || {};
   console.log('🔍 POST /api/user/check:', userId);
@@ -388,13 +389,29 @@ app.post('/api/user/check', (req, res) => {
       try {
         const rec = await mongoUsers.findOne({ userId });
         if (!rec) {
-          console.error('❌ /api/user/check - User not found:', userId);
-          return res.status(404).json({ ok: false, reason: 'User not found' });
+          console.warn(`⚠️  /api/user/check - User NOT in MongoDB: ${userId}, checking fallback...`);
+          
+          // FALLBACK: Check in-memory storage
+          const inMemRecord = users.get(userId);
+          if (!inMemRecord) {
+            console.error('❌ /api/user/check - User not found in MongoDB or memory:', userId);
+            return res.status(404).json({ ok: false, reason: 'User not found' });
+          }
+          
+          console.log('✅ /api/user/check - Found user in in-memory storage (MongoDB not ready yet):', userId);
+          const hasFingerprintRegistered = !!inMemRecord.webauthn_credential;
+          const hasFaceRegistered = !!(inMemRecord.face_embedding && inMemRecord.face_embedding.length > 0);
+          return res.json({ 
+            ok: true, 
+            message: 'User found (cached)', 
+            fingerprintRegistered: hasFingerprintRegistered,
+            faceRegistered: hasFaceRegistered 
+          });
         }
+        
         const hasFingerprintRegistered = !!(rec.webauthn_credential);
         const hasFaceRegistered = !!(rec.face_embedding && rec.face_embedding.length > 0);
         console.log('✅ /api/user/check - User exists:', userId, '| fingerprintRegistered:', hasFingerprintRegistered, '| faceRegistered:', hasFaceRegistered);
-        // Check if both fingerprint and face are registered
         return res.json({ 
           ok: true, 
           message: 'User found', 
@@ -403,6 +420,17 @@ app.post('/api/user/check', (req, res) => {
         });
       } catch (err) {
         console.error('❌ /api/user/check - Mongo error:', err.message || err);
+        // Try fallback to in-memory
+        const inMemRecord = users.get(userId);
+        if (inMemRecord) {
+          console.log('✅ /api/user/check - DB error, but found in memory:', userId);
+          return res.json({ 
+            ok: true, 
+            message: 'User found (fallback)', 
+            fingerprintRegistered: !!inMemRecord.webauthn_credential,
+            faceRegistered: !!(inMemRecord.face_embedding && inMemRecord.face_embedding.length > 0)
+          });
+        }
         return res.status(500).json({ ok: false, reason: 'Failed to verify user' });
       }
     })();

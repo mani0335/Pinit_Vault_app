@@ -366,35 +366,93 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
 }
 
 // POST /api/user/check - Check if user exists with registered fingerprint (for login)
-export async function checkUserRegistered(userId: string): Promise<{ ok: boolean; reason?: string; mode: "remote" }> {
+export async function checkUserRegistered(userId: string, retries = 3): Promise<{ ok: boolean; reason?: string; fingerprintRegistered?: boolean; faceRegistered?: boolean; mode: "remote" }> {
   // ALWAYS use remote API - no local fallback
   const apiUrl = apiBase(); // Will always be Render URL
-  console.log('🔐 checkUserRegistered: Calling', `${apiUrl}/api/user/check`);
-  const resp = await fetch(`${apiUrl}/api/user/check`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
-  });
   
-  const responseText = await resp.text();
-  console.log('📥 Response status:', resp.status);
+  let lastError: any = null;
   
-  let data;
-  try {
-    data = JSON.parse(responseText) as { ok?: boolean; reason?: string };
-    console.log('✅ JSON parsed:', data);
-  } catch (parseErr: any) {
-    console.error('❌ JSON parse failed:', parseErr.message);
-    throw new Error(`Failed to parse server response: ${parseErr.message}`);
+  // Retry logic for resilience
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`🔐 checkUserRegistered (attempt ${attempt}/${retries}): Calling ${apiUrl}/api/user/check`);
+      const resp = await fetch(`${apiUrl}/api/user/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      
+      const responseText = await resp.text();
+      console.log(`📥 Response status: ${resp.status}`);
+      
+      let data;
+      try {
+        data = JSON.parse(responseText) as { ok?: boolean; reason?: string; fingerprintRegistered?: boolean; faceRegistered?: boolean };
+        console.log('✅ JSON parsed:', data);
+      } catch (parseErr: any) {
+        console.error('❌ JSON parse failed:', parseErr.message);
+        lastError = new Error(`Failed to parse server response: ${parseErr.message}`);
+        
+        // Retry on parse error (might be temporary)
+        if (attempt < retries) {
+          console.log(`⏳ Retrying after 1 second...`);
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        throw lastError;
+      }
+      
+      if (!resp.ok) {
+        lastError = new Error(data.reason || `Check failed (${resp.status})`);
+        console.warn(`⚠️  Check failed on attempt ${attempt}: ${lastError.message}`);
+        
+        // Retry on network/server errors
+        if (attempt < retries && resp.status >= 500) {
+          console.log(`⏳ Server error, retrying after 1 second...`);
+          await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+          continue;
+        }
+        throw lastError;
+      }
+      
+      if (!data.ok) {
+        lastError = new Error(data.reason || 'User check failed');
+        console.warn(`⚠️  User check failed on attempt ${attempt}: ${lastError.message}`);
+        
+        // Retry on "user not found" as MongoDB might not be synced yet
+        if (attempt < retries && data.reason?.includes('not found')) {
+          console.log(`⏳ User not immediately found, retrying after 1 second...`);
+          await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+          continue;
+        }
+        throw lastError;
+      }
+      
+      console.log('✅ User registration check passed');
+      return { 
+        ok: true, 
+        fingerprintRegistered: data.fingerprintRegistered,
+        faceRegistered: data.faceRegistered,
+        mode: "remote" 
+      };
+    } catch (err: any) {
+      lastError = err;
+      console.error(`❌ Attempt ${attempt} failed:`, err.message);
+      
+      // Don't retry on auth errors
+      if (err.message?.includes('not registered') || err.message?.includes('device mismatch')) {
+        throw err;
+      }
+      
+      // Retry on network errors
+      if (attempt < retries) {
+        console.log(`⏳ Retrying after ${attempt} second(s)...`);
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+    }
   }
   
-  if (!resp.ok) {
-    throw new Error(data.reason || `Check failed (${resp.status})`);
-  }
-  
-  if (!data.ok) {
-    throw new Error(data.reason || 'User check failed');
-  }
-  
-  return { ok: true, mode: "remote" };
+  // All retries exhausted
+  throw lastError || new Error('User check failed after multiple retries');
 }
