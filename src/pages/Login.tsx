@@ -52,19 +52,18 @@ const Login = () => {
           }
         }
         
-        // Still no userId after retries
-        console.log('❌ Login: No saved userId found after 5 attempts');
-        setNotRegisteredError(true);
-        setIsLoading(false);
+        // Still no userId after retries - automatically redirect to registration
+        console.log('❌ Login: No saved userId found - redirecting to registration');
+        navigate('/register', { replace: true });
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);
-        setNotRegisteredError(true);
-        setIsLoading(false);
+        // On error, also redirect to registration
+        navigate('/register', { replace: true });
       }
     };
     
     checkRegistration();
-  }, [location.state]);
+  }, [location.state, navigate]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
