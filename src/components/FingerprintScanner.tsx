@@ -127,6 +127,19 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
                   return;
                 }
                 
+                // CRITICAL: If biometric not registered, redirect to re-registration
+                if (msg.includes('not registered')) {
+                  console.log('⚠️ Biometric data not registered - redirecting to registration');
+                  await appStorage.removeItem('biovault_userId');
+                  
+                  // Signal parent component with special error code
+                  const directedMessage = 'REDIRECT_TO_REGISTER:' + friendly;
+                  setStatus('error');
+                  setMessage('❌ Biometric not registered. Redirecting...');
+                  onError?.(directedMessage);
+                  return;
+                }
+                
                 setStatus('error');
                 setMessage('❌ ' + friendly);
                 onError?.(friendly || 'Fingerprint verification failed');
