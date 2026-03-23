@@ -155,6 +155,19 @@ const mongoInitPromise = (async () => {
 app.post('/api/register', (req, res) => {
   const { userId, deviceToken, webauthn, faceEmbedding } = req.body || {};
   console.log('📨 POST /api/register received:', { userId, deviceToken: deviceToken ? 'YES' : 'NO', webauthn: !!webauthn, faceEmbedding: !!faceEmbedding });
+  
+  // CRITICAL DEBUG: Show what's actually received
+  if (webauthn) {
+    console.log('✅ FINGERPRINT CREDENTIAL RECEIVED:', {
+      id: webauthn.id ? webauthn.id.substring(0, 30) : undefined,
+      type: webauthn.type,
+      biometricType: webauthn.biometricType,
+      verified: webauthn.verified
+    });
+  } else {
+    console.warn('⚠️  WARNING: NO FINGERPRINT CREDENTIAL RECEIVED! webauthn is:', webauthn);
+  }
+  
   if (!userId || !deviceToken) {
     console.error('❌ /api/register: Missing userId or deviceToken');
     return res.status(400).json({ error: 'Missing userId or deviceToken' });
@@ -189,6 +202,22 @@ app.post('/api/register', (req, res) => {
           { upsert: true }
         );
         console.log('✅ Successfully saved to MongoDB:', userId);
+        
+        // CRITICAL DEBUG: Verify what was actually saved
+        const savedRecord = await mongoUsers.findOne({ userId });
+        if (savedRecord) {
+          console.log('🔍 VERIFICATION - What was saved to MongoDB:', {
+            userId: savedRecord.userId,
+            fingerprintStored: !!savedRecord.webauthn_credential,
+            faceStored: !!(savedRecord.face_embedding && savedRecord.face_embedding.length > 0),
+            biometricEnabled: savedRecord.biometricEnabled,
+            createdAt: savedRecord.createdAt
+          });
+          if (savedRecord.webauthn_credential) {
+            console.log('   → Fingerprint credential ID:', savedRecord.webauthn_credential.id ? savedRecord.webauthn_credential.id.substring(0, 30) : 'N/A');
+          }
+        }
+        
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
       } catch (err) {
         console.error('❌ Mongo register error:', err.message || err);
