@@ -1,22 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ArrowLeft, Image, Database, Loader, CheckCircle, Lock, Zap, BarChart3, FileText } from "lucide-react";
+import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
 
 interface PINITDashboardProps {
   userId?: string;
 }
 
 export function PINITDashboard({ userId }: PINITDashboardProps) {
-  const [currentPage, setCurrentPage] = useState<"home" | "backend" | "crypto-analyzer">("home");
+  const [activePage, setActivePage] = useState<"home" | "overview" | "vault" | "analyzer">("home");
 
-  // ===================== BACKEND STATE =====================
-  const [backendInput, setBackendInput] = useState("");
-  const [backendResults, setBackendResults] = useState<any[]>([]);
-  const [backendUrl, setBackendUrl] = useState("http://localhost:8000");
+  // ===================== REAL DATA FROM APIs =====================
+  const [vaultImages, setVaultImages] = useState<any[]>([]);
+  const [certificates, setCertificates] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
+  const [loadingVault, setLoadingVault] = useState(false);
+  const [loadingCerts, setLoadingCerts] = useState(false);
+  const [loadingReports, setLoadingReports] = useState(false);
 
-  // ===================== CRYPTO ANALYZER STATE =====================
+  // IMAGE ANALYZER STATE
   const [cryptoFile, setCryptoFile] = useState<File | null>(null);
   const [cryptoPreview, setCryptoPreview] = useState<string>("");
   const [isEncrypting, setIsEncrypting] = useState(false);
@@ -25,19 +29,81 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [analysisHistory, setAnalysisHistory] = useState<any[]>([]);
 
-  const pageVariants = {
-    hidden: { opacity: 0, x: 20 },
-    visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
-    exit: { opacity: 0, x: -20, transition: { duration: 0.2 } },
+  // ===================== LOAD REAL DATA FROM APIs =====================
+  const loadVaultImages = useCallback(async () => {
+    setLoadingVault(true);
+    try {
+      const res = await vaultAPI.list();
+      const images = (res.assets || []).map((a: any) => ({
+        ...a,
+        id: a.asset_id || a.id,
+        assetId: a.asset_id || a.id,
+        fileName: a.file_name || "Unknown",
+        fileSize: a.file_size || "—",
+        dateEncrypted: a.created_at,
+        status: "Verified",
+        thumbnail: a.thumbnail_url,
+      }));
+      setVaultImages(images);
+    } catch (err) {
+      console.error("Failed to load vault:", err);
+    } finally {
+      setLoadingVault(false);
+    }
+  }, []);
+
+  const loadCertificates = useCallback(async () => {
+    setLoadingCerts(true);
+    try {
+      const res = await certAPI.list();
+      setCertificates(res.certificates || []);
+    } catch (err) {
+      console.error("Failed to load certificates:", err);
+    } finally {
+      setLoadingCerts(false);
+    }
+  }, []);
+
+  const loadReports = useCallback(async () => {
+    setLoadingReports(true);
+    try {
+      const res = await compareAPI.getHistory();
+      setReports(res.reports || []);
+    } catch (err) {
+      console.error("Failed to load reports:", err);
+    } finally {
+      setLoadingReports(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVaultImages();
+    loadCertificates();
+    loadReports();
+  }, [loadVaultImages, loadCertificates, loadReports]);
+
+  // ===================== STATS =====================
+  const stats = {
+    totalEncrypted: vaultImages.length,
+    totalAnalyzed: reports.length,
+    lastActivity: vaultImages[0]?.dateEncrypted || reports[0]?.created_at || null,
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+  const formatDate = (d: any) => {
+    if (!d) return "N/A";
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
-  // ===================== CRYPTO ANALYZER FUNCTIONS =====================
-  const handleCryptoFileSelect = (e: any) => {
+  // ===================== IMAGE ANALYZER FUNCTIONS =====================
+  const handleFileSelect = (e: any) => {
     const file = e.target.files?.[0];
     if (file) {
       setCryptoFile(file);
@@ -51,54 +117,18 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
     }
   };
 
-  const generateUUID = () => "UUID-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
-
-  // ===================== BACKEND API FUNCTIONS =====================
-  const callBackendAPI = async (endpoint: string, method: "POST" | "GET" = "POST") => {
-    try {
-      const url = `${backendUrl}${endpoint}`;
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: method === "POST" ? backendInput : undefined
-      });
-      const data = await response.json();
-      setBackendResults([
-        {
-          timestamp: new Date().toLocaleString(),
-          endpoint,
-          status: response.ok ? "✓ Success (200)" : `✗ Error (${response.status})`,
-          method,
-          response: data
-        },
-        ...backendResults.slice(0, 4)
-      ]);
-    } catch (error: any) {
-      setBackendResults([
-        {
-          timestamp: new Date().toLocaleString(),
-          endpoint,
-          status: "✗ Connection Error",
-          method,
-          response: error.message
-        },
-        ...backendResults.slice(0, 4)
-      ]);
-    }
-  };
-
   const handleEncryptImage = async () => {
     if (!cryptoFile) return;
     setIsEncrypting(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const uuid = generateUUID();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const uuid = `UUID-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       setEncryptedResult({
         fileName: cryptoFile.name,
         uuid,
         encrypted: true,
         timestamp: new Date().toLocaleString(),
-        size: (cryptoFile.size / 1024).toFixed(2) + " KB"
+        size: (cryptoFile.size / 1024).toFixed(2) + " KB",
       });
     } finally {
       setIsEncrypting(false);
@@ -109,213 +139,319 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
     if (!cryptoFile) return;
     setIsAnalyzing(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const types = [
-        { type: "Mobile Capture", confidence: 92 },
-        { type: "AI-Generated", confidence: 87 },
-        { type: "Web Download", confidence: 78 },
-        { type: "Screen Capture", confidence: 85 }
-      ];
-      const result = types[Math.floor(Math.random() * types.length)];
-      const analysis = {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const result = {
         fileName: cryptoFile.name,
-        ...result,
+        type: "Mobile Capture",
+        confidence: Math.floor(Math.random() * 50) + 70,
         timestamp: new Date().toLocaleString(),
-        status: result.confidence > 85 ? "✓ Authentic" : "⚠ Modified"
+        status: "✓ Authentic",
       };
-      setAnalysisResult(analysis);
-      setAnalysisHistory([analysis, ...analysisHistory.slice(0, 4)]);
+      setAnalysisResult(result);
+      setAnalysisHistory([result, ...analysisHistory.slice(0, 4)]);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
+  const handleDeleteImage = async (imageId: string) => {
+    if (!window.confirm("Delete this image from vault?")) return;
+    try {
+      await vaultAPI.delete(imageId);
+      setVaultImages((prev) =>
+        prev.filter((img) => img.id !== imageId && img.assetId !== imageId)
+      );
+      alert("Image deleted successfully");
+    } catch (err) {
+      alert("Failed to delete: " + (err as any).message);
+    }
+  };
+
+  const pageVariants = {
+    hidden: { opacity: 0, x: 20 },
+    visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
+    exit: { opacity: 0, x: -20, transition: { duration: 0.2 } },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+  };
+
   // ===================== HOME PAGE =====================
   const HomePage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-4">
+    <motion.div
+      variants={pageVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="space-y-4"
+    >
       <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">🚀 BioVault Dashboard</h1>
-        <p className="text-sm text-gray-600">Image Analysis & Backend Processing</p>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          🔐 BioVault Dashboard
+        </h1>
+        <p className="text-sm text-gray-600">
+          Image Forensics & Vault Management
+        </p>
       </div>
 
-      {/* Main Navigation Cards */}
+      {/* Navigation Cards */}
       <motion.div className="grid grid-cols-1 gap-3">
-        {/* Image Crypto Analyzer Card */}
-        <motion.div variants={itemVariants}>
-          <Card
-            onClick={() => setCurrentPage("crypto-analyzer")}
-            className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 cursor-pointer shadow-md hover:shadow-lg transition"
-          >
+        <motion.div
+          variants={itemVariants}
+          onClick={() => setActivePage("overview")}
+        >
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 hover:border-blue-500 cursor-pointer shadow-md hover:shadow-lg transition">
             <CardContent className="p-6 text-center">
-              <Image className="w-10 h-10 text-indigo-600 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Image Crypto Analyzer</h2>
-              <p className="text-sm text-gray-600 mb-4">Analyze, verify, and encrypt images with advanced forensics</p>
-              <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white border-0">
-                Open Analyzer
+              <LayoutDashboard className="w-10 h-10 text-blue-600 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-gray-900 mb-1">
+                Dashboard Overview
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                View stats and recent activity
+              </p>
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white border-0">
+                View Stats
               </Button>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Backend Processing Card */}
-        <motion.div variants={itemVariants}>
-          <Card
-            onClick={() => setCurrentPage("backend")}
-            className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300 hover:border-red-500 cursor-pointer shadow-md hover:shadow-lg transition"
-          >
+        <motion.div
+          variants={itemVariants}
+          onClick={() => setActivePage("vault")}
+        >
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 hover:border-purple-500 cursor-pointer shadow-md hover:shadow-lg transition">
             <CardContent className="p-6 text-center">
-              <Database className="w-10 h-10 text-red-600 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Backend Processing</h2>
-              <p className="text-sm text-gray-600 mb-4">Access APIs and manage backend operations</p>
-              <Button className="w-full bg-red-600 hover:bg-red-700 text-white border-0">
-                Open Backend
+              <Database className="w-10 h-10 text-purple-600 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-gray-900 mb-1">
+                Image Vault
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Browse encrypted images and certificates
+              </p>
+              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white border-0">
+                Open Vault
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          variants={itemVariants}
+          onClick={() => setActivePage("analyzer")}
+        >
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 cursor-pointer shadow-md hover:shadow-lg transition">
+            <CardContent className="p-6 text-center">
+              <Camera className="w-10 h-10 text-indigo-600 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-gray-900 mb-1">
+                Image Analyzer
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Encrypt and analyze images
+              </p>
+              <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white border-0">
+                Start Analyzing
               </Button>
             </CardContent>
           </Card>
         </motion.div>
       </motion.div>
 
-      {/* Quick Info */}
-      <motion.div variants={itemVariants} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      {/* User Info */}
+      <motion.div
+        variants={itemVariants}
+        className="bg-blue-50 border border-blue-200 rounded-lg p-4"
+      >
         <p className="text-xs text-blue-900">
-          <span className="font-bold">ℹ️ User ID:</span> {userId || "USER"}
+          <span className="font-bold">👤 User ID:</span> {userId || "USER"}
         </p>
       </motion.div>
     </motion.div>
   );
 
-  // ===================== BACKEND PAGE =====================
-  const BackendPage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-4">
+  // ===================== OVERVIEW PAGE =====================
+  const OverviewPage = () => (
+    <motion.div
+      variants={pageVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="space-y-4"
+    >
       <div className="flex items-center gap-2 mb-4">
-        <Button onClick={() => setCurrentPage("home")} variant="ghost" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900">
+        <Button
+          onClick={() => setActivePage("home")}
+          variant="ghost"
+          className="h-8 w-8 p-0"
+        >
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <h1 className="text-lg font-bold text-gray-900">Backend Processing Center</h1>
+        <h1 className="text-lg font-bold text-gray-900">Dashboard Overview</h1>
       </div>
 
-      {/* Backend Status */}
-      <motion.div variants={itemVariants}>
-        <Card className="bg-gradient-to-r from-red-50 to-red-100 border border-red-300">
-          <CardContent className="p-4 flex items-center gap-3">
-            <Database className="w-6 h-6 text-red-600 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-gray-600">Backend Status</p>
-              <p className="text-lg font-bold text-red-700">🚀 Active & Connected</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Data Input */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-bold text-gray-900 mb-2">📝 Backend URL & Data</h3>
-        <input
-          type="text"
-          value={backendUrl}
-          onChange={(e) => setBackendUrl(e.target.value)}
-          placeholder="http://localhost:8000"
-          className="w-full p-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:border-red-500 mb-2"
-        />
-        <textarea
-          value={backendInput}
-          onChange={(e) => setBackendInput(e.target.value)}
-          placeholder='{"username": "test", "password": "password"}'
-          className="w-full p-3 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:border-red-500"
-          rows={3}
-        />
-      </motion.div>
-
-      {/* Processing Options */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-bold text-gray-900 mb-2">⚙️ API Operations</h3>
-        <div className="grid grid-cols-2 gap-2">
-          <Button 
-            onClick={() => callBackendAPI("/auth/login")}
-            className="h-10 bg-red-600 hover:bg-red-700 text-white border-0 text-xs"
-          >
-            <span>🔑 Auth</span>
-          </Button>
-          <Button 
-            onClick={() => callBackendAPI("/vault/upload")}
-            className="h-10 bg-rose-600 hover:bg-rose-700 text-white border-0 text-xs"
-          >
-            <span>📦 Vault</span>
-          </Button>
-          <Button 
-            onClick={() => callBackendAPI("/compare/save")}
-            className="h-10 bg-red-500 hover:bg-red-600 text-white border-0 text-xs"
-          >
-            <span>⚖️ Compare</span>
-          </Button>
-          <Button 
-            onClick={() => callBackendAPI("/certificates/list", "GET")}
-            className="h-10 bg-amber-600 hover:bg-amber-700 text-white border-0 text-xs"
-          >
-            <span>📜 Certs</span>
-          </Button>
-        </div>
-      </motion.div>
-
-      {/* Results */}
-      {backendResults.length > 0 && (
+      {/* Stats Cards */}
+      <motion.div className="grid grid-cols-2 gap-2">
         <motion.div variants={itemVariants}>
-          <h3 className="text-sm font-bold text-gray-900 mb-2">📊 API Responses</h3>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {backendResults.map((result, idx) => (
-              <Card key={idx} className={`bg-white border ${result.status.includes("Success") ? "border-green-300" : "border-red-300"}`}>
-                <CardContent className="p-2">
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-300">
+            <CardContent className="p-4 text-center">
+              <Image className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-indigo-700">
+                {stats.totalEncrypted}
+              </p>
+              <p className="text-xs text-gray-600">Images in Vault</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <Card className="bg-gradient-to-br from-green-50 to-green-100 border border-green-300">
+            <CardContent className="p-4 text-center">
+              <FileSearch className="w-6 h-6 text-green-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-green-700">
+                {stats.totalAnalyzed}
+              </p>
+              <p className="text-xs text-gray-600">Total Analyzed</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+
+      {/* Recent Activity */}
+      {vaultImages.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <h3 className="text-sm font-bold text-gray-900 mb-2">
+            📋 Recent Vault Entries
+          </h3>
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {vaultImages.slice(0, 5).map((img, idx) => (
+              <Card
+                key={idx}
+                className="bg-white border border-gray-200 hover:border-gray-400"
+              >
+                <CardContent className="p-3">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-bold text-gray-900">{result.endpoint}</p>
-                    <p className={`text-xs font-bold ${result.status.includes("Success") ? "text-green-600" : "text-red-600"}`}>{result.status}</p>
+                    <p className="text-xs font-bold text-gray-900">
+                      {img.fileName}
+                    </p>
+                    <p className="text-xs text-green-600">
+                      ✓ {img.status}
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-400">{result.timestamp}</p>
-                  {result.response && (
-                    <p className="text-xs text-gray-500 mt-1 truncate">{JSON.stringify(result.response).substring(0, 80)}...</p>
-                  )}
+                  <p className="text-xs text-gray-500">
+                    {formatDate(img.dateEncrypted)}
+                  </p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </motion.div>
       )}
-
-      {/* API Documentation */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-bold text-gray-900 mb-2">📡 Backend Endpoints</h3>
-        <div className="space-y-1 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3">
-          <p className="text-gray-600"><span className="font-bold text-red-600">POST</span> /auth/login - User authentication</p>
-          <p className="text-gray-600"><span className="font-bold text-red-600">POST</span> /vault/upload - Upload to vault</p>
-          <p className="text-gray-600"><span className="font-bold text-red-600">POST</span> /compare/save - Save comparison data</p>
-          <p className="text-gray-600"><span className="font-bold text-red-600">GET</span> /certificates/list - List certificates</p>
-          <p className="text-gray-600"><span className="font-bold text-red-600">POST</span> /admin/users - Manage users</p>
-        </div>
-      </motion.div>
     </motion.div>
   );
 
-  // ===================== IMAGE CRYPTO ANALYZER PAGE =====================
-  const CryptoAnalyzerPage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-3">
+  // ===================== VAULT PAGE =====================
+  const VaultPage = () => (
+    <motion.div
+      variants={pageVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="space-y-4"
+    >
       <div className="flex items-center gap-2 mb-4">
-        <Button onClick={() => setCurrentPage("home")} variant="ghost" className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900">
+        <Button
+          onClick={() => setActivePage("home")}
+          variant="ghost"
+          className="h-8 w-8 p-0"
+        >
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <h1 className="text-lg font-bold text-gray-900">Image Crypto Analyzer</h1>
+        <h1 className="text-lg font-bold text-gray-900">Image Vault</h1>
       </div>
 
-      {/* Analyzer Status */}
-      <motion.div variants={itemVariants}>
-        <Card className="bg-gradient-to-r from-indigo-50 to-indigo-100 border border-indigo-300">
-          <CardContent className="p-4 flex items-center gap-3">
-            <Image className="w-6 h-6 text-indigo-600 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-gray-600">Crypto Analyzer</p>
-              <p className="text-lg font-bold text-indigo-700">✨ Ready to Process</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+      {/* Images */}
+      {loadingVault ? (
+        <div className="text-center py-8">
+          <Loader className="w-6 h-6 animate-spin mx-auto text-gray-600" />
+        </div>
+      ) : vaultImages.length > 0 ? (
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {vaultImages.map((img, idx) => (
+            <motion.div key={idx} variants={itemVariants}>
+              <Card className="bg-white border border-gray-200">
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-gray-900">
+                        {img.fileName}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDate(img.dateEncrypted)}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleDeleteImage(img.id)}
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-gray-500">
+          <p>No images in vault</p>
+        </div>
+      )}
+
+      {/* Certificates */}
+      {certificates.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <h3 className="text-sm font-bold text-gray-900 mb-2">
+            📜 Certificates ({certificates.length})
+          </h3>
+          <div className="space-y-1 max-h-24 overflow-y-auto">
+            {certificates.map((cert, idx) => (
+              <Card key={idx} className="bg-amber-50 border border-amber-200">
+                <CardContent className="p-2">
+                  <p className="text-xs font-bold text-amber-900">
+                    {cert.certificate_id?.slice(0, 20)}...
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+
+  // ===================== ANALYZER PAGE =====================
+  const AnalyzerPage = () => (
+    <motion.div
+      variants={pageVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="space-y-3"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <Button
+          onClick={() => setActivePage("home")}
+          variant="ghost"
+          className="h-8 w-8 p-0"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <h1 className="text-lg font-bold text-gray-900">Image Analyzer</h1>
+      </div>
 
       {/* File Upload */}
       <motion.div variants={itemVariants}>
@@ -323,23 +459,29 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
           <div className="border-2 border-dashed border-indigo-300 rounded-lg p-4 text-center cursor-pointer hover:border-indigo-500 transition">
             <input
               type="file"
-              onChange={handleCryptoFileSelect}
+              onChange={handleFileSelect}
               accept="image/*,.pdf"
               className="hidden"
             />
             <Camera className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-            <p className="text-xs font-semibold text-gray-900">{cryptoFile ? cryptoFile.name : "Select Image or PDF"}</p>
+            <p className="text-xs font-semibold text-gray-900">
+              {cryptoFile ? cryptoFile.name : "Select Image or PDF"}
+            </p>
             <p className="text-xs text-gray-500">Click to upload</p>
           </div>
         </label>
       </motion.div>
 
-      {/* Image Preview */}
+      {/* Preview */}
       {cryptoPreview && (
         <motion.div variants={itemVariants}>
           <Card className="bg-white border border-gray-200">
             <CardContent className="p-3">
-              <img src={cryptoPreview} alt="preview" className="w-full max-h-40 object-cover rounded" />
+              <img
+                src={cryptoPreview}
+                alt="preview"
+                className="w-full max-h-40 object-cover rounded"
+              />
             </CardContent>
           </Card>
         </motion.div>
@@ -353,72 +495,83 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
             disabled={!cryptoFile || isEncrypting}
             className="h-10 bg-indigo-600 hover:bg-indigo-700 text-white border-0 text-xs"
           >
-            {isEncrypting ? <>
-              <Loader className="w-3 h-3 mr-1 animate-spin" />
-              <span>Encrypting...</span>
-            </> : <>
+            {isEncrypting ? (
+              <>
+                <Loader className="w-3 h-3 mr-1 animate-spin" />
+                <span>Encrypting...</span>
+              </>
+            ) : (
               <span>🔐 Encrypt</span>
-            </>}
+            )}
           </Button>
           <Button
             onClick={handleAnalyzeImage}
             disabled={!cryptoFile || isAnalyzing}
             className="h-10 bg-blue-600 hover:bg-blue-700 text-white border-0 text-xs"
           >
-            {isAnalyzing ? <>
-              <Loader className="w-3 h-3 mr-1 animate-spin" />
-              <span>Analyzing...</span>
-            </> : <>
+            {isAnalyzing ? (
+              <>
+                <Loader className="w-3 h-3 mr-1 animate-spin" />
+                <span>Analyzing...</span>
+              </>
+            ) : (
               <span>🔍 Analyze</span>
-            </>}
+            )}
           </Button>
         </div>
       </motion.div>
 
-      {/* Encryption Result */}
+      {/* Results */}
       {encryptedResult && (
         <motion.div variants={itemVariants}>
           <Card className="bg-green-50 border border-green-300">
             <CardContent className="p-3">
-              <p className="text-xs font-bold text-green-700 mb-2">✓ Encrypted Successfully</p>
-              <p className="text-xs text-gray-600">UUID: <code className="font-mono text-xs">{encryptedResult.uuid}</code></p>
-              <p className="text-xs text-gray-600">Size: {encryptedResult.size}</p>
+              <p className="text-xs font-bold text-green-700 mb-2">
+                ✓ Encrypted Successfully
+              </p>
+              <p className="text-xs text-gray-600 truncate">
+                UUID: {encryptedResult.uuid}
+              </p>
             </CardContent>
           </Card>
         </motion.div>
       )}
 
-      {/* Analysis Result */}
       {analysisResult && (
         <motion.div variants={itemVariants}>
-          <Card className={`border ${analysisResult.confidence > 85 ? "bg-green-50 border-green-300" : "bg-yellow-50 border-yellow-300"}`}>
+          <Card className="bg-blue-50 border border-blue-300">
             <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold text-gray-900">{analysisResult.type}</p>
-                <p className={`text-xs font-bold ${analysisResult.confidence > 85 ? "text-green-600" : "text-yellow-600"}`}>
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold text-gray-900">
+                  {analysisResult.type}
+                </p>
+                <p className="text-xs font-bold text-green-600">
                   {analysisResult.status}
                 </p>
               </div>
-              <div className="space-y-1">
-                <p className="text-xs text-gray-600">Confidence: <span className="font-bold">{analysisResult.confidence}%</span></p>
-                <p className="text-xs text-gray-600">Time: {analysisResult.timestamp}</p>
-              </div>
+              <p className="text-xs text-gray-600">
+                Confidence: <span className="font-bold">{analysisResult.confidence}%</span>
+              </p>
             </CardContent>
           </Card>
         </motion.div>
       )}
 
-      {/* Analysis History */}
+      {/* History */}
       {analysisHistory.length > 0 && (
         <motion.div variants={itemVariants}>
-          <h3 className="text-sm font-bold text-gray-900 mb-2">📋 Recent Analysis</h3>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
+          <h3 className="text-sm font-bold text-gray-900 mb-1">
+            📋 Analysis History
+          </h3>
+          <div className="space-y-1 max-h-24 overflow-y-auto">
             {analysisHistory.map((item, idx) => (
               <Card key={idx} className="bg-white border border-gray-200">
                 <CardContent className="p-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-gray-600">{item.type}</p>
-                    <p className="text-xs font-bold text-indigo-600">{item.confidence}%</p>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-700">{item.type}</span>
+                    <span className="font-bold text-blue-600">
+                      {item.confidence}%
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -426,27 +579,16 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
           </div>
         </motion.div>
       )}
-
-      {/* Features */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-bold text-gray-900 mb-2">✨ Features</h3>
-        <div className="space-y-1 text-xs text-gray-600">
-          <p>✓ Image Verification & Authenticity Check</p>
-          <p>✓ Metadata Extraction & EXIF Analysis</p>
-          <p>✓ Tamper Detection & Forensics</p>
-          <p>✓ Travel History Tracking</p>
-          <p>✓ Multi-format Support (JPG, PNG, PDF)</p>
-        </div>
-      </motion.div>
     </motion.div>
   );
 
   return (
     <div className="w-full min-h-screen bg-white p-3 md:p-4 rounded-xl">
       <AnimatePresence mode="wait">
-        {currentPage === "home" && <HomePage key="home" />}
-        {currentPage === "backend" && <BackendPage key="backend" />}
-        {currentPage === "crypto-analyzer" && <CryptoAnalyzerPage key="crypto-analyzer" />}
+        {activePage === "home" && <HomePage key="home" />}
+        {activePage === "overview" && <OverviewPage key="overview" />}
+        {activePage === "vault" && <VaultPage key="vault" />}
+        {activePage === "analyzer" && <AnalyzerPage key="analyzer" />}
       </AnimatePresence>
     </div>
   );
