@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Shield, LogOut } from "lucide-react";
+import { Shield, LogOut, ArrowLeft } from "lucide-react";
 import { HexGrid } from "@/components/HexGrid";
 import { Button } from "@/components/ui/button";
 import PINITDashboard from "@/components/PINITDashboard";
@@ -13,6 +13,10 @@ const Dashboard = () => {
     navigate("/login");
   };
 
+  const handleBack = () => {
+    navigate("/login");
+  };
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       <HexGrid />
@@ -20,6 +24,9 @@ const Dashboard = () => {
         {/* Top Bar */}
         <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={handleBack} className="text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <Shield className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-display font-bold tracking-wider text-foreground text-glow-cyan">BIOVAULT</h1>
           </div>
