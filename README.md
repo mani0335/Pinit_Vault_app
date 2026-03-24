@@ -14,6 +14,18 @@ This repository contains the Biovault mobile/web app, a biometric vault demo bui
 - Capacitor (Android)
 - Express (mock backend)
 
+## Quick Start - App Flow Overview
+
+The **Biovault App** is a biometric-first authentication system with three main user pathways:
+
+| Scenario | Flow | Outcome |
+|----------|------|---------|
+| 🆕 **New User** | Register → Scan Fingerprint → Scan Face → Create Account → Dashboard | Full Access |
+| ✅ **Returning User (Same Device)** | Login → Scan Fingerprint → Device Check ✓ → Scan Face → Dashboard | Full Access |
+| ⚠️ **Returning User (New Device)** | Login → Scan Fingerprint → Device Check ✗ → Temp Access → Verify Code → Dashboard | Limited Access |
+
+**Key Routes**: `/ (Splash)` → `/login` or `/register` → `/dashboard` (or `/temp-access`)
+
 ## Current Work (What I am doing)
 
 The following items describe the active implementation workflow in this project:
@@ -26,7 +38,178 @@ The following items describe the active implementation workflow in this project:
 - Build and test Android debug APK through Capacitor + Gradle.
 - Improve routing and error-handling paths for login and registration.
 
-## Workflow Graph
+## App Navigation Flow
+
+### **Routes & Pages Structure**
+
+```
+Root (BrowserRouter)
+├── / ...................... Index (Splash Screen) 
+├── /login .................. Login Page
+├── /register ............... Register Page
+├── /temp-access ............ Temporary Access (Device Mismatch)
+├── /dashboard .............. Dashboard (Protected Route)
+└── /* ...................... 404 Not Found
+```
+
+### **Complete User Journey**
+
+```mermaid
+graph TD
+    A["🚀 App Start<br/>Index Splash Screen"] -->|Wait 1.8s| B{Check Storage<br/>userId Exists?}
+    
+    B -->|NO userId| C["📝 Register Page"]
+    B -->|YES userId| D["🔑 Login Page"]
+    
+    D -->|Scan Fingerprint| E{Fingerprint<br/>Verified?}
+    E -->|✅ YES| F{Device ID<br/>Match?}
+    E -->|❌ NO| C
+    
+    F -->|✅ Match| G["👤 Face Scan<br/>Login Mode"]
+    F -->|⚠️ Mismatch| H["🔄 Temp Access<br/>Recovery Flow"]
+    
+    G -->|✅ Verified| I["✅ Auto-navigate<br/>800ms delay"]
+    G -->|❌ Retry| G
+    H -->|Verify Code| J["👤 Face Scan<br/>Temp Mode"]
+    J -->|✅ Verified| I
+    J -->|❌ Retry| J
+    
+    I -->|Navigate| K["📊 Dashboard<br/>Protected Route"]
+    
+    C -->|Step 1| L["🎫 Generate Temp ID"]
+    L -->|Step 2| M["📱 Scan Fingerprint<br/>Register Mode"]
+    M -->|Step 3| N["👤 Scan Face<br/>Register Mode"]
+    N -->|Step 4| O["🆔 Generate Unique ID<br/>from MongoDB"]
+    O -->|Step 5| P["💾 Store & Verify<br/>Save to MongoDB"]
+    P -->|Step 6| Q["✅ Registration<br/>Complete"]
+    Q -->|Click 'Login Now'| D
+    Q -->|Click 'Home'| A
+    
+    K -->|Click Logout| D
+    
+    style A fill:#667eea,stroke:#333,color:#fff
+    style D fill:#1e40af,stroke:#333,color:#fff
+    style C fill:#16a34a,stroke:#333,color:#fff
+    style K fill:#1e3a8a,stroke:#333,color:#fff
+    style H fill:#ea580c,stroke:#333,color:#fff
+```
+
+### **Page-by-Page Flow Breakdown**
+
+#### **1️⃣ Index Page (`/`)**
+- **Purpose**: Splash screen with automatic navigation
+- **What Happens**:
+  - App starts and displays splash screen
+  - Waits 1.8 seconds
+  - Checks if `userId` exists in storage
+  - If YES → Navigate to `/login`
+  - If NO → Navigate to `/register`
+- **Next Routes**: `/login` or `/register`
+
+#### **2️⃣ Login Page (`/login`)**
+- **Purpose**: Authenticate existing users
+- **User Scenarios**:
+  - ✅ **Returning User (Correct Device)**: Fingerprint → Device Check → Face Auth → Dashboard
+  - ⚠️ **Device Mismatch**: Fingerprint → Device Check fails → Temp Access
+  - ❌ **User Not Found**: Fingerprint lookup fails → Back to Register
+- **What Happens**:
+  1. Render login UI with FingerprintScanner component
+  2. User scans fingerprint
+  3. Check if fingerprint exists in MongoDB
+  4. If found: Check if device ID matches
+     - **Match**: Proceed to face authentication (login mode)
+     - **Mismatch**: Redirect to `/temp-access`
+  5. If not found: Redirect to `/register`
+- **Success**: Auto-navigate to `/dashboard` (800ms delay)
+- **Next Routes**: `/dashboard`, `/register`, `/temp-access`
+
+#### **3️⃣ Register Page (`/register`)**
+- **Purpose**: Create new user account with biometric enrollment
+- **What Happens**:
+  1. Generate temporary ID
+  2. Scan fingerprint (register mode) → Store in MongoDB
+  3. Scan face (register mode) → Generate face embedding & store
+  4. Generate unique USER_ID from MongoDB
+  5. Bind device to user account
+  6. Click "Store & Verify" → Save all data to MongoDB
+  7. Show "Registration Complete" message
+- **User Options After Registration**:
+  - Click "Login Now" → Go to `/login`
+  - Click "Home" → Go to `/`
+- **Next Routes**: `/login`, `/`
+
+#### **4️⃣ Temp Access Page (`/temp-access`)**
+- **Purpose**: Handle device mismatch scenario for existing users
+- **What Happens**:
+  1. User's fingerprint found but device ID doesn't match
+  2. Show recovery options (temporary code entry or alternative auth)
+  3. Verify temporary code
+  4. Scan face (temp mode) for additional verification
+  5. Complete device rebinding
+  6. Update device binding in MongoDB
+- **Success**: Navigate to `/dashboard` (with temporary access token)
+- **Restrictions**: Dashboard features are restricted until device is fully trusted
+- **Next Routes**: `/dashboard`
+
+#### **5️⃣ Dashboard Page (`/dashboard`) - Protected Route**
+- **Purpose**: Main vault interface (protected route requires authentication)
+- **What Happens**:
+  1. ProtectedRoute component verifies user authentication
+  2. If user not authenticated → Redirect to `/login`
+  3. If authenticated → Show Dashboard UI
+  4. User can access vault features:
+     - 👤 Profile management
+     - 💼 Wallet section
+     - 🖼️ Images/media vault
+     - ⚙️ Settings
+     - 🚪 Logout button
+- **Logout**: Click logout → Navigate back to `/login`
+- **Next Routes**: `/login` (via logout)
+
+### **Decision Tree**
+
+```mermaid
+flowchart TD
+    A["Start<br/>Check Local Storage"] --> B{userId<br/>Stored?}
+    
+    B -->|NO| C["Register Page<br/>/register"]
+    B -->|YES| D["Login Page<br/>/login"]
+    
+    D --> E["Scan Fingerprint"]
+    E --> F{Fingerprint<br/>in Database?}
+    
+    F -->|NO| C
+    F -->|YES| G{Device ID<br/>Matches?}
+    
+    G -->|YES| H["Face Scan<br/>Login Mode"]
+    G -->|NO| I["Temp Access Page<br/>/temp-access"]
+    
+    H --> J{Face Verified?}
+    J -->|YES| K["Dashboard<br/>/dashboard"]
+    J -->|NO| H
+    
+    I --> L["Verify Recovery Code<br/>& Face Scan Temp Mode"]
+    L --> M{Both Verified?}
+    M -->|YES| N["Dashboard Restricted<br/>/dashboard"]
+    M -->|NO| I
+    
+    C --> O["6-Step Registration"]
+    O --> P["Generate ID & Bind Device"]
+    P --> Q{Save Complete?}
+    Q -->|YES| K
+    Q -->|NO| O
+    
+    K --> R{User Logout?}
+    R -->|YES| D
+    
+    style A fill:#667eea,color:#fff
+    style C fill:#16a34a,color:#fff
+    style D fill:#1e40af,color:#fff
+    style K fill:#1e3a8a,color:#fff
+    style I fill:#ea580c,color:#fff
+```
+
+### **Workflow Graph (Original Diagram)**
 
 ```mermaid
 flowchart TD
@@ -53,45 +236,118 @@ flowchart TD
     Q --> G
 ```
 
-### Detailed Flow Diagram
+### **Detailed Flow Diagram**
 
 ```
-APP START
-    |
-    ▼
-Splash Screen
-    |
-    ▼
-Fingerprint Scan
-    |
-    ▼
-Check Fingerprint
-    |
-    |──────────────────────────┬──────────────────────┐
-    |                          |                      |
-    ▼                          ▼                      ▼
-Fingerprint Found         Device ID Check      Fingerprint Not Found
-    |                          |                      |
-    |                  ┌───────┴────────┐             ▼
-    |                  |                |        New User Registration
-    |                  ▼                ▼             |
-    |              Device Match    Device Mismatch    ▼
-    |                  |                |        Register Fingerprint
-    |                  ▼                ▼             |
-    |              Face Auth      Temporary Access    ▼
-    |              (Login)        Check Register      Register Face
-    |                  |          Biometrics          |
-    |                  |                |             ▼
-    |                  |                ▼        Generate USER_ID
-    |                  |          Check Face          |
-    |                  |          authentication      ▼
-    |                  |                |        Bind Device
-    |                  |                ▼             |
-    |                  |          Vault Dashboard     ▼
-    |                  |                |        Login Again
-    |                  |                |             |
-    |                  ▼                ▼             ▼
-    └─────────────────► Vault Dashboard           Vault Dashboard
+┌─────────────────────────────────────────────────────────────────┐
+│                      APP INITIALIZATION                         │
+│                                                                  │
+│  1. App starts → Render Index component (Splash Screen)        │
+│  2. Show loading/splash for 1.8 seconds                        │
+│  3. Check localStorage for saved userId                        │
+│                                                                  │
+│  ┌──────────────────────┬──────────────────────────────┐       │
+│  │         NO           │            YES               │       │
+│  │  userId found?       │  userId found?               │       │
+│  └──────────────────────┴──────────────────────────────┘       │
+│         │                          │                           │
+│         ▼                          ▼                           │
+│  Navigate to /register      Navigate to /login                │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    NEW USER REGISTRATION FLOW                   │
+│                        (/register route)                        │
+│                                                                  │
+│  Step 1: Generate Temporary ID                                 │
+│  Step 2: Scan Fingerprint (register mode)                      │
+│           → Store in MongoDB with user temp ID                 │
+│  Step 3: Scan Face (register mode)                             │
+│           → Save face embedding                                │
+│  Step 4: Generate Unique USER_ID from MongoDB                 │
+│  Step 5: Click "Store & Verify" button                         │
+│           → POST to MongoDB with all biometrics                │
+│  Step 6: Registration Success → Options:                       │
+│           • "Login Now" → /login                               │
+│           • "Home" → /                                         │
+│                                                                  │
+│  Result: Full access to /dashboard                             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                   RETURNING USER LOGIN FLOW                     │
+│                        (/login route)                           │
+│                                                                  │
+│  Step 1: Display login UI with FingerprintScanner              │
+│  Step 2: User scans fingerprint                                │
+│  Step 3: App queries MongoDB with fingerprint ID              │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────┐           │
+│  │  OUTCOME 1: Fingerprint NOT Found (New User)   │           │
+│  │  → Redirect to /register                        │           │
+│  │  → User follows registration flow               │           │
+│  └─────────────────────────────────────────────────┘           │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────┐           │
+│  │  OUTCOME 2: Fingerprint Found + Device Match   │           │
+│  │  → Device ID verification passes ✓              │           │
+│  │  → Display FaceScanner (login mode)             │           │
+│  │  → User scans face                              │           │
+│  │  ┌──────────────────────────────────────────┐   │           │
+│  │  │ Face Verified? → Dashboard (/dashboard)  │   │           │
+│  │  │ Face Failed? → Retry face scan (loop)    │   │           │
+│  │  └──────────────────────────────────────────┘   │           │
+│  │  → Auto-navigate to /dashboard (800ms delay)    │           │
+│  │  → Full access to vault features                │           │
+│  └─────────────────────────────────────────────────┘           │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────┐           │
+│  │  OUTCOME 3: Fingerprint Found + Device Mismatch│           │
+│  │  → Device ID verification fails ✗               │           │
+│  │  → Redirect to /temp-access                     │           │
+│  │  → Recovery flow (code entry + face scan)       │           │
+│  │  → Limited dashboard access                     │           │
+│  │  → Device rebinding happens                     │           │
+│  └─────────────────────────────────────────────────┘           │
+│                                                                  │
+│  Result: Either dashboard OR temp-access OR register           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                  TEMPORARY ACCESS FLOW (Device Mismatch)        │
+│                      (/temp-access route)                       │
+│                                                                  │
+│  Triggered when: Fingerprint found but device ID doesn't match │
+│                                                                  │
+│  Step 1: Display temporary recovery options                    │
+│  Step 2: User enters temporary code OR completes alt auth      │
+│  Step 3: Verify temporary code against MongoDB                 │
+│  Step 4: User scans face (temp mode)                           │
+│  Step 5: Face verification for temp access                     │
+│  Step 6: Device rebinding in MongoDB                           │
+│  Step 7: Auto-navigate to /dashboard with temp token           │
+│                                                                  │
+│  Result: Limited dashboard access until device is fully trusted│
+│          Subsequent logins: Full access once device is trusted  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    DASHBOARD (Protected Route)                  │
+│                        (/dashboard route)                       │
+│                                                                  │
+│  Access Control: ProtectedRoute component verifies auth        │
+│  If NOT authenticated → Redirect to /login                     │
+│  If authenticated → Load Dashboard UI                          │
+│                                                                  │
+│  Features:                                                      │
+│  • 👤 Profile Management                                       │
+│  • 💼 Wallet & Cards                                           │
+│  • 🖼️ Images & Media Vault                                     │
+│  • ⚙️ Settings & Preferences                                   │
+│  • 🚪 Logout (returns to /login)                               │
+│                                                                  │
+│  Logout → Click logout button → Navigate to /login              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## How App is Working
