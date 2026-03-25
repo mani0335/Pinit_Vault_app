@@ -24,7 +24,7 @@ const Dashboard = () => {
         {/* Top Bar */}
         <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={handleBack} className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="sm" onClick={handleBack} className="text-black hover:text-gray-700">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <Shield className="w-6 h-6 text-primary" />
