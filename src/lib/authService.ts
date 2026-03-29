@@ -87,8 +87,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
 export async function registerUser(payload: RegisterPayload): Promise<{ ok: true; tempCode?: string; mode: "remote" }> {
   // ALWAYS use remote API - no local fallback
   const apiUrl = apiBase(); // Will always be Render URL
-  console.log('🔐 registerUser: Calling', `${apiUrl}/api/biometric-register`);
-  const resp = await fetch(`${apiUrl}/api/biometric-register`, {
+  console.log('🔐 registerUser: Calling', `${apiUrl}/auth/biometric-register`);
+  const resp = await fetch(`${apiUrl}/auth/biometric-register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
