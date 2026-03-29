@@ -6,13 +6,34 @@ import { HexGrid } from "@/components/HexGrid";
 import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
+import { appStorage } from "@/lib/storage";
 
 type Step = "face" | "success";
+
+// Generate temporary user ID
+function generateTempUserId(prefix: string = "TEMP") {
+  return `${prefix}-${Math.floor(100000 + Math.random() * 900000)}`;
+}
 
 const TempAccessFace = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("face");
   const [hasNavigatedToDashboard, setHasNavigatedToDashboard] = useState(false);
+  const [tempUserId] = useState(() => generateTempUserId());
+
+  // Save temp userId to storage immediately
+  useEffect(() => {
+    const saveTempUserId = async () => {
+      try {
+        console.log('💾 TempAccessFace: Saving temporary userId:', tempUserId);
+        await appStorage.setItem('biovault_userId', tempUserId);
+        console.log('✅ TempAccessFace: Temp userId saved to storage');
+      } catch (err) {
+        console.error('❌ TempAccessFace: Failed to save temp userId:', err);
+      }
+    };
+    saveTempUserId();
+  }, [tempUserId]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
