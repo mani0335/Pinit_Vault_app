@@ -1,5 +1,25 @@
 services:
-  # Backend API Service
+  # FastAPI Backend Service (Python)
+  - type: web
+    name: biovault-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    rootDir: .
+    envVars:
+      - key: SUPABASE_URL
+        scope: build
+        value: https://wdvsfjpkxfjaelrydgqd.supabase.co
+      - key: SUPABASE_SERVICE_KEY
+        scope: build
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkdnNmanBreGZqYWVscnlkZ3FkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNDExMDc3NCwiZXhwIjoxODYwNjg2Nzc0fQ.K2n1mAE2Rkzb9MjvYy-H9Zz7q1Q3X4vA5B8c9D0j1Kk
+      - key: PORT
+        scope: build
+        value: "3000"
+
+  # Backend API Service (Old Node)
   - type: web
     name: biovault-app
     runtime: node
