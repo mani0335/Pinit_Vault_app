@@ -10,10 +10,27 @@ const request = async (method, endpoint, body = null, requiresAuth = true) => {
   }
   const config = { method, headers };
   if (body) config.body = JSON.stringify(body);
-  const response = await fetch(`${BASE_URL}${endpoint}`, config);
-  const data     = await response.json();
-  if (!response.ok) throw new Error(data.detail || 'Request failed');
-  return data;
+  
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, config);
+    const contentType = response.headers.get('content-type');
+    let data;
+    
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+    
+    if (!response.ok) {
+      console.error(`API Error [${response.status}] ${endpoint}:`, data);
+      throw new Error(data?.detail || data || `HTTP ${response.status}: Request failed`);
+    }
+    return data;
+  } catch (error) {
+    console.error(`Fetch Error: ${method} ${endpoint}`, error);
+    throw error;
+  }
 };
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

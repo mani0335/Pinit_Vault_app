@@ -114,13 +114,20 @@ async def biometric_register(data: BiometricRegister, request: Request):
         # Generate temp code for recovery/temp access
         temp_code = str(int(datetime.utcnow().timestamp())) + str(hash(data.userId))[-6:]
         
+        # Generate JWT tokens for immediate login after registration
+        access_token = generate_jwt(data.userId, "user")
+        refresh_token = generate_jwt(data.userId, "user", expires_in_minutes=10080)  # 7 days
+        
         log_action(data.userId, "biometric_register", {"device": data.deviceToken}, str(request.client.host))
         
         return {
             "ok": True,
             "userId": data.userId,
             "tempCode": temp_code,
-            "message": "Biometric registration successful"
+            "token": access_token,
+            "refreshToken": refresh_token,
+            "message": "Biometric registration successful",
+            "mode": "remote"
         }
     
     except HTTPException as he:

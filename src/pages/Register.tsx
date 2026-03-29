@@ -193,6 +193,16 @@ const Register = () => {
                         throw new Error('Backend registration returned invalid response');
                       }
                       
+                      // IMPORTANT: Save tokens if returned from backend
+                      if (data.token) {
+                        console.log('💾 Saving access token from registration');
+                        localStorage.setItem('biovault_token', data.token);
+                      }
+                      if (data.refreshToken) {
+                        console.log('💾 Saving refresh token from registration');
+                        localStorage.setItem('biovault_refresh_token', data.refreshToken);
+                      }
+                      
                       // Verify user was actually created on backend
                       console.log('📝 STEP 5: Verifying user was created on backend...');
                       const { checkUserRegistered } = await import('@/lib/authService');

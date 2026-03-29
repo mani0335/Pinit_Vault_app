@@ -17,9 +17,11 @@ ALGORITHM           = "HS256"
 security = HTTPBearer()
 
 
-def generate_jwt(user_id: str, role: str) -> str:
+def generate_jwt(user_id: str, role: str, expires_in_minutes: int = None) -> str:
     """Create a JWT token for a user"""
-    expire  = datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES)
+    if expires_in_minutes is None:
+        expires_in_minutes = JWT_EXPIRE_MINUTES
+    expire  = datetime.utcnow() + timedelta(minutes=expires_in_minutes)
     payload = {
         "sub"  : user_id,
         "role" : role,

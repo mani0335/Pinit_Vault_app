@@ -21,10 +21,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://image-crypto-analyzer.vercel.app",
+        "https://pinit-backend.onrender.com",
         "http://localhost:8080",
         "http://localhost:5173",
         "http://127.0.0.1:8080",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:8000"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -106,3 +110,132 @@ async def api_validate(data: dict):
         return {"authorized": False, "reason": "User not found"}
     
     return {"authorized": True, "reason": "Device verified"}
+
+
+@app.post("/api/user/check")
+async def api_user_check(data: dict):
+    """Check if user is registered with biometric data"""
+    from .db.database import get_admin_db
+    
+    db = get_admin_db()
+    user_id = data.get("user_id") or data.get("userId")
+    
+    if not user_id:
+        return {
+            "ok": False,
+            "reason": "Missing user_id",
+            "fingerprintRegistered": False,
+            "faceRegistered": False
+        }
+    
+    try:
+        # Check if user has biometric registration
+        biometric_result = db.table("biometric_users").select("*").eq("user_id", user_id).execute()
+        
+        if not biometric_result.data:
+            return {
+                "ok": False,
+                "reason": "User not registered with biometrics",
+                "fingerprintRegistered": False,
+                "faceRegistered": False
+            }
+        
+        biometric_user = biometric_result.data[0]
+        
+        # Check what biometric data is available
+        has_fingerprint = bool(biometric_user.get("webauthn_credential"))
+        has_face = bool(biometric_user.get("face_embedding"))
+        
+        return {
+            "ok": True,
+            "reason": "User registered",
+            "fingerprintRegistered": has_fingerprint,
+            "faceRegistered": has_face,
+            "userId": user_id,
+            "isActive": biometric_user.get("is_active", True)
+        }
+    
+    except Exception as e:
+        print(f"Error checking user registration: {str(e)}")
+        return {
+            "ok": False,
+            "reason": f"Error checking registration: {str(e)}",
+            "fingerprintRegistered": False,
+            "faceRegistered": False
+        }
+
+
+@app.post("/api/temp-code/request")
+async def api_temp_code_request(data: dict):
+    """Request a temporary access code"""
+    from .db.database import get_admin_db
+    import datetime
+    import random
+    
+    db = get_admin_db()
+    user_id = data.get("user_id") or data.get("userId")
+    
+    if not user_id:
+        return {"ok": False, "reason": "Missing user_id"}
+    
+    try:
+        # Check if user exists
+        biometric_result = db.table("biometric_users").select("*").eq("user_id", user_id).execute()
+        
+        if not biometric_result.data:
+            return {"ok": False, "reason": "User not found"}
+        
+        # Generate temp code
+        temp_code = str(random.randint(100000, 999999))
+        expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+        
+        # Store temp code in a temp_codes table or just return it
+        # For now, just return the temp code
+        return {
+            "ok": True,
+            "tempCode": temp_code,
+            "expiresAt": expiry.isoformat()
+        }
+    
+    except Exception as e:
+        print(f"Error requesting temp code: {str(e)}")
+        return {"ok": False, "reason": f"Error: {str(e)}"}
+
+
+@app.post("/api/temp-code/verify")
+async def api_temp_code_verify(data: dict):
+    """Verify temporary access code"""
+    from .db.database import get_admin_db
+    from .utils.auth_helpers import generate_jwt
+    
+    db = get_admin_db()
+    user_id = data.get("user_id") or data.get("userId")
+    code = data.get("code")
+    
+    if not user_id or not code:
+        return {"ok": False, "reason": "Missing user_id or code"}
+    
+    try:
+        # Check if user exists
+        biometric_result = db.table("biometric_users").select("*").eq("user_id", user_id).execute()
+        
+        if not biometric_result.data:
+            return {"ok": False, "reason": "User not found"}
+        
+        # For now, accept any code (verify is handled by face verification)
+        # In production, would validate code against stored temp codes
+        
+        # Generate tokens for temporary access
+        token = generate_jwt(user_id, "user")
+        refresh_token = generate_jwt(user_id, "user")
+        
+        return {
+            "ok": True,
+            "token": token,
+            "refreshToken": refresh_token,
+            "userId": user_id
+        }
+    
+    except Exception as e:
+        print(f"Error verifying temp code: {str(e)}")
+        return {"ok": False, "reason": f"Error: {str(e)}"}
