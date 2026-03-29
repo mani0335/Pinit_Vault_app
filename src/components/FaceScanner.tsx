@@ -139,11 +139,11 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
     // Strict face validation - require consistent face detection
     let consecutiveValidDetections = 0;
-    const requiredConsecutiveDetections = 2; // Reduced from 3 to 2 for easier detection
+    const requiredConsecutiveDetections = 1; // Just 1 detection required - much easier
     let faceIsValid = false;
     let lastFaceError = "";
     let totalAttempts = 0;
-    const maxTotalAttempts = 35; // Increased from 25 to 35 attempts
+    const maxTotalAttempts = 50; // More attempts to find face
     let validatedFaceData = null;
 
     while (consecutiveValidDetections < requiredConsecutiveDetections && totalAttempts < maxTotalAttempts) {
@@ -153,8 +153,8 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       // Use face detection to validate that only a face is in the frame
       const faceDetection = await detectFaceInVideo(video);
 
-      if (faceDetection.hasFace && faceDetection.confidence >= 0.40) {
-        // Very lenient confidence threshold for real device conditions
+      if (faceDetection.hasFace && faceDetection.confidence >= 0.20) {
+        // VERY lenient confidence threshold (20%) for real device conditions
         consecutiveValidDetections++;
         validatedFaceData = faceDetection;
         console.log(

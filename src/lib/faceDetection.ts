@@ -76,13 +76,14 @@ export async function detectFaceInVideo(video: HTMLVideoElement): Promise<FaceDe
     const face = predictions[0];
     const confidence = face.probability?.[0] || 0;
 
-    // Very lenient threshold for real device conditions (40% confidence)
-    if (confidence < 0.40) {
+    // EXTREMELY lenient threshold for real device conditions (20% confidence minimum)
+    // This allows capture even with poor lighting or partial face visibility
+    if (confidence < 0.20) {
       return {
         hasFace: false,
         faceCount: 1,
         confidence,
-        error: `Face too faint (${Math.round(confidence * 100)}%). Adjust lighting or move closer.`,
+        error: `Face detection confidence too low (${Math.round(confidence * 100)}%). Try better lighting.`,
       };
     }
 
