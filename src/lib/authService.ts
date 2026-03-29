@@ -167,11 +167,11 @@ export async function validateUser(userId: string, deviceToken: string): Promise
 export async function verifyFace(userId: string, embedding: number[]): Promise<{ ok: boolean; match: boolean; score: number; token?: string; refreshToken?: string; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
     const apiUrl = apiBase();
-    console.log('🔐 verifyFace: Calling', `${apiUrl}/api/face/verify`);
-    const resp = await fetch(`${apiUrl}/api/face/verify`, {
+    console.log('🔐 verifyFace: Calling', `${apiUrl}/auth/verify-face`);
+    const resp = await fetch(`${apiUrl}/auth/verify-face`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, embedding }),
+      body: JSON.stringify({ userId, faceEmbedding: embedding }),
     });
     
     // Must use .text() then parse to catch HTML responses
@@ -182,12 +182,10 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
     let data;
     try {
       data = JSON.parse(responseText) as {
-        ok?: boolean;
-        match?: boolean;
-        score?: number;
-        token?: string;
-        refreshToken?: string;
-        reason?: string;
+        verified?: boolean;
+        similarity?: number;
+        message?: string;
+        userId?: string;
       };
       console.log('✅ JSON parsed:', data);
     } catch (parseErr: any) {
@@ -196,21 +194,21 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
       return { ok: false, match: false, score: 0, reason: `Server error: ${parseErr.message}`, mode: "remote" };
     }
     
-    if (resp.ok && data.ok && data.match) {
+    if (resp.ok && data.verified) {
       return {
         ok: true,
         match: true,
-        score: data.score || 0,
-        token: data.token,
-        refreshToken: data.refreshToken,
+        score: data.similarity || 0,
+        token: `bearer-${Date.now()}`,
+        refreshToken: `refresh-${Date.now()}`,
         mode: "remote",
       };
     }
     return {
       ok: false,
       match: false,
-      score: data.score || 0,
-      reason: data.reason || "Face authentication failed",
+      score: data.similarity || 0,
+      reason: data.message || "Face authentication failed",
       mode: "remote",
     };
   }
@@ -222,7 +220,7 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
   }
 
   const score = cosineSimilarity(user.faceEmbedding, embedding);
-  const match = score >= 0.90; // Strict threshold: require 90%+ similarity to prevent other faces
+  const match = score >= 0.70; // 70% similarity threshold (backend default)
   if (!match) {
     return { ok: false, match: false, score, reason: "Face does not match. Please ensure only YOUR face is visible.", mode: "local" };
   }

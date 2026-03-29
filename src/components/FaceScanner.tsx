@@ -273,55 +273,13 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       }
     }
 
-    // Registration mode: Store face to database
-    try {
-      const { getDeviceToken } = await import('@/lib/deviceToken');
-      const userId = await appStorage.getItem('biovault_userId');
-      const deviceToken = await getDeviceToken();
-      
-      if (!userId || !deviceToken) {
-        throw new Error('User not properly initialized');
-      }
-      
-      if (!embedding || !embedding.length) {
-        throw new Error('No face embedding captured');
-      }
-
-      // Store face embedding to database
-      const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
-      const response = await fetch(`${API_BASE}/api/register-face`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
-          deviceToken, 
-          faceEmbedding: embedding,
-          qualityScore: validatedFaceData?.confidence || 0
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to register face in database');
-      }
-
-      setStatus("success");
-      setMessage("✓ Face registered successfully");
-      stopCamera();
-      setCameraReady(false);
-      setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
-      return;
-    } catch (dbErr: any) {
-      const msg = (dbErr?.message || 'Failed to register face').toString();
-      setStatus('error');
-      setMessage('❌ ' + msg);
-      onError?.(msg);
-      stopCamera();
-      setCameraReady(false);
-      setTimeout(() => {
-        setStatus("camera");
-        setMessage("Align your face inside the frame");
-      }, 2000);
-    }
+    // Registration mode: Just capture the face and pass it back to parent component
+    // The Register.tsx page will handle the backend storage via registerUser()
+    setStatus("success");
+    setMessage("✓ Face captured successfully");
+    stopCamera();
+    setCameraReady(false);
+    setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
   }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
 
   return (
