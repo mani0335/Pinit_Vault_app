@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from ..db.database import get_admin_db
 from ..models.schemas import (
-    UserRegister, OTPVerify, OTPResend,
+    UserRegister, BiometricRegister, OTPVerify, OTPResend,
     WebAuthnRegisterStart, WebAuthnRegisterFinish,
     WebAuthnLoginStart, WebAuthnLoginFinish
 )
@@ -69,6 +69,63 @@ async def register(data: UserRegister, request: Request):
         "message": "Registration successful. Check your email for OTP.",
         "email"  : data.email
     }
+
+
+# ── Biometric Register (Mobile App) ───────────────────────────────────────────
+
+@router.post("/biometric-register")
+async def biometric_register(data: BiometricRegister, request: Request):
+    """Register user with biometric data (fingerprint + face)"""
+    db = get_admin_db()
+    
+    # Validate userId is not empty
+    if not data.userId or not data.userId.strip():
+        raise HTTPException(status_code=400, detail="Missing userId")
+    
+    # Validate deviceToken is not empty
+    if not data.deviceToken or not data.deviceToken.strip():
+        raise HTTPException(status_code=400, detail="Missing deviceToken")
+    
+    # Check if userId already registered
+    try:
+        existing = db.table("biometric_users").select("id").eq("user_id", data.userId).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="User ID already registered")
+    except Exception as e:
+        # Table might not exist yet, that's OK
+        print(f"Info: biometric_users table check: {str(e)}")
+    
+    # Create biometric user record
+    try:
+        user_record = db.table("biometric_users").insert({
+            "user_id": data.userId,
+            "device_token": data.deviceToken,
+            "webauthn_credential": data.webauthn,
+            "face_embedding": data.faceEmbedding,
+            "is_active": True,
+            "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+        
+        if not user_record.data:
+            raise HTTPException(status_code=500, detail="Failed to create user record")
+        
+        # Generate temp code for recovery/temp access
+        temp_code = str(int(datetime.utcnow().timestamp())) + str(hash(data.userId))[-6:]
+        
+        log_action(data.userId, "biometric_register", {"device": data.deviceToken}, str(request.client.host))
+        
+        return {
+            "ok": True,
+            "userId": data.userId,
+            "tempCode": temp_code,
+            "message": "Biometric registration successful"
+        }
+    
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Biometric registration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
 # ── Password Login ────────────────────────────────────────────────────────────

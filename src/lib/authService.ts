@@ -87,8 +87,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
 export async function registerUser(payload: RegisterPayload): Promise<{ ok: true; tempCode?: string; mode: "remote" }> {
   // ALWAYS use remote API - no local fallback
   const apiUrl = apiBase(); // Will always be Render URL
-  console.log('🔐 registerUser: Calling', `${apiUrl}/api/register`);
-  const resp = await fetch(`${apiUrl}/api/register`, {
+  console.log('🔐 registerUser: Calling', `${apiUrl}/api/biometric-register`);
+  const resp = await fetch(`${apiUrl}/api/biometric-register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -100,7 +100,7 @@ export async function registerUser(payload: RegisterPayload): Promise<{ ok: true
   
   let data;
   try {
-    data = JSON.parse(responseText) as { error?: string; tempCode?: string };
+    data = JSON.parse(responseText) as { error?: string; tempCode?: string; ok?: boolean };
     console.log('✅ JSON parsed:', data);
   } catch (parseErr: any) {
     console.error('❌ JSON parse failed:', parseErr.message);

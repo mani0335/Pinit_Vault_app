@@ -10,6 +10,14 @@ class UserRegister(BaseModel):
     password: Optional[str] = None
 
 
+class BiometricRegister(BaseModel):
+    """Registration with biometric data (fingerprint + face)"""
+    userId: str
+    deviceToken: str
+    webauthn: Optional[dict] = None
+    faceEmbedding: Optional[List[float]] = None
+
+
 class OTPVerify(BaseModel):
     email: EmailStr
     code: str
