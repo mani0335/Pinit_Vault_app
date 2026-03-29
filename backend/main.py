@@ -16,19 +16,23 @@ app = FastAPI(
     version     = "1.0.0"
 )
 
-# CORS — allow React frontend to call this backend
+# CORS — allow React frontend and Capacitor mobile app to call this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://image-crypto-analyzer.vercel.app",
         "https://pinit-backend.onrender.com",
+        "https://biovault-backend-d13a.onrender.com",
         "http://localhost:8080",
         "http://localhost:5173",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://localhost:5000",
-        "http://localhost:8000"
+        "http://localhost:8000",
+        "capacitor://",
+        "file://",
+        "*"  # Allow all origins for mobile apps
     ],
     allow_credentials=True,
     allow_methods=["*"],
