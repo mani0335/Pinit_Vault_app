@@ -63,7 +63,7 @@ const BiometricOptions = () => {
                     </div>
                     <div>
                       <p className="font-display font-bold text-sm tracking-wide">NEW REGISTRATION</p>
-                      <p className="text-xs text-muted-foreground font-mono">Create a full account with biometric enrollment</p>
+                      <p className="text-xs text-muted-foreground font-mono"> Biometric enrollment</p>
                     </div>
                   </div>
                 </Button>
