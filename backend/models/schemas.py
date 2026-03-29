@@ -71,6 +71,7 @@ class VaultImageCreate(BaseModel):
     thumbnail_base64:   Optional[str]   = None
     capture_timestamp:  Optional[str]   = None
     device_id:          Optional[str]   = None
+    user_id: str 
 
 
 class VaultImageResponse(BaseModel):

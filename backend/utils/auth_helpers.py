@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
-from db.database import get_admin_db
+from ..db.database import get_admin_db
 import os
 import random
 import string

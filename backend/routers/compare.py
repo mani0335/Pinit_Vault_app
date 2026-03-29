@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
-from db.database import get_admin_db
-from models.schemas import ComparisonReportCreate
-from utils.auth_helpers import get_current_user, log_action
+from ..db.database import get_admin_db
+from ..models.schemas import ComparisonReportCreate
+from ..utils.auth_helpers import get_current_user, log_action
 import secrets
 
 router = APIRouter(tags=["Comparison"])

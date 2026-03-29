@@ -1,3 +1,5 @@
+import { data } from "@tensorflow/tfjs";
+
 type RegisterPayload = {
   userId: string;
   deviceToken: string;
@@ -368,7 +370,7 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
 // POST /api/user/check - Check if user exists with registered fingerprint (for login)
 export async function checkUserRegistered(userId: string, retries = 3): Promise<{ ok: boolean; reason?: string; fingerprintRegistered?: boolean; faceRegistered?: boolean; mode: "remote" }> {
   // ALWAYS use remote API - no local fallback
-  const apiUrl = apiBase(); // Will always be Render URL
+  const apiUrl = apiBase();
   
   let lastError: any = null;
   
@@ -379,16 +381,18 @@ export async function checkUserRegistered(userId: string, retries = 3): Promise<
       const resp = await fetch(`${apiUrl}/api/user/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({
+          user_id: userId
+        })
       });
       
       const responseText = await resp.text();
       console.log(`📥 Response status: ${resp.status}`);
       
-      let data;
+      let result;
       try {
-        data = JSON.parse(responseText) as { ok?: boolean; reason?: string; fingerprintRegistered?: boolean; faceRegistered?: boolean };
-        console.log('✅ JSON parsed:', data);
+        result = JSON.parse(responseText) as { ok?: boolean; reason?: string; fingerprintRegistered?: boolean; faceRegistered?: boolean };
+        console.log('✅ JSON parsed:', result);
       } catch (parseErr: any) {
         console.error('❌ JSON parse failed:', parseErr.message);
         lastError = new Error(`Failed to parse server response: ${parseErr.message}`);
@@ -403,26 +407,26 @@ export async function checkUserRegistered(userId: string, retries = 3): Promise<
       }
       
       if (!resp.ok) {
-        lastError = new Error(data.reason || `Check failed (${resp.status})`);
+        lastError = new Error(result.reason || `Check failed (${resp.status})`);
         console.warn(`⚠️  Check failed on attempt ${attempt}: ${lastError.message}`);
         
         // Retry on network/server errors
         if (attempt < retries && resp.status >= 500) {
           console.log(`⏳ Server error, retrying after 1 second...`);
-          await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+          await new Promise(r => setTimeout(r, 1000 * attempt));
           continue;
         }
         throw lastError;
       }
       
-      if (!data.ok) {
-        lastError = new Error(data.reason || 'User check failed');
+      if (!result.ok) {
+        lastError = new Error(result.reason || 'User check failed');
         console.warn(`⚠️  User check failed on attempt ${attempt}: ${lastError.message}`);
         
         // Retry on "user not found" as MongoDB might not be synced yet
-        if (attempt < retries && data.reason?.includes('not found')) {
+        if (attempt < retries && result.reason?.includes('not found')) {
           console.log(`⏳ User not immediately found, retrying after 1 second...`);
-          await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+          await new Promise(r => setTimeout(r, 1000 * attempt));
           continue;
         }
         throw lastError;
@@ -431,8 +435,8 @@ export async function checkUserRegistered(userId: string, retries = 3): Promise<
       console.log('✅ User registration check passed');
       return { 
         ok: true, 
-        fingerprintRegistered: data.fingerprintRegistered,
-        faceRegistered: data.faceRegistered,
+        fingerprintRegistered: result.fingerprintRegistered,
+        faceRegistered: result.faceRegistered,
         mode: "remote" 
       };
     } catch (err: any) {

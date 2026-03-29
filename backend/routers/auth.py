@@ -1,17 +1,17 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
-from db.database import get_admin_db
-from models.schemas import (
+from ..db.database import get_admin_db
+from ..models.schemas import (
     UserRegister, OTPVerify, OTPResend,
     WebAuthnRegisterStart, WebAuthnRegisterFinish,
     WebAuthnLoginStart, WebAuthnLoginFinish
 )
-from utils.auth_helpers import (
+from ..utils.auth_helpers import (
     generate_jwt, generate_otp,
     get_current_user, log_action
 )
-from utils.email_helper import send_otp_email, send_new_device_email
+from ..utils.email_helper import send_otp_email, send_new_device_email
 import os
 import json
 

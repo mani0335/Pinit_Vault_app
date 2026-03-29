@@ -52,13 +52,13 @@ const Login = () => {
           }
         }
         
-        // Still no userId after retries - automatically redirect to registration
-        console.log('❌ Login: No saved userId found - redirecting to registration');
-        navigate('/register', { replace: true });
+        // Still no userId after retries - show biometric options
+        console.log('❌ Login: No saved userId found - showing biometric options');
+        navigate('/biometric-options', { replace: true });
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);
-        // On error, also redirect to registration
-        navigate('/register', { replace: true });
+        // On error, show biometric options
+        navigate('/biometric-options', { replace: true });
       }
     };
     
@@ -152,8 +152,8 @@ const Login = () => {
                     
                     // SPECIAL: User not registered in database
                     if (msg.includes('redirect_to_register')) {
-                      console.log('🔄 User account not found - clearing cache and redirecting to registration');
-                      navigate('/register', { replace: true });
+                      console.log('🔄 User account not found - showing biometric options');
+                      navigate('/biometric-options', { replace: true });
                       return;
                     }
                     

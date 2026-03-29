@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye } from "lucide-react";
+import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
 
 interface PINITDashboardProps {
   userId?: string;
+  isRestricted?: boolean;
 }
 
-export function PINITDashboard({ userId }: PINITDashboardProps) {
+export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [activePage, setActivePage] = useState<"home" | "overview" | "vault" | "analyzer">("home");
 
   // ===================== REAL DATA FROM APIs =====================
@@ -155,6 +156,10 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
   };
 
   const handleDeleteImage = async (imageId: string) => {
+    if (isRestricted) {
+      alert("❌ Temporary access: Delete operations are not available. Complete registration for full access.");
+      return;
+    }
     if (!window.confirm("Delete this image from vault?")) return;
     try {
       await vaultAPI.delete(imageId);
@@ -395,9 +400,11 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
                       onClick={() => handleDeleteImage(img.id)}
                       size="sm"
                       variant="ghost"
-                      className="h-6 w-6 p-0"
+                      disabled={isRestricted}
+                      className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={isRestricted ? "Disabled: Temporary access only" : "Delete image"}
                     >
-                      <Trash2 className="w-4 h-4 text-red-600" />
+                      <Trash2 className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-red-600"}`} />
                     </Button>
                   </div>
                 </CardContent>
@@ -455,19 +462,22 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
 
       {/* File Upload */}
       <motion.div variants={itemVariants}>
-        <label className="block">
-          <div className="border-2 border-dashed border-indigo-300 rounded-lg p-4 text-center cursor-pointer hover:border-indigo-500 transition">
+        <label className={`block ${isRestricted ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+          <div className={`border-2 border-dashed ${isRestricted ? "border-gray-300 bg-gray-50" : "border-indigo-300 hover:border-indigo-500"} rounded-lg p-4 text-center transition`}>
             <input
               type="file"
               onChange={handleFileSelect}
               accept="image/*,.pdf"
+              disabled={isRestricted}
               className="hidden"
             />
-            <Camera className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-            <p className="text-xs font-semibold text-gray-900">
-              {cryptoFile ? cryptoFile.name : "Select Image or PDF"}
+            <Camera className={`w-6 h-6 ${isRestricted ? "text-gray-400" : "text-indigo-600"} mx-auto mb-2`} />
+            <p className={`text-xs font-semibold ${isRestricted ? "text-gray-600" : "text-gray-900"}`}>
+              {isRestricted ? "⏱️ Upload Disabled (Temporary Access)" : (cryptoFile ? cryptoFile.name : "Select Image or PDF")}
             </p>
-            <p className="text-xs text-gray-500">Click to upload</p>
+            <p className={`text-xs ${isRestricted ? "text-gray-500" : "text-gray-500"}`}>
+              {isRestricted ? "Complete registration to upload files" : "Click to upload"}
+            </p>
           </div>
         </label>
       </motion.div>
@@ -492,13 +502,19 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
         <div className="grid grid-cols-2 gap-2">
           <Button
             onClick={handleEncryptImage}
-            disabled={!cryptoFile || isEncrypting}
-            className="h-10 bg-indigo-600 hover:bg-indigo-700 text-white border-0 text-xs"
+            disabled={!cryptoFile || isEncrypting || isRestricted}
+            className="h-10 bg-indigo-600 hover:bg-indigo-700 text-white border-0 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isRestricted ? "Disabled: Temporary access only" : "Encrypt the selected image"}
           >
             {isEncrypting ? (
               <>
                 <Loader className="w-3 h-3 mr-1 animate-spin" />
                 <span>Encrypting...</span>
+              </>
+            ) : isRestricted ? (
+              <>
+                <Lock className="w-3 h-3 mr-1" />
+                <span>🔒 Locked</span>
               </>
             ) : (
               <span>🔐 Encrypt</span>
@@ -506,13 +522,19 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
           </Button>
           <Button
             onClick={handleAnalyzeImage}
-            disabled={!cryptoFile || isAnalyzing}
-            className="h-10 bg-blue-600 hover:bg-blue-700 text-white border-0 text-xs"
+            disabled={!cryptoFile || isAnalyzing || isRestricted}
+            className="h-10 bg-blue-600 hover:bg-blue-700 text-white border-0 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isRestricted ? "Disabled: Temporary access only" : "Analyze the selected image"}
           >
             {isAnalyzing ? (
               <>
                 <Loader className="w-3 h-3 mr-1 animate-spin" />
                 <span>Analyzing...</span>
+              </>
+            ) : isRestricted ? (
+              <>
+                <Lock className="w-3 h-3 mr-1" />
+                <span>🔒 Locked</span>
               </>
             ) : (
               <span>🔍 Analyze</span>

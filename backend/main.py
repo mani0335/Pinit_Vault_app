@@ -1,11 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pathlib import Path
 import os
 
-load_dotenv()
+# Load .env from the backend directory
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
 
-from routers import auth, vault, compare, admin,certificates
+from .routers import auth, vault, compare, admin, certificates
 
 app = FastAPI(
     title       = "PINIT API",
@@ -17,11 +20,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "https://image-crypto-analyzer.vercel.app"
-],
-    allow_credentials =True,
-    allow_methods     = ["*"],
-    allow_headers     = ["*"]
+        "https://image-crypto-analyzer.vercel.app",
+        "http://localhost:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
 )
 
 # Register all routers
@@ -44,3 +51,58 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ── Adapter endpoints for frontend biometric auth ────────────────────────────
+
+@app.post("/api/register")
+async def api_register(data: dict):
+    """Adapter endpoint: Convert biometric registration to backend register format"""
+    from .db.database import get_admin_db
+    import uuid
+    
+    db = get_admin_db()
+    
+    # Generate credentials from biometric data
+    user_id = data.get("userId", str(uuid.uuid4()))
+    email = f"{user_id}@biovault.local"  # Generate email from userId
+    username = data.get("userId", "user")
+    
+    # Check if user already exists
+    existing = db.table("users").select("id").eq("email", email).execute()
+    if existing.data:
+        return {"ok": True, "tempCode": "000000", "mode": "remote"}
+    
+    # Create user with minimal data
+    db.table("users").insert({
+        "username": username,
+        "email": email,
+        "role": "user",
+        "is_active": True,
+        "email_verified": True,
+        "password_hash": None
+    }).execute()
+    
+    return {"ok": True, "tempCode": "000000", "mode": "remote"}
+
+
+@app.post("/api/validate")
+async def api_validate(data: dict):
+    """Adapter endpoint: Validate deviced-based authentication"""
+    from .db.database import get_admin_db
+    
+    db = get_admin_db()
+    user_id = data.get("userId")
+    device_token = data.get("deviceToken")
+    
+    if not user_id or not device_token:
+        return {"authorized": False, "reason": "Missing userId or deviceToken"}
+    
+    # Check if user exists
+    email = f"{user_id}@biovault.local"
+    result = db.table("users").select("id").eq("email", email).execute()
+    
+    if not result.data:
+        return {"authorized": False, "reason": "User not found"}
+    
+    return {"authorized": True, "reason": "Device verified"}

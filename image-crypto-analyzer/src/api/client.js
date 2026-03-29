@@ -36,7 +36,7 @@ export const authAPI = {
 // ─── Vault ────────────────────────────────────────────────────────────────────
 export const vaultAPI = {
   save        : (data)    => request('POST',   '/vault/save', data),
-  list        : ()        => request('GET',    '/vault/list'),
+  list        : ()        => request('GET',    '/vault/list ?user_id = ${userId}'),
   getOne      : (id)      => request('GET',    `/vault/${id}`),
   delete      : (id)      => request('DELETE', `/vault/${id}`),
   verifyByHash: (hash)    => request('GET',    `/vault/verify/${hash}`, null, false),

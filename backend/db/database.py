@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 import os
 import time
 
-load_dotenv()
+# Load .env from the backend directory
+from pathlib import Path
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 SUPABASE_URL        : str = os.getenv("SUPABASE_URL")
 SUPABASE_KEY        : str = os.getenv("SUPABASE_SERVICE_KEY")  # use service key for all backend ops

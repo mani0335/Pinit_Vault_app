@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
-from db.database import get_admin_db
-from models.schemas import VaultImageCreate, VaultImageResponse
-from utils.auth_helpers import get_current_user, log_action
-from utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail
+from ..db.database import get_admin_db
+from ..models.schemas import VaultImageCreate, VaultImageResponse
+from ..utils.auth_helpers import get_current_user, log_action
+from ..utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail
 
 router = APIRouter(tags=["Vault"])
 
@@ -30,7 +30,7 @@ async def save_vault_image(
 
     # Save to Supabase
     record = db.table("vault_images").insert({
-        "user_id"            : current_user["id"],
+        "user_id"  : data.user_id,
         "asset_id"           : data.asset_id,
         "certificate_id"     : data.certificate_id,
         "owner_name"         : data.owner_name,
@@ -46,9 +46,9 @@ async def save_vault_image(
     }).execute()
 
     log_action(
-        current_user["id"], "vault_save",
-        {"asset_id": data.asset_id},
-        str(request.client.host)
+        user_id=data.user_id,
+        details={"asset_id": data.asset_id},
+        ip_address=str(request.client.host)
     )
 
     return {"message": "Saved to vault", "data": record.data[0]}
@@ -57,9 +57,10 @@ async def save_vault_image(
 @router.get("/list")
 async def list_vault_images(current_user=Depends(get_current_user)):
     db      = get_admin_db()
+    user_id = current_user.get("id")
     result  = db.table("vault_images") \
         .select("*") \
-        .eq("user_id", current_user["id"]) \
+        .eq("user_id", user_id) \
         .order("created_at", desc=True) \
         .execute()
     return {"assets": result.data, "total": len(result.data)}

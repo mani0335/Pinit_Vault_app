@@ -5,7 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
+import BiometricOptions from "./pages/BiometricOptions.tsx";
 import Register from "./pages/Register.tsx";
+import TempAccessFace from "./pages/TempAccessFace.tsx";
 import TempAccess from "./pages/TempAccess.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -22,7 +24,9 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/biometric-options" element={<BiometricOptions />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/temp-access-face" element={<TempAccessFace />} />
           <Route path="/temp-access" element={<TempAccess />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
