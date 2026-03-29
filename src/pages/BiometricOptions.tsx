@@ -92,7 +92,7 @@ const BiometricOptions = () => {
                     </div>
                     <div>
                       <p className="font-display font-bold text-sm tracking-wide text-neon-green">TEMPORARY ACCESS</p>
-                      <p className="text-xs text-muted-foreground font-mono">Limited dashboard access with face verification</p>
+                      <p className="text-xs text-muted-foreground font-mono">Limited dashboard </p>
                     </div>
                   </div>
                 </Button>
