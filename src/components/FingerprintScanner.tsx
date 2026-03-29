@@ -69,87 +69,14 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               return;
             }
             
-            // For login mode: verify fingerprint with backend if this is login
+            // For login mode: fingerprint scanned locally - parent (Login.tsx) will handle backend verification
             if (mode === 'login') {
-              try {
-                const userId = await appStorage.getItem('biovault_userId');
-                console.log('🔍 FingerprintScanner LOGIN mode - userId from storage:', userId);
-                
-                if (!userId) {
-                  throw new Error('User ID not found in storage. Please register first.');
-                }
-                
-                const { getDeviceToken } = await import('@/lib/deviceToken');
-                const deviceToken = await getDeviceToken();
-                console.log('✅ Got device token, checking user registration');
-                
-                // Check with backend if user has fingerprint registered
-                const { checkUserRegistered } = await import('@/lib/authService');
-                const result = await checkUserRegistered(userId);
-                
-                console.log('📍 Fingerprint verification result:', result);
-                
-                if (!result.ok) {
-                  throw new Error(result.reason || 'User not found in database');
-                }
-                
-                // STRICT: Require fingerprint to be registered
-                if (!result.fingerprintRegistered) {
-                  throw new Error('❌ Fingerprint not registered for this user. Please re-register.');
-                }
-                
-                // STRICT: Require face to be registered
-                if (!result.faceRegistered) {
-                  throw new Error('❌ Face data not registered. Please re-register.');
-                }
-                
-                console.log('✅ User has both fingerprint and face registered - proceeding to face verification');
-                // Success - fingerprint verified locally, user has fingerprint + face in database
-                setStatus('success');
-                setMessage('✓ Fingerprint Verified');
-                setTimeout(onSuccess, SUCCESS_HOLD_MS);
-                return;
-              } catch (e: any) {
-                const msg = (e?.message || '').toString();
-                const friendly = msg || 'Fingerprint verification failed. Please try again.';
-                console.error('❌ Fingerprint login error:', friendly);
-                
-                // CRITICAL: If user not found, clear storage and signal to parent
-                if (msg.includes('User not found')) {
-                  console.log('⚠️ User not found in database - clearing stale userId from storage');
-                  await appStorage.removeItem('biovault_userId');
-                  
-                  // Signal parent component with special error code
-                  const directedMessage = 'REDIRECT_TO_REGISTER:User account not found. Please register first.';
-                  setStatus('error');
-                  setMessage('❌ Account not found. Redirecting...');
-                  onError?.(directedMessage);
-                  return;
-                }
-                
-                // CRITICAL: If biometric not registered, redirect to re-registration
-                if (msg.includes('not registered')) {
-                  console.log('⚠️ Biometric data not registered - redirecting to registration');
-                  await appStorage.removeItem('biovault_userId');
-                  
-                  // Signal parent component with special error code
-                  const directedMessage = 'REDIRECT_TO_REGISTER:' + friendly;
-                  setStatus('error');
-                  setMessage('❌ Biometric not registered. Redirecting...');
-                  onError?.(directedMessage);
-                  return;
-                }
-                
-                setStatus('error');
-                setMessage('❌ ' + friendly);
-                onError?.(friendly || 'Fingerprint verification failed');
-                setTimeout(() => setStatus('idle'), 3000);
-                return;
-              }
+              console.log('✅ Fingerprint scanned locally - parent will verify with backend');
+              setStatus('success');
+              setMessage('✓ Fingerprint Captured');
+              setTimeout(onSuccess, SUCCESS_HOLD_MS);
+              return;
             }
-            
-            // If we get here, neither register nor login mode was handled properly
-            throw new Error('Invalid fingerprint scanner mode');
           }
         } catch (nativeErr: any) {
           // User cancelled or biometric failed

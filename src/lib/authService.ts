@@ -433,30 +433,140 @@ export async function checkUserRegistered(userId: string, retries = 3): Promise<
       }
       
       console.log('✅ User registration check passed');
-      return { 
-        ok: true, 
-        fingerprintRegistered: result.fingerprintRegistered,
-        faceRegistered: result.faceRegistered,
-        mode: "remote" 
+      return {
+        ok: true,
+        fingerprintRegistered: result.fingerprintRegistered ?? false,
+        faceRegistered: result.faceRegistered ?? false,
+        mode: "remote"
       };
     } catch (err: any) {
       lastError = err;
-      console.error(`❌ Attempt ${attempt} failed:`, err.message);
-      
-      // Don't retry on auth errors
-      if (err.message?.includes('not registered') || err.message?.includes('device mismatch')) {
-        throw err;
-      }
-      
-      // Retry on network errors
+      console.error(`❌ Error on attempt ${attempt}:`, err.message);
       if (attempt < retries) {
-        console.log(`⏳ Retrying after ${attempt} second(s)...`);
+        console.log(`⏳ Retrying after 1 second...`);
         await new Promise(r => setTimeout(r, 1000 * attempt));
-        continue;
       }
     }
   }
   
-  // All retries exhausted
-  throw lastError || new Error('User check failed after multiple retries');
+  console.error('❌ User check failed after all retries:', lastError?.message);
+  throw lastError;
+}
+
+
+// ── New Backend Verification Endpoints ────────────────────────────────────────
+
+export async function verifyFingerprintBackend(userId: string, webauthn?: any): Promise<{ 
+  verified: boolean; 
+  userId: string | null; 
+  message: string;
+  userRecord?: any;
+  mode: "remote";
+}> {
+  const apiUrl = apiBase();
+  console.log('🔐 verifyFingerprintBackend: Calling', `${apiUrl}/auth/verify-fingerprint`);
+  
+  try {
+    const resp = await fetch(`${apiUrl}/auth/verify-fingerprint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        userId,
+        webauthn: webauthn || null
+      }),
+    });
+    
+    const responseText = await resp.text();
+    console.log('📥 Fingerprint verify response status:', resp.status);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      console.log('✅ Fingerprint response:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      return { 
+        verified: false, 
+        userId: null, 
+        message: `Server error: ${parseErr.message}`,
+        mode: "remote"
+      };
+    }
+    
+    return {
+      verified: data.verified || false,
+      userId: data.userId || null,
+      message: data.message || "Verification failed",
+      userRecord: data.userRecord,
+      mode: "remote"
+    };
+  } catch (err: any) {
+    console.error('❌ Fingerprint verification error:', err.message);
+    return {
+      verified: false,
+      userId: null,
+      message: `Network error: ${err.message}`,
+      mode: "remote"
+    };
+  }
+}
+
+
+export async function verifyFaceBackend(faceEmbedding: number[], userId?: string): Promise<{
+  verified: boolean;
+  userId: string | null;
+  message: string;
+  similarity: number;
+  mode: "remote";
+}> {
+  const apiUrl = apiBase();
+  const endpoint = `${apiUrl}/auth/verify-face`;
+  
+  console.log('🔐 verifyFaceBackend: Calling', endpoint, 'userId:', userId || 'any user');
+  
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        faceEmbedding,
+        userId: userId || null
+      }),
+    });
+    
+    const responseText = await resp.text();
+    console.log('📥 Face verify response status:', resp.status);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      console.log('✅ Face response:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      return {
+        verified: false,
+        userId: null,
+        message: `Server error: ${parseErr.message}`,
+        similarity: 0,
+        mode: "remote"
+      };
+    }
+    
+    return {
+      verified: data.verified || false,
+      userId: data.userId || null,
+      message: data.message || "Face verification failed",
+      similarity: data.similarity || 0,
+      mode: "remote"
+    };
+  } catch (err: any) {
+    console.error('❌ Face verification error:', err.message);
+    return {
+      verified: false,
+      userId: null,
+      message: `Network error: ${err.message}`,
+      similarity: 0,
+      mode: "remote"
+    };
+  }
 }

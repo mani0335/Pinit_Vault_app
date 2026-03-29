@@ -18,6 +18,18 @@ class BiometricRegister(BaseModel):
     faceEmbedding: Optional[List[float]] = None
 
 
+class VerifyFingerprintRequest(BaseModel):
+    """Verify fingerprint against registered credentials"""
+    userId: str
+    webauthn: Optional[dict] = None
+
+
+class VerifyFaceRequest(BaseModel):
+    """Verify face embedding against stored embeddings"""
+    faceEmbedding: List[float]
+    userId: Optional[str] = None
+
+
 class OTPVerify(BaseModel):
     email: EmailStr
     code: str
