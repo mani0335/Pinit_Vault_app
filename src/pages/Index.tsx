@@ -9,33 +9,24 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if user is registered FIRST, then route accordingly
-    const checkAndRoute = async () => {
+    // Always go to Login page - it will handle the routing logic internally
+    const routeToLogin = async () => {
       try {
-        // Check if userId exists in device storage
-        const userId = await appStorage.getItem("biovault_userId");
-        console.log('🔍 Index: Checking registration status...', { userId });
-        
         // Wait for splash animation (1.8s)
         await new Promise(resolve => setTimeout(resolve, 1800));
         
-        if (userId) {
-          // User is registered - go to LOGIN
-          console.log('✅ User registered (userId:', userId, ') → Going to Login');
-          navigate('/login');
-        } else {
-          // User is NOT registered - go to REGISTER
-          console.log('❌ No userId found → Going to Register');
-          navigate('/register');
-        }
+        console.log('🚀 Index: Animation complete → Routing to Login page');
+        // Always navigate to login - Login.tsx will check if user is registered
+        // If registered: show fingerprint + face verification
+        // If not registered: redirect to /biometric-options for registration or temp access
+        navigate('/login');
       } catch (err) {
-        console.error('❌ Index: Error checking registration:', err);
-        // On error, default to register (safer)
-        navigate('/register');
+        console.error('❌ Index: Error during routing:', err);
+        navigate('/login');
       }
     };
     
-    checkAndRoute();
+    routeToLogin();
   }, [navigate]);
 
   return (

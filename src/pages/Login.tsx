@@ -31,20 +31,43 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if app is starting fresh
-    const initializeApp = async () => {
+    // Check if user is registered - if not, redirect to biometric options immediately
+    const checkRegistration = async () => {
       try {
-        // Show loading/splash screen briefly
+        const userId = await appStorage.getItem("biovault_userId");
+        console.log('🔍 Login: Checking for userId:', userId);
+        
+        if (!userId) {
+          // No user registered - redirect to options page
+          console.log('❌ Login: No userId found - redirecting to BiometricOptions');
+          navigate('/biometric-options', { replace: true });
+          return;
+        }
+        
+        console.log('✅ Login: User found, showing login page:', userId);
+        // User found - show loading screen briefly then let them login
         await new Promise(resolve => setTimeout(resolve, 800));
         setIsLoading(false);
       } catch (err) {
-        console.error('❌ Init error:', err);
-        setIsLoading(false);
+        console.error('❌ Login: Error checking registration:', err);
+        // On error, assume not registered and go to options
+        navigate('/biometric-options', { replace: true });
       }
     };
     
-    initializeApp();
-  }, []);
+    checkRegistration();
+  }, [navigate]);
+
+  useEffect(() => {
+    // This was the old loading logic - now just a fallback timeout
+    if (!isLoading) return;
+    
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   const handleFingerprintSuccess = async () => {
     console.log('✅ Fingerprint scanned locally - now verifying with backend');

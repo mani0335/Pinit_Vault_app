@@ -88,30 +88,45 @@ export async function registerUser(payload: RegisterPayload): Promise<{ ok: true
   // ALWAYS use remote API - no local fallback
   const apiUrl = apiBase(); // Will always be Render URL
   console.log('🔐 registerUser: Calling', `${apiUrl}/auth/biometric-register`);
-  const resp = await fetch(`${apiUrl}/auth/biometric-register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  console.log('📦 Payload:', { 
+    userId: payload.userId, 
+    deviceToken: payload.deviceToken, 
+    webauthn: payload.webauthn ? '✓ present' : 'null',
+    faceEmbedding: payload.faceEmbedding ? `✓ [${payload.faceEmbedding.length} dims]` : 'null'
   });
   
-  const responseText = await resp.text();
-  console.log('📥 Response status:', resp.status, 'length:', responseText.length);
-  console.log('📥 First 200 chars:', responseText.substring(0, 200));
-  
-  let data;
   try {
-    data = JSON.parse(responseText) as { error?: string; tempCode?: string; ok?: boolean };
-    console.log('✅ JSON parsed:', data);
-  } catch (parseErr: any) {
-    console.error('❌ JSON parse failed:', parseErr.message);
-    throw new Error(`Failed to parse server response: ${parseErr.message}`);
+    const resp = await fetch(`${apiUrl}/auth/biometric-register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    
+    const responseText = await resp.text();
+    console.log('📥 Response status:', resp.status, 'length:', responseText.length);
+    console.log('📥 Response preview:', responseText.substring(0, 300));
+    
+    let data;
+    try {
+      data = JSON.parse(responseText) as { error?: string; tempCode?: string; ok?: boolean; message?: string };
+      console.log('✅ JSON parsed:', data);
+    } catch (parseErr: any) {
+      console.error('❌ JSON parse failed:', parseErr.message);
+      throw new Error(`Failed to parse server response: ${parseErr.message}`);
+    }
+    
+    if (!resp.ok) {
+      throw new Error(data.message || data.error || `Registration failed (${resp.status})`);
+    }
+    
+    return { ok: true, tempCode: data.tempCode, mode: "remote" };
+  } catch (fetchErr: any) {
+    console.error('❌ Network error during registration:', fetchErr.message);
+    console.error('❌ Backend URL:', apiUrl);
+    console.error('❌ Is backend reachable? Check Render dashboard');
+    // Re-throw with more context
+    throw new Error(`Failed to register: ${fetchErr.message}. Backend: ${apiUrl}`);
   }
-  
-  if (!resp.ok) {
-    throw new Error(data.error || `Registration failed (${resp.status})`);
-  }
-  
-  return { ok: true, tempCode: data.tempCode, mode: "remote" };
 }
 
 export async function validateUser(userId: string, deviceToken: string): Promise<{ authorized: boolean; reason?: string; mode: "remote" | "local" }> {
