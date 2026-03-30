@@ -10,137 +10,82 @@ import { StatusIndicator } from "@/components/StatusIndicator";
 import { appStorage } from "@/lib/storage";
 import { requestTempCode, verifyTempCode, rebindDevice } from "@/lib/authService";
 
-type Step = "userId" | "code" | "face" | "fingerprint" | "update" | "success";
+type Step = "face" | "success" | "error";
 
 const TempAccess = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("userId");  // Start with userId input
-  const [userIdInput, setUserIdInput] = useState("");  // Manual userId entry
-  const [code, setCode] = useState("");
-  const [issuedCode, setIssuedCode] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("Enter your User ID from Phone A");
-  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<Step>("face");
+  const [message, setMessage] = useState<string>("Scan your face to access your account");
   const [userId, setUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Try to load userId from storage, but don't redirect if not found
-    const loadUserId = async () => {
-      try {
-        const id = await appStorage.getItem("biovault_userId");
-        if (id) {
-          console.log("✅ Found userId in storage:", id);
-          setUserId(id);
-          setUserIdInput(id);
-          setStep("code");  // Skip to code step if userId already stored
-          
-          // Request temp code immediately
-          const result = await requestTempCode(id);
-          if (result.ok && result.tempCode) {
-            setIssuedCode(String(result.tempCode));
-          }
-        }
-      } catch (err) {
-        console.error('⚠️ Could not load userId from storage:', err);
-      }
-    };
+  const handleFaceSuccess = async (faceData: any) => {
+    // Extract face embedding from wrapped object
+    const faceEmbedding = faceData?.embedding || faceData || null;
     
-    loadUserId();
-  }, []);
-
-  const handleEnterUserId = async () => {
-    if (!userIdInput.trim()) {
-      setMessage("❌ Please enter your User ID");
+    if (!faceEmbedding || !Array.isArray(faceEmbedding) || faceEmbedding.length === 0) {
+      setMessage("❌ Face not captured properly. Please try again.");
+      setStep("error");
       return;
     }
-
-    setBusy(true);
-    setMessage("Loading temporary code...");
 
     try {
-      setUserId(userIdInput.trim());
+      setMessage("🔍 Searching database for your face...");
       
-      // Request temp code for this userId
-      const result = await requestTempCode(userIdInput.trim());
-      if (!result.ok) {
-        throw new Error(result.reason || "Failed to request temp code");
-      }
+      // Call backend to search all users and find matching face
+      const apiUrl = (import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com").trim();
+      const resp = await fetch(`${apiUrl}/auth/verify-face`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          faceEmbedding: faceEmbedding,
+          userId: null  // No userId = search all users
+        }),
+      });
+
+      const data = await resp.json();
       
-      setIssuedCode(String(result.tempCode));
-      setMessage("✅ Code received. Enter it below to proceed.");
-      setStep("code");
-    } catch (e: any) {
-      setMessage("❌ " + (e?.message || "Failed to get code"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!userId) {
-      return;
-    }
-
-    const requestCode = async () => {
-      try {
-        const result = await requestTempCode(userId);
-        if (result.ok && result.tempCode) {
-          setIssuedCode(String(result.tempCode));
+      if (data.verified && data.userId) {
+        setUserId(data.userId);
+        setMessage(`✅ Welcome back, ${data.userId}!`);
+        setStep("success");
+        
+        // Save tokens and redirect
+        if (data.token) {
+          localStorage.setItem("biovault_token", data.token);
         }
-      } catch (e) {
-        // keep UI usable even if request fails
+        if (data.refreshToken) {
+          localStorage.setItem("biovault_refresh_token", data.refreshToken);
+        }
+        
+        // Redirect to dashboard after brief success message
+        setTimeout(() => {
+          navigate("/dashboard", { replace: true });
+        }, 1000);
+      } else {
+        setMessage(`❌ ${data.message || "Face not found in database"}`);
+        setStep("error");
       }
-    };
-
-    requestCode();
-  }, [navigate, userId]);
-
-  const verifyCode = async () => {
-    if (!userId || !code.trim()) {
-      setMessage("Please enter a valid code");
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await verifyTempCode(userId, code.trim());
-      if (!result.ok) {
-        throw new Error(result.reason || "Invalid temp code");
-      }
-      setMessage("Code verified. Register biometrics.");
-      setStep("face");
-    } catch (e: any) {
-      setMessage(e?.message || "Code verification failed");
-    } finally {
-      setBusy(false);
+    } catch (err: any) {
+      setMessage(`❌ Error: ${err.message || "Failed to identify face"}`);
+      setStep("error");
     }
   };
 
-  const rebindDevice = async () => {
-    if (!userId) return;
-    setBusy(true);
-    try {
-      const { getDeviceToken } = await import("@/lib/deviceToken");
-      const deviceToken = await getDeviceToken();
-      const result = await rebindDevice(userId, deviceToken);
-      if (!result.ok) {
-        throw new Error(result.reason || "Device update failed");
-      }
-      setMessage("Device updated. Login again.");
-      setStep("success");
-    } catch (e: any) {
-      setMessage(e?.message || "Device update failed");
-    } finally {
-      setBusy(false);
-    }
+  const handleFaceError = () => {
+    setMessage("❌ Face scan failed. Please try again.");
+    setStep("error");
   };
 
-  const labels = ["USER", "CODE", "FACE", "PRINT", "UPDATE", "DONE"];
+  const handleRetry = () => {
+    setStep("face");
+    setMessage("Scan your face to access your account");
+  };
+
+  const labels = ["FACE", "SUCCESS"];
   const idxByStep: Record<Step, number> = {
-    userId: 0,
-    code: 1,
-    face: 2,
-    fingerprint: 3,
-    update: 4,
-    success: 5,
+    face: 0,
+    success: 1,
+    error: 1,
   };
   const current = idxByStep[step];
 
@@ -160,7 +105,7 @@ const TempAccess = () => {
                 TEMP ACCESS
               </h1>
             </div>
-            <StatusIndicator status="warning" label="Restricted Mode" />
+            <StatusIndicator status="warning" label="Face Authentication" />
           </div>
 
           <div className="flex items-center justify-center gap-2 mb-8 flex-wrap">
@@ -179,57 +124,11 @@ const TempAccess = () => {
           </div>
 
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-surface rounded-xl p-8">
-            {step === "userId" && (
-              <div className="text-center">
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">YOUR USER ID</h2>
-                <p className="text-xs text-muted-foreground font-mono mb-4">Enter the User ID from your Phone A (looks like USR-XXXXXX)</p>
-                <input
-                  value={userIdInput}
-                  onChange={(e) => setUserIdInput(e.target.value)}
-                  placeholder="USR-123456"
-                  className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-center font-mono tracking-widest text-lg mb-4"
-                />
-                <p className="text-xs text-muted-foreground font-mono mb-4">{message}</p>
-                <Button variant="cyber-secondary" onClick={handleEnterUserId} disabled={busy}>Continue</Button>
-              </div>
-            )}
-
-            {step === "code" && (
-              <div className="text-center">
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">ENTER TEMP CODE</h2>
-                <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="6-digit code"
-                  className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-center font-mono tracking-widest text-lg mb-4"
-                />
-                {issuedCode && (
-                  <p className="text-xs text-muted-foreground font-mono mb-3">Demo code: <span className="text-accent">{issuedCode}</span></p>
-                )}
-                <p className="text-xs text-muted-foreground font-mono mb-4">{message}</p>
-                <Button variant="cyber-secondary" onClick={verifyCode} disabled={busy}>Verify Code</Button>
-              </div>
-            )}
-
             {step === "face" && (
               <div>
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">REGISTER FACE</h2>
-                <FaceScanner mode="register" onSuccess={() => setStep("fingerprint")} />
-              </div>
-            )}
-
-            {step === "fingerprint" && (
-              <div>
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">REGISTER FINGERPRINT</h2>
-                <FingerprintScanner mode="register" onSuccess={() => setStep("update")} />
-              </div>
-            )}
-
-            {step === "update" && (
-              <div className="text-center">
-                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">UPDATE DEVICE ID</h2>
-                <p className="text-xs text-muted-foreground font-mono mb-6">Bind this phone to your account, then login again.</p>
-                <Button variant="cyber" onClick={rebindDevice} disabled={busy}>Update Device ID</Button>
+                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">SCAN YOUR FACE</h2>
+                <p className="text-xs text-muted-foreground font-mono text-center mb-4">{message}</p>
+                <FaceScanner mode="login" onSuccess={handleFaceSuccess} onError={handleFaceError} />
               </div>
             )}
 
@@ -238,13 +137,20 @@ const TempAccess = () => {
                 <div className="w-20 h-20 rounded-full bg-accent/10 border-2 border-accent flex items-center justify-center mx-auto mb-4">
                   <Clock className="w-10 h-10 text-accent" />
                 </div>
-                <h2 className="text-xl font-display tracking-wider text-accent mb-2">DEVICE UPDATED</h2>
+                <h2 className="text-xl font-display tracking-wider text-accent mb-2">IDENTIFIED</h2>
                 <p className="text-muted-foreground font-mono text-sm mb-6">{message}</p>
-                <div className="flex gap-3 justify-center">
-                  <Button variant="cyber" onClick={() => navigate("/login")}>Login Again</Button>
-                  <Button variant="ghost" className="text-muted-foreground" onClick={() => navigate("/")}>Home</Button>
-                </div>
+                <p className="text-xs text-muted-foreground">Redirecting to your vault...</p>
               </motion.div>
+            )}
+
+            {step === "error" && (
+              <div className="text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-destructive/10 border-2 border-destructive flex items-center justify-center mx-auto mb-4">
+                  <span className="text-2xl">✕</span>
+                </div>
+                <p className="text-sm font-mono text-destructive mb-6">{message}</p>
+                <Button variant="cyber-secondary" onClick={handleRetry}>Try Again</Button>
+              </div>
             )}
           </motion.div>
         </motion.div>
