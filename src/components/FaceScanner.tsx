@@ -257,7 +257,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
         setMessage(`✓ Verified (${Math.round((data.score || 0) * 100)}%)`);
         stopCamera();
         setCameraReady(false);
-        setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
+        setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
         return;
       } catch (err: any) {
         const msg = (err?.message || "").toString();
@@ -279,7 +279,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     setMessage("✓ Face captured successfully");
     stopCamera();
     setCameraReady(false);
-    setTimeout(() => onSuccess(embedding), SUCCESS_HOLD_MS);
+    setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
   }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
 
   return (
