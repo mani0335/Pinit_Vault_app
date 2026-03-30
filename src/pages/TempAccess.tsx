@@ -22,7 +22,11 @@ const TempAccess = () => {
     // Extract face embedding from wrapped object
     const faceEmbedding = faceData?.embedding || faceData || null;
     
+    console.log("🔍 TempAccess: Face scan successful");
+    console.log("📊 Embedding length:", faceEmbedding?.length || 0);
+    
     if (!faceEmbedding || !Array.isArray(faceEmbedding) || faceEmbedding.length === 0) {
+      console.error("❌ TempAccess: No face embedding");
       setMessage("❌ Face not captured properly. Please try again.");
       setStep("error");
       return;
@@ -33,18 +37,27 @@ const TempAccess = () => {
       
       // Call backend to search all users and find matching face
       const apiUrl = (import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com").trim();
+      console.log("🌐 API URL:", apiUrl);
+      
+      const requestBody = {
+        faceEmbedding: faceEmbedding,
+        userId: null  // No userId = search all users
+      };
+      
+      console.log("📤 Sending temp access request:", requestBody);
+      
       const resp = await fetch(`${apiUrl}/auth/verify-face`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          faceEmbedding: faceEmbedding,
-          userId: null  // No userId = search all users
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await resp.json();
       
+      console.log("📥 Backend response:", data);
+      
       if (data.verified && data.userId) {
+        console.log("✅ TempAccess: User identified -", data.userId);
         setUserId(data.userId);
         setMessage(`✅ Welcome back, ${data.userId}!`);
         setStep("success");
@@ -52,9 +65,11 @@ const TempAccess = () => {
         // Save tokens and redirect
         if (data.token) {
           localStorage.setItem("biovault_token", data.token);
+          console.log("💾 Access token saved");
         }
         if (data.refreshToken) {
           localStorage.setItem("biovault_refresh_token", data.refreshToken);
+          console.log("💾 Refresh token saved");
         }
         
         // Redirect to dashboard after brief success message
@@ -62,10 +77,12 @@ const TempAccess = () => {
           navigate("/dashboard", { replace: true });
         }, 1000);
       } else {
+        console.error("❌ TempAccess: Verification failed -", data.message);
         setMessage(`❌ ${data.message || "Face not found in database"}`);
         setStep("error");
       }
     } catch (err: any) {
+      console.error("❌ TempAccess: Error -", err);
       setMessage(`❌ Error: ${err.message || "Failed to identify face"}`);
       setStep("error");
     }
