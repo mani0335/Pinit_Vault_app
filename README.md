@@ -26,6 +26,119 @@ The **Biovault App** is a biometric-first authentication system with three main 
 
 **Key Routes**: `/ (Splash)` → `/login` or `/register` → `/dashboard` (or `/temp-access`)
 
+---
+
+## 🎯 Complete App Workflow (Updated - Face-Only Temp Access)
+
+```mermaid
+graph TD
+    A["🚀 APP START"] --> B{User Logged In?}
+    B -->|Yes| C["✅ Check Token in localStorage"]
+    B -->|No| D["📱 MAIN MENU"]
+    
+    C -->|Valid| E["🔐 DASHBOARD<br/>Vault Access"]
+    C -->|Expired| D
+    
+    D --> F{User Choice}
+    F -->|New User| G["📝 REGISTRATION"]
+    F -->|Existing| H["🔑 LOGIN"]
+    F -->|Quick Access| I["⚡ TEMP ACCESS"]
+    
+    %% REGISTRATION FLOW
+    G --> G1["Step 1: Face Registration<br/>Scan Face 3x"]
+    G1 --> G1A{Face Captured?}
+    G1A -->|❌ No| G1B["❌ ERROR<br/>Try Again"]
+    G1B --> G1
+    G1A -->|✅ Yes| G2["Get 64D Embedding"]
+    G2 --> G3["Step 2: Fingerprint<br/>Register Biometric"]
+    G3 --> G3A{Fingerprint OK?}
+    G3A -->|❌ No| G3B["❌ ERROR<br/>Try Again"]
+    G3B --> G3
+    G3A -->|✅ Yes| G4["Send to Backend:<br/>/auth/biometric-register"]
+    G4 --> G4A{Registration Success?}
+    G4A -->|❌ 422 Error| G4B["❌ ERROR<br/>Invalid Face Embedding"]
+    G4B --> G1
+    G4A -->|✅ 200 OK| G5["💾 Save to Database"]
+    G5 --> G6["🔐 Create JWT Tokens"]
+    G6 --> G7["💾 Store in localStorage:<br/>access_token + refresh_token"]
+    G7 --> G8["💾 Store userId in<br/>Capacitor Storage"]
+    G8 --> E
+    
+    %% LOGIN FLOW
+    H --> H1["Check localStorage:<br/>Token exists?"]
+    H1 -->|❌ No| H1B["❌ No token found"]
+    H1B --> D
+    H1 -->|✅ Yes| H2["Step 1: Fingerprint<br/>Authenticate"]
+    H2 --> H2A{Fingerprint Match?}
+    H2A -->|❌ No| H2B["❌ BLOCKED<br/>Wrong Fingerprint"]
+    H2B --> D
+    H2A -->|✅ Yes| H3["Step 2: Face Verification<br/>Scan Face"]
+    H3 --> H3A{Face Captured?}
+    H3A -->|❌ No| H3B["❌ ERROR<br/>Try Again"]
+    H3B --> H3
+    H3A -->|✅ Yes| H4["Get Embedding"]
+    H4 --> H5["Call Backend:<br/>/auth/verify-face<br/>userId + embedding"]
+    H5 --> H5B{Similarity ≥ 70%?}
+    H5B -->|❌ &lt; 70%| H5C["❌ BLOCKED<br/>Face Mismatch"]
+    H5C --> D
+    H5B -->|✅ ≥ 70%| H6["✅ Face Verified"]
+    H6 --> H7["🔄 Refresh Tokens"]
+    H7 --> H8["💾 Update localStorage"]
+    H8 --> E
+    
+    %% TEMP ACCESS FLOW - SIMPLIFIED TO FACE ONLY
+    I --> I1["⚡ Face-Only Auth<br/>No User ID Needed"]
+    I1 --> I2["Scan Your Face"]
+    I2 --> I2A{Face Captured?}
+    I2A -->|❌ No| I2B["❌ ERROR<br/>Try Again"]
+    I2B --> I2
+    I2A -->|✅ Yes| I3["Get Embedding"]
+    I3 --> I4["Call Backend:<br/>/auth/verify-face<br/>userId: null<br/>Search ALL Users"]
+    I4 --> I4A{Match Found?}
+    I4A -->|❌ No Match| I4B["❌ BLOCKED<br/>Not Recognized"]
+    I4B --> D
+    I4A -->|✅ Match Found| I4C{Similarity ≥ 60%?}
+    I4C -->|❌ &lt; 60%| I4D["❌ BLOCKED<br/>Insufficient Match"]
+    I4D --> D
+    I4C -->|✅ ≥ 60%| I5["✅ IDENTIFIED<br/>User Found"]
+    I5 --> I6["🔐 Create Temp JWT"]
+    I6 --> I7["💾 Store Tokens"]
+    I7 --> E
+    
+    %% DASHBOARD
+    E --> E1["🔓 Unlock Main Vault<br/>Access Secrets/Files"]
+    E1 --> E2{User Action}
+    E2 -->|View Vaults| E3["📦 Browse Vault Items"]
+    E2 -->|Settings| E4["⚙️ User Settings"]
+    E2 -->|Logout| E5["🚪 LOGOUT"]
+    E2 -->|Exit| E5
+    E5 --> E6["🗑️ Clear localStorage<br/>Clear Capacitor Storage"]
+    E6 --> D
+    
+    style A fill:#1a1a2e,color:#00ff00
+    style E fill:#16a34a,color:#fff
+    style G1B fill:#dc2626,color:#fff
+    style G4B fill:#dc2626,color:#fff
+    style H2B fill:#dc2626,color:#fff
+    style H5C fill:#dc2626,color:#fff
+    style I2B fill:#dc2626,color:#fff
+    style I4B fill:#dc2626,color:#fff
+    style I4D fill:#dc2626,color:#fff
+```
+
+### **Authentication Thresholds**
+- ✅ **Same Device Login**: 70% cosine similarity (strict - protects against spoofing)
+- ⚡ **Cross-Device Temp Access**: 60% cosine similarity (lenient - accounts for different camera hardware)
+
+### **Key Features**
+- 📱 **Multi-Phone Support**: Temp Access works on any phone by scanning face
+- 🔐 **JWT Token System**: Access & refresh tokens stored in localStorage
+- 🗄️ **Supabase Backend**: All biometric data encrypted and stored securely
+- 🎯 **Auto-Identification**: Backend searches all users when userId is null
+- ⚙️ **Capacitor Integration**: Works on Android with fingerprint & face scanning
+
+---
+
 ## Current Work (What I am doing)
 
 The following items describe the active implementation workflow in this project:
