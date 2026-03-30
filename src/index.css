@@ -115,12 +115,12 @@
 
   .cyber-border::before {
     content: '';
-    @apply absolute -top-px -left-px w-3 h-3 border-t border-l border-primary;
+    @apply hidden; /* Removed decorative corner */
   }
 
   .cyber-border::after {
     content: '';
-    @apply absolute -bottom-px -right-px w-3 h-3 border-b border-r border-primary;
+    @apply hidden; /* Removed decorative corner */
   }
 }
 

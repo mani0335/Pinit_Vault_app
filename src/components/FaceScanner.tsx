@@ -289,7 +289,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
         <p className="text-sm md:text-base text-muted-foreground mt-1">Use live face verification to continue securely.</p>
       </div>
 
-      <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden glass-surface border border-primary/35 shadow-[0_0_24px_hsl(var(--neon-glow)/0.15)]">
+      <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden glass-surface border border-border">
         {status === "idle" ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3">
             <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">

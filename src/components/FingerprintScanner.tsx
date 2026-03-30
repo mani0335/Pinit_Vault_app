@@ -240,7 +240,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
         <p className="text-sm md:text-base text-muted-foreground mt-1">Confirm your identity with a secure biometric scan.</p>
       </div>
 
-      <div className="relative w-full max-w-[320px] h-[250px] rounded-2xl overflow-hidden border border-primary/35 bg-gradient-to-b from-card/95 via-card/85 to-background/90 shadow-[0_0_30px_hsl(var(--neon-glow)/0.18)]">
+      <div className="relative w-full max-w-[320px] h-[250px] rounded-2xl overflow-hidden border border-border bg-gradient-to-b from-card/95 via-card/85 to-background/90">
         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/10 to-transparent" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--neon-glow)/0.16),transparent_62%)]" />
         <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "linear-gradient(hsl(var(--border)/0.5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.5) 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
