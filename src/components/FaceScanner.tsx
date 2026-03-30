@@ -298,9 +298,16 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
         
         // Store temp access credentials
         await appStorage.setItem('biovault_userId', data.userId);
-        localStorage.setItem('biovault_token', (data as any).token || '');
-        localStorage.setItem('biovault_refresh_token', (data as any).refreshToken || '');
+        if (data.token) {
+          console.log('💾 Storing access token from temp access');
+          localStorage.setItem('biovault_token', data.token);
+        }
+        if (data.refreshToken) {
+          console.log('💾 Storing refresh token from temp access');
+          localStorage.setItem('biovault_refresh_token', data.refreshToken);
+        }
         
+        console.log('✅ All credentials stored - ready for dashboard');
         setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
         return;
       } catch (err: any) {

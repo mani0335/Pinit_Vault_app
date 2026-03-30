@@ -531,6 +531,8 @@ export async function verifyFaceBackend(faceEmbedding: number[], userId?: string
   message: string;
   similarity: number;
   mode: "remote";
+  token?: string;
+  refreshToken?: string;
 }> {
   const apiUrl = apiBase();
   const endpoint = `${apiUrl}/auth/verify-face`;
@@ -561,7 +563,9 @@ export async function verifyFaceBackend(faceEmbedding: number[], userId?: string
         userId: null,
         message: `Server error: ${parseErr.message}`,
         similarity: 0,
-        mode: "remote"
+        mode: "remote",
+        token: undefined,
+        refreshToken: undefined
       };
     }
     
@@ -570,7 +574,9 @@ export async function verifyFaceBackend(faceEmbedding: number[], userId?: string
       userId: data.userId || null,
       message: data.message || "Face verification failed",
       similarity: data.similarity || 0,
-      mode: "remote"
+      mode: "remote",
+      token: data.token,
+      refreshToken: data.refreshToken
     };
   } catch (err: any) {
     console.error('❌ Face verification error:', err.message);
@@ -579,7 +585,9 @@ export async function verifyFaceBackend(faceEmbedding: number[], userId?: string
       userId: null,
       message: `Network error: ${err.message}`,
       similarity: 0,
-      mode: "remote"
+      mode: "remote",
+      token: undefined,
+      refreshToken: undefined
     };
   }
 }
