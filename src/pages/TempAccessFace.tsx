@@ -78,12 +78,6 @@ const TempAccessFace = () => {
           >
             {step === "face" && (
               <div>
-                <h2 className="text-lg md:text-xl font-display tracking-wide text-center mb-2 text-foreground">
-                  Face Verification
-                </h2>
-                <p className="text-sm text-muted-foreground font-mono text-center mb-6">
-                  Verify your face to access the dashboard with restricted permissions
-                </p>
                 
                 <FaceScanner
                   mode="login"

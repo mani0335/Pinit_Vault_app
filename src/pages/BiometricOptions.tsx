@@ -82,8 +82,8 @@ const BiometricOptions = () => {
                 whileTap={{ scale: 0.98 }}
               >
                 <Button
-                  variant="outline"
-                  className="w-full py-6 h-auto flex flex-col items-start justify-start text-left border-neon-green/50 hover:bg-neon-green/10 hover:border-neon-green transition-all duration-300"
+                  variant="ghost"
+                  className="w-full py-6 h-auto flex flex-col items-start justify-start text-left border-2 border-neon-green/70 bg-black/30 hover:bg-neon-green/20 hover:border-neon-green transition-all duration-300"
                   onClick={() => navigate('/temp-access-face')}
                 >
                   <div className="flex items-center gap-3 w-full">

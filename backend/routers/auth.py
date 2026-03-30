@@ -573,9 +573,9 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
                     best_similarity = similarity_score
                     best_match = user_record
             
-            print(f"🎯 TempAccess: Best match - Similarity: {best_similarity:.4f}, Threshold: 0.50")
+            print(f"🎯 TempAccess: Best match - Similarity: {best_similarity:.4f}, Threshold: 0.35")
             
-            if best_match and best_similarity >= 0.50:  # Lowered to 50% for debugging
+            if best_match and best_similarity >= 0.35:  # Lowered to 35% for cross-device matching
                 matched_user_id = best_match["user_id"]
                 print(f"✅ TempAccess: SUCCESS - User {matched_user_id} matched at {best_similarity:.4f}")
                 log_action(matched_user_id, "verify_face_temp_access_success", {"similarity": best_similarity}, str(request.client.host))
@@ -593,12 +593,12 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
                     "refreshToken": refresh_token
                 }
             else:
-                print(f"❌ TempAccess: FAILED - Best similarity {best_similarity:.4f} < threshold 0.50")
-                log_action(None, "verify_face_temp_access_failed", {"best_similarity": best_similarity, "threshold": 0.50}, str(request.client.host))
+                print(f"❌ TempAccess: FAILED - Best similarity {best_similarity:.4f} < threshold 0.35")
+                log_action(None, "verify_face_temp_access_failed", {"best_similarity": best_similarity, "threshold": 0.35}, str(request.client.host))
                 return {
                     "verified": False,
                     "userId": None,
-                    "message": f"Face not matched with any user (best match: {best_similarity:.4f}, required: 0.50)",
+                    "message": f"Face not matched with any user (best match: {best_similarity:.4f}, required: 0.35)",
                     "similarity": best_similarity
                 }
     
