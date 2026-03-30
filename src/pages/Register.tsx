@@ -134,7 +134,12 @@ const Register = () => {
 
             {step === "face" && (
               <div>
-                <FaceScanner mode="register" onSuccess={(faceData?: number[]) => { setFaceEmbedding(faceData || null); setStep("userId"); }} />
+                <FaceScanner mode="register" onSuccess={(faceData?: any) => { 
+                  // Extract embedding from wrapped object
+                  const embedding = faceData?.embedding || faceData || null;
+                  setFaceEmbedding(embedding); 
+                  setStep("userId"); 
+                }} />
               </div>
             )}
 
