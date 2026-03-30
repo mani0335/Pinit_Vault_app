@@ -10,35 +10,70 @@ import { StatusIndicator } from "@/components/StatusIndicator";
 import { appStorage } from "@/lib/storage";
 import { requestTempCode, verifyTempCode, rebindDevice } from "@/lib/authService";
 
-type Step = "code" | "face" | "fingerprint" | "update" | "success";
+type Step = "userId" | "code" | "face" | "fingerprint" | "update" | "success";
 
 const TempAccess = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("code");
+  const [step, setStep] = useState<Step>("userId");  // Start with userId input
+  const [userIdInput, setUserIdInput] = useState("");  // Manual userId entry
   const [code, setCode] = useState("");
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("Enter your temporary access code to continue");
+  const [message, setMessage] = useState<string>("Enter your User ID from Phone A");
   const [busy, setBusy] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load userId from Capacitor storage
+    // Try to load userId from storage, but don't redirect if not found
     const loadUserId = async () => {
       try {
         const id = await appStorage.getItem("biovault_userId");
-        if (!id) {
-          navigate("/register");
-          return;
+        if (id) {
+          console.log("✅ Found userId in storage:", id);
+          setUserId(id);
+          setUserIdInput(id);
+          setStep("code");  // Skip to code step if userId already stored
+          
+          // Request temp code immediately
+          const result = await requestTempCode(id);
+          if (result.ok && result.tempCode) {
+            setIssuedCode(String(result.tempCode));
+          }
         }
-        setUserId(id);
       } catch (err) {
-        console.error('❌ Failed to load userId:', err);
-        navigate("/register");
+        console.error('⚠️ Could not load userId from storage:', err);
       }
     };
     
     loadUserId();
-  }, [navigate]);
+  }, []);
+
+  const handleEnterUserId = async () => {
+    if (!userIdInput.trim()) {
+      setMessage("❌ Please enter your User ID");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("Loading temporary code...");
+
+    try {
+      setUserId(userIdInput.trim());
+      
+      // Request temp code for this userId
+      const result = await requestTempCode(userIdInput.trim());
+      if (!result.ok) {
+        throw new Error(result.reason || "Failed to request temp code");
+      }
+      
+      setIssuedCode(String(result.tempCode));
+      setMessage("✅ Code received. Enter it below to proceed.");
+      setStep("code");
+    } catch (e: any) {
+      setMessage("❌ " + (e?.message || "Failed to get code"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!userId) {
@@ -98,13 +133,14 @@ const TempAccess = () => {
     }
   };
 
-  const labels = ["CODE", "FACE", "PRINT", "UPDATE", "DONE"];
+  const labels = ["USER", "CODE", "FACE", "PRINT", "UPDATE", "DONE"];
   const idxByStep: Record<Step, number> = {
-    code: 0,
-    face: 1,
-    fingerprint: 2,
-    update: 3,
-    success: 4,
+    userId: 0,
+    code: 1,
+    face: 2,
+    fingerprint: 3,
+    update: 4,
+    success: 5,
   };
   const current = idxByStep[step];
 
@@ -143,6 +179,21 @@ const TempAccess = () => {
           </div>
 
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-surface rounded-xl p-8">
+            {step === "userId" && (
+              <div className="text-center">
+                <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">YOUR USER ID</h2>
+                <p className="text-xs text-muted-foreground font-mono mb-4">Enter the User ID from your Phone A (looks like USR-XXXXXX)</p>
+                <input
+                  value={userIdInput}
+                  onChange={(e) => setUserIdInput(e.target.value)}
+                  placeholder="USR-123456"
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-center font-mono tracking-widest text-lg mb-4"
+                />
+                <p className="text-xs text-muted-foreground font-mono mb-4">{message}</p>
+                <Button variant="cyber-secondary" onClick={handleEnterUserId} disabled={busy}>Continue</Button>
+              </div>
+            )}
+
             {step === "code" && (
               <div className="text-center">
                 <h2 className="text-lg font-display tracking-wider text-center mb-6 text-foreground">ENTER TEMP CODE</h2>
