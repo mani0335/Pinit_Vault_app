@@ -80,7 +80,7 @@ const TempAccessFace = () => {
               <div>
                 
                 <FaceScanner
-                  mode="login"
+                  mode="temp-access"
                   onSuccess={(faceData) => {
                     // CRITICAL: Prevent multiple navigations
                     if (hasNavigatedToDashboard) {

@@ -3,14 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Camera as CameraIcon, CheckCircle, XCircle, ScanFace } from "lucide-react";
 import { ScanEffect } from "./ScanEffect";
 import { Button } from "./ui/button";
-import { verifyFace } from "@/lib/authService";
+import { verifyFace, verifyFaceBackend } from "@/lib/authService";
 import { appStorage } from "@/lib/storage";
 import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
 
 interface FaceScannerProps {
   onSuccess: (faceData?: number[]) => void;
   onError?: (error: string) => void;
-  mode: "register" | "login";
+  mode: "register" | "login" | "temp-access";
   required?: boolean;
 }
 
@@ -262,6 +262,51 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       } catch (err: any) {
         const msg = (err?.message || "").toString();
         const friendly = msg || "Face authentication failed. Please retry.";
+        setStatus("error");
+        setMessage('❌ ' + friendly);
+        onError?.(friendly || "Face authentication failed");
+        setTimeout(() => {
+          setStatus("camera");
+          setMessage("Align your face inside the frame");
+        }, 1400);
+        return;
+      }
+    }
+
+    if (mode === "temp-access") {
+      try {
+        console.log('🌐 TempAccess Mode: Searching for user across all devices...');
+        const data = await verifyFaceBackend(embedding); // No userId - searches all users
+        
+        console.log('📊 TempAccess Response:', {
+          verified: data.verified,
+          userId: data.userId,
+          similarity: data.similarity,
+          message: data.message
+        });
+
+        if (!data.verified || !data.userId) {
+          throw new Error(data.message || "Face not recognized. Please try again.");
+        }
+
+        console.log('✅ TempAccess: User identified as', data.userId, 'with similarity', (data.similarity * 100).toFixed(1) + '%');
+        
+        setStatus("success");
+        setMessage(`✓ Identified (${(data.similarity * 100).toFixed(1)}%)`);
+        stopCamera();
+        setCameraReady(false);
+        
+        // Store temp access credentials
+        await appStorage.setItem('biovault_userId', data.userId);
+        localStorage.setItem('biovault_token', (data as any).token || '');
+        localStorage.setItem('biovault_refresh_token', (data as any).refreshToken || '');
+        
+        setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
+        return;
+      } catch (err: any) {
+        const msg = (err?.message || "").toString();
+        const friendly = msg || "Face authentication failed. Please retry.";
+        console.error('❌ TempAccess Error:', friendly);
         setStatus("error");
         setMessage('❌ ' + friendly);
         onError?.(friendly || "Face authentication failed");
