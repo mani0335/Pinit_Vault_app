@@ -135,9 +135,24 @@ const Register = () => {
             {step === "face" && (
               <div>
                 <FaceScanner mode="register" onSuccess={(faceData?: any) => { 
+                  console.log('📸 Register: FaceScanner returned:', faceData);
+                  console.log('📋 faceData type:', typeof faceData);
+                  console.log('📋 faceData.embedding:', faceData?.embedding);
+                  
                   // Extract embedding from wrapped object
                   const embedding = faceData?.embedding || faceData || null;
+                  
+                  console.log('🎯 Register: Extracted embedding:', {
+                    exists: !!embedding,
+                    isArray: Array.isArray(embedding),
+                    length: embedding?.length || 0,
+                    first5: embedding ? embedding.slice(0, 5) : 'N/A',
+                    sum: embedding ? embedding.reduce((a, b) => a + Math.abs(b), 0) : 'N/A'
+                  });
+                  
                   setFaceEmbedding(embedding); 
+                  
+                  console.log('✅ Register: Setting step to userId');
                   setStep("userId"); 
                 }} />
               </div>
@@ -185,10 +200,22 @@ const Register = () => {
                       // Store face embedding if available
                       if (faceEmbedding && faceEmbedding.length) {
                         await appStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
-                        console.log('✅ Face embedding saved');
+                        console.log('✅ Face embedding saved to local storage');
+                      } else {
+                        console.warn('⚠️ No face embedding available!');
                       }
                       
-                      console.log('📝 STEP 3: Registering user with backend:', { userId, deviceToken, hasFaceEmbedding: !!faceEmbedding });
+                      console.log('📝 STEP 3: About to send to backend:', { 
+                        userId, 
+                        deviceToken, 
+                        webauthn: !!webauthn,
+                        faceEmbedding: faceEmbedding ? {
+                          exists: true,
+                          length: faceEmbedding.length,
+                          first5: faceEmbedding.slice(0, 5),
+                          sum: faceEmbedding.reduce((a, b) => a + Math.abs(b), 0)
+                        } : null
+                      });
                       
                       // Call backend to create user account - CRITICAL STEP
                       const data = await registerUser({ userId, deviceToken, webauthn, faceEmbedding });

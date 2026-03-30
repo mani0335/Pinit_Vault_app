@@ -275,11 +275,24 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
     // Registration mode: Just capture the face and pass it back to parent component
     // The Register.tsx page will handle the backend storage via registerUser()
+    console.log('🎯 FaceScanner Register Mode: Face captured!');
+    console.log('📊 Embedding captured:', {
+      exists: !!embedding,
+      length: embedding?.length || 0,
+      first5: embedding ? embedding.slice(0, 5) : 'N/A',
+      sum: embedding ? embedding.reduce((a, b) => a + Math.abs(b), 0) : 'N/A'
+    });
+    
     setStatus("success");
     setMessage("✓ Face captured successfully");
     stopCamera();
     setCameraReady(false);
-    setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
+    
+    console.log('📤 Calling onSuccess with:', { embedding });
+    setTimeout(() => {
+      console.log('✅ onSuccess callback triggered with embedding');
+      onSuccess({ embedding } as any);
+    }, SUCCESS_HOLD_MS);
   }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
 
   return (
