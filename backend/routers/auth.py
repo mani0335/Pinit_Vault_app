@@ -473,7 +473,8 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
     
     try:
         current_embedding = np.array(data.faceEmbedding, dtype=np.float32)
-        SIMILARITY_THRESHOLD = 0.70  # 70% cosine similarity required for match
+        LOGGED_IN_THRESHOLD = 0.70  # 70% for same device (strict)
+        TEMP_ACCESS_THRESHOLD = 0.60  # 60% for cross-device temporary access (lenient)
         
         if data.userId:
             # Logged-in user: verify against their specific face
@@ -507,7 +508,7 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
             
             log_action(data.userId, "verify_face_attempt", {"similarity": similarity_score}, str(request.client.host))
             
-            if similarity_score >= SIMILARITY_THRESHOLD:
+            if similarity_score >= LOGGED_IN_THRESHOLD:
                 log_action(data.userId, "verify_face_success", {"similarity": similarity_score}, str(request.client.host))
                 return {
                     "verified": True,
@@ -516,11 +517,11 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
                     "similarity": similarity_score
                 }
             else:
-                log_action(data.userId, "verify_face_failed", {"similarity": similarity_score, "threshold": SIMILARITY_THRESHOLD}, str(request.client.host))
+                log_action(data.userId, "verify_face_failed", {"similarity": similarity_score, "threshold": LOGGED_IN_THRESHOLD}, str(request.client.host))
                 return {
                     "verified": False,
                     "userId": data.userId,
-                    "message": f"Face not matched (similarity: {similarity_score:.2f}, required: {SIMILARITY_THRESHOLD:.2f})",
+                    "message": f"Face not matched (similarity: {similarity_score:.2f}, required: {LOGGED_IN_THRESHOLD:.2f})",
                     "similarity": similarity_score
                 }
         
@@ -555,7 +556,7 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
                     best_similarity = similarity_score
                     best_match = user_record
             
-            if best_match and best_similarity >= SIMILARITY_THRESHOLD:
+            if best_match and best_similarity >= TEMP_ACCESS_THRESHOLD:
                 matched_user_id = best_match["user_id"]
                 log_action(matched_user_id, "verify_face_temp_access_success", {"similarity": best_similarity}, str(request.client.host))
                 return {
@@ -565,11 +566,11 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
                     "similarity": best_similarity
                 }
             else:
-                log_action(None, "verify_face_temp_access_failed", {"best_similarity": best_similarity, "threshold": SIMILARITY_THRESHOLD}, str(request.client.host))
+                log_action(None, "verify_face_temp_access_failed", {"best_similarity": best_similarity, "threshold": TEMP_ACCESS_THRESHOLD}, str(request.client.host))
                 return {
                     "verified": False,
                     "userId": None,
-                    "message": f"Face not matched with any user (best match: {best_similarity:.2f}, required: {SIMILARITY_THRESHOLD:.2f})",
+                    "message": f"Face not matched with any user (best match: {best_similarity:.2f}, required: {TEMP_ACCESS_THRESHOLD:.2f})",
                     "similarity": best_similarity
                 }
     
