@@ -11,91 +11,37 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     const verify = async () => {
       const token = localStorage.getItem("biovault_token");
-      if (!token) {
-        const refreshed = await tryRefresh();
-        setState(refreshed ? "authorized" : "unauthorized");
+      
+      if (token) {
+        console.log("✅ Token found - authorized to access dashboard");
+        setState("authorized");
         return;
       }
-
-      try {
-        const API_BASE = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
-        const resp = await fetch(`${API_BASE}/api/session/verify`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!resp.ok) {
-          const refreshed = await tryRefresh();
-          setState(refreshed ? "authorized" : "unauthorized");
-          return;
-        }
-
-        setState("authorized");
-      } catch {
-        const refreshed = await tryRefresh();
-        setState(refreshed ? "authorized" : "unauthorized");
-      }
-    };
-
-    const tryRefresh = async () => {
+      
+      // Try to use refresh token to get a new access token
       const refreshToken = localStorage.getItem("biovault_refresh_token");
-      if (!refreshToken) {
-        localStorage.removeItem("biovault_token");
-        localStorage.removeItem("biovault_refresh_token");
-        return false;
+      if (refreshToken) {
+        console.log("🔄 No access token, but refresh token exists - redirecting to login for refresh");
+        // Let login handle the refresh flow
+        setState("unauthorized");
+        return;
       }
-
-      try {
-        const API_BASE = (import.meta.env.VITE_API_URL || "https://biovault-app.onrender.com").trim();
-        const resp = await fetch(`${API_BASE}/api/session/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken }),
-        });
-        if (!resp.ok) {
-          localStorage.removeItem("biovault_token");
-          localStorage.removeItem("biovault_refresh_token");
-          return false;
-        }
-        
-        const responseText = await resp.text();
-        let data;
-        try {
-          data = JSON.parse(responseText) as { token?: string };
-        } catch (parseErr: any) {
-          console.error('❌ Session refresh: JSON parse failed:', parseErr.message);
-          localStorage.removeItem("biovault_token");
-          localStorage.removeItem("biovault_refresh_token");
-          return false;
-        }
-        
-        if (!data?.token) {
-          localStorage.removeItem("biovault_token");
-          localStorage.removeItem("biovault_refresh_token");
-          return false;
-        }
-        localStorage.setItem("biovault_token", data.token);
-        return true;
-      } catch {
-        localStorage.removeItem("biovault_token");
-        localStorage.removeItem("biovault_refresh_token");
-        return false;
-      }
+      
+      console.log("❌ No tokens found - not authorized");
+      setState("unauthorized");
     };
 
     verify();
   }, []);
 
   if (state === "checking") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground font-mono text-sm">
-        Verifying session...
+    return <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Loading...</p>
       </div>
-    );
+    </div>;
   }
 
-  if (state === "unauthorized") {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
+  return state === "authorized" ? children : <Navigate to="/login" replace />;
 }
