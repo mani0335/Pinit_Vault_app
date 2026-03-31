@@ -3,7 +3,21 @@ const BASE_URL = 'https://pinit-backend.onrender.com';
 
 const getToken = () => {
   try {
-    return localStorage.getItem('pinit_token') || sessionStorage.getItem('pinit_token');
+    // Try pinit_token first
+    let token = localStorage.getItem('pinit_token') || sessionStorage.getItem('pinit_token');
+    if (token) {
+      console.log('🔐 API: Using pinit_token');
+      return token;
+    }
+    
+    // Fallback to biovault_token (user authenticated via biometric)
+    token = localStorage.getItem('biovault_token') || sessionStorage.getItem('biovault_token');
+    if (token) {
+      console.log('🔐 API: Fallback to biovault_token for vault access');
+      return token;
+    }
+    
+    return null;
   } catch {
     return null;
   }
