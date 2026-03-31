@@ -43,6 +43,18 @@ def verify_jwt(token: str) -> dict:
         )
 
 
+def verify_jwt_safe(token: str) -> dict:
+    """
+    Verify a JWT token safely — returns None if invalid instead of raising exception
+    Use this for optional authentication flows
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -93,14 +105,20 @@ async def get_optional_user(request: Request):
     auth_header = request.headers.get("Authorization")
     
     if not auth_header or not auth_header.startswith("Bearer "):
+        print("❌ OptionalAuth: No auth header")
         return None
     
     try:
         token = auth_header.replace("Bearer ", "")
-        payload = verify_jwt(token)
-        user_id = payload.get("sub")
+        payload = verify_jwt_safe(token)  # Use safe version that doesn't raise
         
+        if not payload:
+            print("❌ OptionalAuth: Invalid or expired token")
+            return None
+        
+        user_id = payload.get("sub")
         if not user_id:
+            print("❌ OptionalAuth: No user_id in token")
             return None
         
         db = get_admin_db()
@@ -109,11 +127,13 @@ async def get_optional_user(request: Request):
         if result.data:
             user = result.data[0]
             if user.get("is_active"):
+                print(f"✅ OptionalAuth: Authenticated user {user_id}")
                 return user
         
+        print(f"⚠️ OptionalAuth: User {user_id} not found or inactive")
         return None
-    except:
-        # Token validation failed, but that's okay for optional auth
+    except Exception as e:
+        print(f"⚠️ OptionalAuth: Exception - {str(e)}")
         return None
 
 
