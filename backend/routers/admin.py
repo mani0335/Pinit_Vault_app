@@ -96,3 +96,56 @@ async def get_stats(admin=Depends(get_admin_user)):
         "total_reports"  : reports.count,
         "tampered_found" : tampered.count
     }
+
+
+@router.post("/setup/vault-table")
+async def setup_vault_table():
+    """
+    ⚠️ PUBLIC ENDPOINT - DO NOT USE IN PRODUCTION
+    Creates vault_images table if it doesn't exist.
+    Run this once during initial setup.
+    """
+    try:
+        db = get_admin_db()
+        
+        print("🔨 Setting up vault_images table...")
+        
+        # Create table via Supabase
+        # Supabase Python client doesn't have direct SQL execution
+        # So we'll try to detect if table exists by attempting a query
+        
+        try:
+            result = db.table("vault_images").select("id").limit(1).execute()
+            print("✅ vault_images table already exists!")
+            return {"status": "exists", "message": "vault_images table already exists"}
+        except Exception as e:
+            if "vault_images" in str(e):
+                print(f"⚠️ Table doesn't exist yet: {e}")
+                print("📝 You must manually create the table in Supabase SQL Editor:")
+                print("   1. Go to https://app.supabase.com")
+                print("   2. Select your project")
+                print("   3. Go to SQL Editor")
+                print("   4. Click 'New Query'")
+                print("   5. Copy and run the SQL from backend/CREATE_VAULT_TABLE.sql")
+                
+                return {
+                    "status": "needs_setup",
+                    "message": "Table needs manual setup via Supabase SQL Editor",
+                    "sql_file": "backend/CREATE_VAULT_TABLE.sql",
+                    "instructions": [
+                        "1. Go to https://app.supabase.com",
+                        "2. Select your project (wdvsfjpkxfjaelrydgqd)",
+                        "3. Go to SQL Editor > New Query",
+                        "4. Copy SQL from backend/CREATE_VAULT_TABLE.sql",
+                        "5. Run the query"
+                    ]
+                }
+            else:
+                raise
+    except Exception as e:
+        print(f"❌ Setup failed: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"Setup failed: {str(e)}",
+            "error": str(e)
+        }
