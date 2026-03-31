@@ -28,9 +28,15 @@ const request = async (method: string, endpoint: string, body: any = null, requi
   
   if (requiresAuth) {
     const token = getToken();
-    if (!token && endpoint !== '/auth/login' && endpoint !== '/auth/register') {
+    if (!token && endpoint !== '/auth/login' && endpoint !== '/auth/register' && !endpoint.startsWith('/vault') && !endpoint.startsWith('/compare')) {
       throw new Error('Not authenticated');
     }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } else {
+    // Optional auth - try to add token if available without throwing error
+    const token = getToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -62,22 +68,21 @@ export const authAPI = {
 
 // Vault API
 export const vaultAPI = {
-  save: (data: any) => request('POST', '/vault/save', data),
+  save: (data: any) => request('POST', '/vault/save', data, false),
   list: (userId?: string) => {
-    // Pass user_id as query param if provided
     const endpoint = userId ? `/vault/list?user_id=${encodeURIComponent(userId)}` : '/vault/list';
-    return request('GET', endpoint);
+    return request('GET', endpoint, null, false);
   },
   getOne: (id: string, userId?: string) => {
     const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
-    return request('GET', endpoint);
+    return request('GET', endpoint, null, false);
   },
   delete: (id: string, userId?: string) => {
     const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
-    return request('DELETE', endpoint);
+    return request('DELETE', endpoint, null, false);
   },
   verifyByHash: (hash: string) => request('GET', `/vault/verify/${hash}`, null, false),
-  search: (q: string) => request('GET', `/vault/search/query?q=${encodeURIComponent(q)}`),
+  search: (q: string) => request('GET', `/vault/search/query?q=${encodeURIComponent(q)}`, null, false),
 };
 
 // Certificates API
