@@ -1,6 +1,6 @@
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from ..db.database import get_admin_db
@@ -82,6 +82,39 @@ def get_admin_user(current_user=Depends(get_current_user)):
             detail      = "Admin access required"
         )
     return current_user
+
+
+async def get_optional_user(request: Request):
+    """
+    FastAPI dependency — optional authentication
+    Tries to extract and validate a JWT token, but doesn't fail if missing
+    Useful for endpoints that can work with or without auth
+    """
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    
+    try:
+        token = auth_header.replace("Bearer ", "")
+        payload = verify_jwt(token)
+        user_id = payload.get("sub")
+        
+        if not user_id:
+            return None
+        
+        db = get_admin_db()
+        result = db.table("users").select("*").eq("id", user_id).execute()
+        
+        if result.data:
+            user = result.data[0]
+            if user.get("is_active"):
+                return user
+        
+        return None
+    except:
+        # Token validation failed, but that's okay for optional auth
+        return None
 
 
 def generate_otp(length: int = 6) -> str:

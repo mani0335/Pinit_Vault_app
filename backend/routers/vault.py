@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from ..db.database import get_admin_db
 from ..models.schemas import VaultImageCreate, VaultImageResponse
-from ..utils.auth_helpers import get_current_user, log_action
+from ..utils.auth_helpers import get_current_user, get_optional_user, log_action
 from ..utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail
 
 router = APIRouter(tags=["Vault"])
@@ -11,9 +11,25 @@ router = APIRouter(tags=["Vault"])
 async def save_vault_image(
     data: VaultImageCreate,
     request: Request,
-    current_user=Depends(get_current_user)
+    current_user: dict = Depends(get_optional_user)
 ):
+    """
+    Save an encrypted image to vault.
+    Accepts optional JWT authentication. Falls back to user_id from request body.
+    """
     db = get_admin_db()
+    
+    # Get user_id: from authenticated user or from request body
+    user_id = None
+    if current_user:
+        user_id = current_user.get("id")
+        print(f"✅ Vault Save: Authenticated user - {user_id}")
+    else:
+        user_id = data.user_id
+        print(f"✅ Vault Save: Using user_id from request - {user_id}")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
 
     # Check if asset_id already exists
     existing = db.table("vault_images").select("id") \
@@ -30,7 +46,7 @@ async def save_vault_image(
 
     # Save to Supabase
     record = db.table("vault_images").insert({
-        "user_id"  : data.user_id,
+        "user_id"  : user_id,
         "asset_id"           : data.asset_id,
         "certificate_id"     : data.certificate_id,
         "owner_name"         : data.owner_name,
@@ -46,21 +62,41 @@ async def save_vault_image(
     }).execute()
 
     log_action(
-        user_id=data.user_id,
+        user_id=user_id,
+        action="vault_save",
         details={"asset_id": data.asset_id},
-        ip_address=str(request.client.host)
+        ip=str(request.client.host)
     )
 
+    print(f"✅ Vault Save: Image saved - {data.asset_id}")
     return {"message": "Saved to vault", "data": record.data[0]}
 
 
 @router.get("/list")
-async def list_vault_images(current_user=Depends(get_current_user)):
-    db      = get_admin_db()
-    user_id = current_user.get("id")
+async def list_vault_images(
+    current_user: dict = Depends(get_optional_user),
+    user_id: str = None
+):
+    """
+    List vault images for a user.
+    Uses authenticated user_id or query parameter.
+    """
+    db = get_admin_db()
+    
+    # Get user_id: from authenticated user or from query param
+    final_user_id = None
+    if current_user:
+        final_user_id = current_user.get("id")
+        print(f"✅ Vault List: Authenticated user - {final_user_id}")
+    elif user_id:
+        final_user_id = user_id
+        print(f"✅ Vault List: Using query param user_id - {final_user_id}")
+    else:
+        raise HTTPException(status_code=401, detail="User ID required")
+    
     result  = db.table("vault_images") \
         .select("*") \
-        .eq("user_id", user_id) \
+        .eq("user_id", final_user_id) \
         .order("created_at", desc=True) \
         .execute()
     return {"assets": result.data, "total": len(result.data)}
@@ -89,11 +125,26 @@ async def verify_by_hash(file_hash: str):
 
 
 @router.get("/{asset_id}")
-async def get_vault_image(asset_id: str, current_user=Depends(get_current_user)):
-    db     = get_admin_db()
+async def get_vault_image(
+    asset_id: str,
+    current_user: dict = Depends(get_optional_user),
+    user_id: str = None
+):
+    """Get a vault image. Uses authenticated user or query parameter."""
+    db = get_admin_db()
+    
+    # Get user_id
+    final_user_id = None
+    if current_user:
+        final_user_id = current_user.get("id")
+    elif user_id:
+        final_user_id = user_id
+    else:
+        raise HTTPException(status_code=401, detail="User ID required")
+    
     result = db.table("vault_images").select("*") \
         .eq("asset_id", asset_id) \
-        .eq("user_id", current_user["id"]) \
+        .eq("user_id", final_user_id) \
         .execute()
 
     if not result.data:
@@ -105,13 +156,24 @@ async def get_vault_image(asset_id: str, current_user=Depends(get_current_user))
 async def delete_vault_image(
     asset_id: str,
     request: Request,
-    current_user=Depends(get_current_user)
+    current_user: dict = Depends(get_optional_user),
+    user_id: str = None
 ):
+    """Delete a vault image. Uses authenticated user or query parameter."""
     db = get_admin_db()
+    
+    # Get user_id
+    final_user_id = None
+    if current_user:
+        final_user_id = current_user.get("id")
+    elif user_id:
+        final_user_id = user_id
+    else:
+        raise HTTPException(status_code=401, detail="User ID required")
 
     existing = db.table("vault_images").select("*") \
         .eq("asset_id", asset_id) \
-        .eq("user_id", current_user["id"]) \
+        .eq("user_id", final_user_id) \
         .execute()
 
     if not existing.data:

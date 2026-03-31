@@ -35,7 +35,15 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const loadVaultImages = useCallback(async () => {
     setLoadingVault(true);
     try {
-      const res = await vaultAPI.list();
+      // Get user_id from props or storage
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        currentUserId = storedUserId || undefined;
+      }
+      console.log('🔓 LoadVault: Using userId:', currentUserId);
+      
+      const res = await vaultAPI.list(currentUserId);
       const images = (res.assets || []).map((a: any) => ({
         ...a,
         id: a.asset_id || a.id,
@@ -47,12 +55,13 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         thumbnail: a.thumbnail_url,
       }));
       setVaultImages(images);
+      console.log('✅ LoadVault: Loaded', images.length, 'images');
     } catch (err) {
       console.error("Failed to load vault:", err);
     } finally {
       setLoadingVault(false);
     }
-  }, []);
+  }, [userId]);
 
   const loadCertificates = useCallback(async () => {
     setLoadingCerts(true);
@@ -235,7 +244,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     }
     if (!window.confirm("Delete this image from vault?")) return;
     try {
-      await vaultAPI.delete(imageId);
+      // Get user_id from props or storage
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        currentUserId = storedUserId || undefined;
+      }
+      
+      await vaultAPI.delete(imageId, currentUserId);
       setVaultImages((prev) =>
         prev.filter((img) => img.id !== imageId && img.assetId !== imageId)
       );

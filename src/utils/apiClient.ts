@@ -63,9 +63,19 @@ export const authAPI = {
 // Vault API
 export const vaultAPI = {
   save: (data: any) => request('POST', '/vault/save', data),
-  list: () => request('GET', '/vault/list'),
-  getOne: (id: string) => request('GET', `/vault/${id}`),
-  delete: (id: string) => request('DELETE', `/vault/${id}`),
+  list: (userId?: string) => {
+    // Pass user_id as query param if provided
+    const endpoint = userId ? `/vault/list?user_id=${encodeURIComponent(userId)}` : '/vault/list';
+    return request('GET', endpoint);
+  },
+  getOne: (id: string, userId?: string) => {
+    const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
+    return request('GET', endpoint);
+  },
+  delete: (id: string, userId?: string) => {
+    const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
+    return request('DELETE', endpoint);
+  },
   verifyByHash: (hash: string) => request('GET', `/vault/verify/${hash}`, null, false),
   search: (q: string) => request('GET', `/vault/search/query?q=${encodeURIComponent(q)}`),
 };
