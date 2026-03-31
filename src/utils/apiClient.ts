@@ -1,5 +1,5 @@
 // API Client for BioVault Backend
-const BASE_URL = 'https://pinit-backend.onrender.com';
+const BASE_URL = 'https://biovault-backend-d13a.onrender.com';
 
 const getToken = () => {
   try {
