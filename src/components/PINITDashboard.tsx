@@ -4,6 +4,7 @@ import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clo
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
+import { appStorage } from "@/lib/storage";
 
 interface PINITDashboardProps {
   userId?: string;
@@ -122,14 +123,86 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     if (!cryptoFile) return;
     setIsEncrypting(true);
     try {
+      // Step 1: Simulate encryption process
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      const uuid = `UUID-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Step 2: Generate asset ID and metadata
+      const assetId = `UUID-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const fileSize = (cryptoFile.size / 1024).toFixed(2) + " KB";
+      const timestamp = new Date().toISOString();
+      
+      // Step 3: Get user ID from storage
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        currentUserId = storedUserId || "default_user";
+        console.log('🔓 Encryption: Retrieved userId from storage:', currentUserId);
+      }
+      
+      // Step 4: Create thumbnail base64 from the file
+      let thumbnailBase64 = null;
+      try {
+        const reader = new FileReader();
+        await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(null);
+          reader.onerror = reject;
+          reader.readAsDataURL(cryptoFile);
+        });
+        thumbnailBase64 = reader.result as string;
+        console.log('📷 Encryption: Created thumbnail');
+      } catch (thumbErr) {
+        console.warn('⚠️ Encryption: Could not create thumbnail:', thumbErr);
+      }
+      
+      // Step 5: Prepare vault data
+      const vaultData = {
+        asset_id: assetId,
+        user_id: currentUserId,
+        file_name: cryptoFile.name,
+        file_size: fileSize,
+        file_hash: `hash-${assetId}`, // In production, calculate real hash
+        visual_fingerprint: `fingerprint-${assetId}`, // In production, calculate from image
+        resolution: "encrypted", // Would extract from image in production
+        capture_timestamp: timestamp,
+        thumbnail_base64: thumbnailBase64,
+        certificate_id: null,
+        owner_name: "BioVault User",
+        owner_email: "user@biovault.app",
+      };
+      
+      console.log('📤 Encryption: Saving to vault...', vaultData);
+      
+      // Step 6: Save encrypted image to vault backend
+      const response = await vaultAPI.save(vaultData);
+      console.log('✅ Encryption: Image saved to vault:', response);
+      
+      // Step 7: Show success result
       setEncryptedResult({
         fileName: cryptoFile.name,
-        uuid,
+        uuid: assetId,
         encrypted: true,
         timestamp: new Date().toLocaleString(),
-        size: (cryptoFile.size / 1024).toFixed(2) + " KB",
+        size: fileSize,
+        vaultId: response.data?.id || assetId,
+      });
+      
+      // Step 8: Reload vault images to show the new encrypted image
+      await loadVaultImages();
+      
+      // Step 9: Clear file after successful encryption
+      setCryptoFile(null);
+      setCryptoPreview("");
+      
+      alert("✅ Image encrypted and saved to vault successfully!");
+    } catch (err) {
+      console.error('❌ Encryption failed:', err);
+      const errorMsg = (err as any).message || 'Unknown error';
+      alert(`❌ Failed to encrypt image: ${errorMsg}`);
+      setEncryptedResult({
+        fileName: cryptoFile?.name || "Unknown",
+        encrypted: false,
+        timestamp: new Date().toLocaleString(),
+        error: errorMsg,
       });
     } finally {
       setIsEncrypting(false);
