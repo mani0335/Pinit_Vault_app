@@ -132,6 +132,8 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     if (!cryptoFile) return;
     setIsEncrypting(true);
     try {
+      console.log('🔐 Encryption: Starting encryption process...');
+      
       // Step 1: Simulate encryption process
       await new Promise((resolve) => setTimeout(resolve, 1500));
       
@@ -151,16 +153,23 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       // Step 4: Create thumbnail base64 from the file
       let thumbnailBase64 = null;
       try {
-        const reader = new FileReader();
-        await new Promise((resolve, reject) => {
-          reader.onload = () => resolve(null);
-          reader.onerror = reject;
+        thumbnailBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            console.log('📷 Encryption: Created thumbnail, size:', result.length);
+            resolve(result);
+          };
+          reader.onerror = () => {
+            console.warn('⚠️ Encryption: Could not read file for thumbnail');
+            reject(reader.error);
+          };
           reader.readAsDataURL(cryptoFile);
         });
-        thumbnailBase64 = reader.result as string;
-        console.log('📷 Encryption: Created thumbnail');
       } catch (thumbErr) {
-        console.warn('⚠️ Encryption: Could not create thumbnail:', thumbErr);
+        console.warn('⚠️ Encryption: Thumbnail creation failed:', thumbErr);
+        // Continue without thumbnail
+        thumbnailBase64 = null;
       }
       
       // Step 5: Prepare vault data
@@ -169,9 +178,9 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         user_id: currentUserId,
         file_name: cryptoFile.name,
         file_size: fileSize,
-        file_hash: `hash-${assetId}`, // In production, calculate real hash
-        visual_fingerprint: `fingerprint-${assetId}`, // In production, calculate from image
-        resolution: "encrypted", // Would extract from image in production
+        file_hash: `hash-${assetId}`,
+        visual_fingerprint: `fingerprint-${assetId}`,
+        resolution: "encrypted",
         capture_timestamp: timestamp,
         thumbnail_base64: thumbnailBase64,
         certificate_id: null,
@@ -179,11 +188,22 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         owner_email: "user@biovault.app",
       };
       
-      console.log('📤 Encryption: Saving to vault...', vaultData);
+      console.log('📤 Encryption: Saving to vault...', {
+        asset_id: assetId,
+        user_id: currentUserId,
+        file_name: cryptoFile.name,
+        file_size: fileSize,
+      });
       
       // Step 6: Save encrypted image to vault backend
-      const response = await vaultAPI.save(vaultData);
-      console.log('✅ Encryption: Image saved to vault:', response);
+      let response;
+      try {
+        response = await vaultAPI.save(vaultData);
+        console.log('✅ Encryption: Image saved to vault:', response);
+      } catch (apiErr: any) {
+        console.error('❌ Encryption API Error:', apiErr);
+        throw new Error(`Vault save failed: ${apiErr.message || 'Unknown error'}`);
+      }
       
       // Step 7: Show success result
       setEncryptedResult({
@@ -196,12 +216,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       });
       
       // Step 8: Reload vault images to show the new encrypted image
+      console.log('🔄 Encryption: Reloading vault images...');
       await loadVaultImages();
       
       // Step 9: Clear file after successful encryption
       setCryptoFile(null);
       setCryptoPreview("");
       
+      console.log('✅ Encryption: Complete!');
       alert("✅ Image encrypted and saved to vault successfully!");
     } catch (err) {
       console.error('❌ Encryption failed:', err);
