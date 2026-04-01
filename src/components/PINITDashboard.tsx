@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye, Lock } from "lucide-react";
+import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye, Lock, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
@@ -308,41 +308,30 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       
       if (!image.thumbnail) {
         alert('⚠️ Download URL not available for this image');
+        setIsDownloading(false);
         return;
       }
 
-      // Fetch image from thumbnail URL
+      // Fetch image blob from thumbnail URL
       const response = await fetch(image.thumbnail);
       if (!response.ok) throw new Error('Failed to fetch image');
       
       const blob = await response.blob();
       const fileName = image.fileName || 'encrypted-image.jpg';
       
-      // Platform-specific download
-      if (navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
-        // Mobile: Save to gallery using data URL
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const link = document.createElement('a');
-          link.href = dataUrl;
-          link.download = fileName;
-          link.click();
-          alert(`✅ Image saved! Check your Downloads folder.\n\n📁 File: ${fileName}`);
-        };
-        reader.readAsDataURL(blob);
-      } else {
-        // Desktop: Standard download
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        alert('✅ Image downloaded successfully!');
-      }
+      // Create object URL and trigger download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Download triggered:', fileName);
+      alert(`✅ Image download started!\n\n📁 File: ${fileName}\n\n📸 Check your Gallery or Downloads folder.`);
+      
     } catch (err) {
       console.error('❌ Download failed:', err);
       alert('Failed to download: ' + (err as any).message);
@@ -360,29 +349,12 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('📤 Sharing image:', image.fileName);
       
-      // Create share message with image details
-      const shareMessage = `🔐 *Encrypted Image*\n\n📸 *File:* ${image.fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`;
+      const shareMessage = `🔐 *Encrypted Image*\n\n📸 *File:* ${image.fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\n${image.thumbnail || ''}\n\nCheck out this encrypted image from BioVault!`;
       
-      // Try native share API first (works on mobile)
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: 'Encrypted Image - BioVault',
-            text: shareMessage,
-            url: window.location.href,
-          });
-          console.log('✅ Shared via native share');
-          return;
-        } catch (err) {
-          console.log('⚠️ Native share cancelled or unavailable');
-        }
-      }
-
-      // WhatsApp Web Share URL
+      // Create WhatsApp share URL with message and image URL
       const whatsappMessage = encodeURIComponent(shareMessage);
       const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
       
-      // Copy share info and provide options
       setShareLink(whatsappUrl);
       setShowShareModal(true);
       
