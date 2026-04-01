@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
 import { appStorage } from "@/lib/storage";
+import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 
 interface PINITDashboardProps {
   userId?: string;
@@ -313,29 +315,75 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       }
 
       // Fetch image blob from thumbnail URL
-      const response = await fetch(image.thumbnail);
+      const response = await fetch(image.thumbnail, {
+        method: 'GET',
+        headers: { 'Accept': 'image/*' }
+      });
+      
       if (!response.ok) throw new Error('Failed to fetch image');
       
       const blob = await response.blob();
       const fileName = image.fileName || 'encrypted-image.jpg';
       
-      // Create object URL and trigger download
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      console.log('📦 Blob size:', blob.size, 'bytes, Type:', blob.type);
       
-      console.log('✅ Download triggered:', fileName);
-      alert(`✅ Image download started!\n\n📁 File: ${fileName}\n\n📸 Check your Gallery or Downloads folder.`);
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Data = (reader.result as string).split(',')[1];
+          console.log('📝 Base64 ready, length:', base64Data.length);
+          
+          // Save using Capacitor Filesystem
+          try {
+            const writeResult = await (Filesystem as any).writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: Directory.Downloads,
+              encoding: Encoding.UTF8,
+            });
+            
+            console.log('✅ File saved to Downloads:', writeResult);
+            alert(`✅ Image Downloaded Successfully!\n\n📁 File: ${fileName}\n\n📸 Check your Gallery/Downloads folder.`);
+            
+          } catch (fsErr: any) {
+            console.error('⚠️ Filesystem save failed:', fsErr);
+            
+            // Fallback: Browser download
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+              document.body.removeChild(link);
+              window.URL.revokeObjectURL(url);
+            }, 100);
+            
+            alert(`✅ Image Downloaded!\n\n📁 File: ${fileName}`);
+          }
+          
+        } catch (err) {
+          console.error('❌ Error processing download:', err);
+          alert('Failed to process download: ' + (err as any).message);
+        } finally {
+          setIsDownloading(false);
+        }
+      };
+      
+      reader.onerror = () => {
+        console.error('❌ FileReader error:', reader.error);
+        alert('Failed to read image file');
+        setIsDownloading(false);
+      };
+      
+      reader.readAsDataURL(blob);
       
     } catch (err) {
       console.error('❌ Download failed:', err);
       alert('Failed to download: ' + (err as any).message);
-    } finally {
       setIsDownloading(false);
     }
   };
@@ -349,14 +397,89 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('📤 Sharing image:', image.fileName);
       
-      const shareMessage = `🔐 *Encrypted Image*\n\n📸 *File:* ${image.fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\n${image.thumbnail || ''}\n\nCheck out this encrypted image from BioVault!`;
+      if (!image.thumbnail) {
+        alert('⚠️ No image available to share');
+        return;
+      }
+
+      // Fetch image blob
+      const response = await fetch(image.thumbnail, {
+        method: 'GET',
+        headers: { 'Accept': 'image/*' }
+      });
       
-      // Create WhatsApp share URL with message and image URL
-      const whatsappMessage = encodeURIComponent(shareMessage);
-      const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
+      if (!response.ok) throw new Error('Failed to fetch image');
       
-      setShareLink(whatsappUrl);
-      setShowShareModal(true);
+      const blob = await response.blob();
+      const fileName = image.fileName || 'encrypted-image.jpg';
+      
+      console.log('📦 Blob ready for sharing:', blob.size, 'bytes');
+      
+      // Convert blob to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = async () => {
+          try {
+            const base64Data = (reader.result as string).split(',')[1];
+            
+            // Save file to cache using Capacitor
+            try {
+              const cacheDir = Directory.Cache;
+              await (Filesystem as any).writeFile({
+                path: fileName,
+                data: base64Data,
+                directory: cacheDir,
+                encoding: Encoding.UTF8,
+              });
+              
+              console.log('✅ File saved to cache:', fileName);
+              
+              // Get the file URI for sharing
+              const fileUri = `file://${cacheDir}/${fileName}`;
+              
+              // Try Capacitor Share first (native Android share picker)
+              try {
+                await Share.share({
+                  title: 'Share Encrypted Image',
+                  text: `🔐 Encrypted Image: ${fileName}\n⏰ Date: ${formatDate(image.dateEncrypted)}\n📊 Size: ${image.fileSize}`,
+                  url: fileUri,
+                });
+                console.log('✅ Shared via native share');
+                resolve(true);
+              } catch (shareErr: any) {
+                console.log('⚠️ Native share not available, opening WhatsApp fallback');
+                
+                // Fallback: Open WhatsApp with message and let user manually add image
+                const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`);
+                const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
+                
+                setShareLink(whatsappUrl);
+                setShowShareModal(true);
+                resolve(true);
+              }
+              
+            } catch (fsErr) {
+              console.error('❌ Filesystem error:', fsErr);
+              alert('⚠️ Could not save image. Try sharing via WhatsApp manually.');
+              reject(fsErr);
+            }
+            
+          } catch (err) {
+            console.error('❌ Error processing share:', err);
+            alert('Failed to prepare image for sharing');
+            reject(err);
+          }
+        };
+        
+        reader.onerror = () => {
+          console.error('❌ FileReader error:', reader.error);
+          alert('Failed to read image file');
+          reject(reader.error);
+        };
+        
+        reader.readAsDataURL(blob);
+      });
       
     } catch (err) {
       console.error('❌ Share failed:', err);
