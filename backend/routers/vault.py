@@ -37,14 +37,16 @@ async def save_vault_image(
 
     # Upload thumbnail to Cloudinary if provided
     thumbnail_url = None
+    image_url = None
     if data.thumbnail_base64:
         try:
             result = upload_thumbnail_base64(data.thumbnail_base64, data.asset_id)
             if result["success"]:
                 thumbnail_url = result["url"]
-                print(f"📷 Vault Save: Thumbnail uploaded - {thumbnail_url}")
+                image_url = thumbnail_url  # Use same URL for image
+                print(f"📷 Vault Save: Image uploaded - {thumbnail_url}")
         except Exception as e:
-            print(f"⚠️ Vault Save: Thumbnail upload failed - {str(e)}")
+            print(f"⚠️ Vault Save: Image upload failed - {str(e)}")
 
     # Save to Supabase
     try:
@@ -61,6 +63,8 @@ async def save_vault_image(
             "file_size"          : data.file_size,
             "file_name"          : data.file_name,
             "thumbnail_url"      : thumbnail_url,
+            "image_url"          : image_url,
+            "image_base64"       : data.image_base64 or data.thumbnail_base64,  # Store full image
             "capture_timestamp"  : data.capture_timestamp
         }).execute()
         

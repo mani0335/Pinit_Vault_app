@@ -89,6 +89,7 @@ class VaultImageCreate(BaseModel):
     file_size:          Optional[str]   = None   # string e.g. "2.5 MB"
     file_name:          Optional[str]   = None
     thumbnail_base64:   Optional[str]   = None
+    image_base64:       Optional[str]   = None   # Full encrypted image as base64
     capture_timestamp:  Optional[str]   = None
     device_id:          Optional[str]   = None
     user_id: str 
@@ -107,6 +108,8 @@ class VaultImageResponse(BaseModel):
     file_size:          Optional[str]
     file_name:          Optional[str]
     thumbnail_url:      Optional[str]
+    image_url:          Optional[str]       # Full image URL
+    image_base64:       Optional[str]       # Full image as base64
     capture_timestamp:  Optional[str]
     created_at:         str
 
