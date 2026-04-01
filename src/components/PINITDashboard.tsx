@@ -306,21 +306,42 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('⬇️ Downloading image:', image.fileName);
       
-      // If we have a thumbnail URL, download from there
-      if (image.thumbnail) {
-        const response = await fetch(image.thumbnail);
-        const blob = await response.blob();
+      if (!image.thumbnail) {
+        alert('⚠️ Download URL not available for this image');
+        return;
+      }
+
+      // Fetch image from thumbnail URL
+      const response = await fetch(image.thumbnail);
+      if (!response.ok) throw new Error('Failed to fetch image');
+      
+      const blob = await response.blob();
+      const fileName = image.fileName || 'encrypted-image.jpg';
+      
+      // Platform-specific download
+      if (navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone')) {
+        // Mobile: Save to gallery using data URL
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const link = document.createElement('a');
+          link.href = dataUrl;
+          link.download = fileName;
+          link.click();
+          alert(`✅ Image saved! Check your Downloads folder.\n\n📁 File: ${fileName}`);
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        // Desktop: Standard download
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = image.fileName || 'encrypted-image.jpg';
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
         alert('✅ Image downloaded successfully!');
-      } else {
-        alert('⚠️ Download URL not available for this image');
       }
     } catch (err) {
       console.error('❌ Download failed:', err);
@@ -339,22 +360,32 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('📤 Sharing image:', image.fileName);
       
-      // Generate a public share link
-      const shareToken = image.asset_id || image.id;
-      const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/share/${shareToken}`;
+      // Create share message with image details
+      const shareMessage = `🔐 *Encrypted Image*\n\n📸 *File:* ${image.fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`;
       
-      setShareLink(shareUrl);
+      // Try native share API first (works on mobile)
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Encrypted Image - BioVault',
+            text: shareMessage,
+            url: window.location.href,
+          });
+          console.log('✅ Shared via native share');
+          return;
+        } catch (err) {
+          console.log('⚠️ Native share cancelled or unavailable');
+        }
+      }
+
+      // WhatsApp Web Share URL
+      const whatsappMessage = encodeURIComponent(shareMessage);
+      const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
+      
+      // Copy share info and provide options
+      setShareLink(whatsappUrl);
       setShowShareModal(true);
       
-      // Optional: If device supports native sharing
-      if (navigator.share && image.thumbnail) {
-        await navigator.share({
-          title: 'Encrypted Image',
-          text: `Check out this encrypted image: ${image.fileName}`,
-          url: shareUrl,
-        });
-      }
     } catch (err) {
       console.error('❌ Share failed:', err);
       alert('Failed to share: ' + (err as any).message);
@@ -363,8 +394,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
 
   const copyShareLink = () => {
     if (shareLink) {
-      navigator.clipboard.writeText(shareLink);
-      alert('✅ Share link copied to clipboard!');
+      // If it's a WhatsApp URL, open it instead of copying
+      if (shareLink.includes('wa.me')) {
+        window.open(shareLink, '_blank');
+        console.log('✅ Opening WhatsApp share');
+      } else {
+        navigator.clipboard.writeText(shareLink);
+        alert('✅ Link copied to clipboard!');
+      }
     }
   };
 
@@ -910,37 +947,68 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
             exit={{ scale: 0.9, opacity: 0 }}
             className="bg-white rounded-lg max-w-md w-full p-6"
           >
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Share Image</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">📤 Share Image</h2>
             
-            <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
-              <p className="text-xs text-gray-600 mb-2">Share Link:</p>
-              <input
-                type="text"
-                value={shareLink}
-                readOnly
-                className="w-full text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono"
-              />
-            </div>
+            {shareLink.includes('wa.me') ? (
+              <div className="space-y-4">
+                <div className="bg-green-50 p-4 rounded border-2 border-green-300">
+                  <p className="text-sm font-bold text-green-700 mb-2">💬 Share via WhatsApp</p>
+                  <p className="text-xs text-gray-600 mb-3">Your encrypted image details will be shared as a message</p>
+                </div>
 
-            <div className="flex gap-2">
-              <Button
-                onClick={copyShareLink}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
-                📋 Copy Link
-              </Button>
-              <Button
-                onClick={() => setShowShareModal(false)}
-                variant="outline"
-                className="flex-1"
-              >
-                Close
-              </Button>
-            </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={copyShareLink}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-2"
+                  >
+                    💚 Open WhatsApp
+                  </Button>
+                  <Button
+                    onClick={() => setShowShareModal(false)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Close
+                  </Button>
+                </div>
 
-            <p className="text-xs text-gray-500 text-center mt-4">
-              Share this link with others to let them view your encrypted image.
-            </p>
+                <p className="text-xs text-gray-500 text-center">
+                  This will open WhatsApp and let you compose a message with encrypted image details.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+                  <p className="text-xs text-gray-600 mb-2">Share Link:</p>
+                  <input
+                    type="text"
+                    value={shareLink}
+                    readOnly
+                    className="w-full text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={copyShareLink}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  >
+                    📋 Copy Link
+                  </Button>
+                  <Button
+                    onClick={() => setShowShareModal(false)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                <p className="text-xs text-gray-500 text-center mt-4">
+                  Share this link with others to let them view your encrypted image.
+                </p>
+              </div>
+            )}
           </motion.div>
         </div>
       )}
