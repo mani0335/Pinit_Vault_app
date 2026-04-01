@@ -31,6 +31,13 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [analysisHistory, setAnalysisHistory] = useState<any[]>([]);
 
+  // VAULT IMAGE VIEWER & SHARING
+  const [selectedVaultImage, setSelectedVaultImage] = useState<any>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
   // ===================== LOAD REAL DATA FROM APIs =====================
   const loadVaultImages = useCallback(async () => {
     setLoadingVault(true);
@@ -283,6 +290,84 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     }
   };
 
+  const handleViewImage = async (image: any) => {
+    console.log('👁️ Viewing image:', image.fileName);
+    setSelectedVaultImage(image);
+    setShowImageModal(true);
+  };
+
+  const handleDownloadImage = async (image: any) => {
+    if (isRestricted) {
+      alert("❌ Temporary access: Download is not available. Complete registration for full access.");
+      return;
+    }
+    
+    setIsDownloading(true);
+    try {
+      console.log('⬇️ Downloading image:', image.fileName);
+      
+      // If we have a thumbnail URL, download from there
+      if (image.thumbnail) {
+        const response = await fetch(image.thumbnail);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = image.fileName || 'encrypted-image.jpg';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        alert('✅ Image downloaded successfully!');
+      } else {
+        alert('⚠️ Download URL not available for this image');
+      }
+    } catch (err) {
+      console.error('❌ Download failed:', err);
+      alert('Failed to download: ' + (err as any).message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleShareImage = async (image: any) => {
+    if (isRestricted) {
+      alert("❌ Temporary access: Sharing is not available. Complete registration for full access.");
+      return;
+    }
+    
+    try {
+      console.log('📤 Sharing image:', image.fileName);
+      
+      // Generate a public share link
+      const shareToken = image.asset_id || image.id;
+      const baseUrl = window.location.origin;
+      const shareUrl = `${baseUrl}/share/${shareToken}`;
+      
+      setShareLink(shareUrl);
+      setShowShareModal(true);
+      
+      // Optional: If device supports native sharing
+      if (navigator.share && image.thumbnail) {
+        await navigator.share({
+          title: 'Encrypted Image',
+          text: `Check out this encrypted image: ${image.fileName}`,
+          url: shareUrl,
+        });
+      }
+    } catch (err) {
+      console.error('❌ Share failed:', err);
+      alert('Failed to share: ' + (err as any).message);
+    }
+  };
+
+  const copyShareLink = () => {
+    if (shareLink) {
+      navigator.clipboard.writeText(shareLink);
+      alert('✅ Share link copied to clipboard!');
+    }
+  };
+
   const pageVariants = {
     hidden: { opacity: 0, x: 20 },
     visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
@@ -507,16 +592,47 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
                         {formatDate(img.dateEncrypted)}
                       </p>
                     </div>
-                    <Button
-                      onClick={() => handleDeleteImage(img.id)}
-                      size="sm"
-                      variant="ghost"
-                      disabled={isRestricted}
-                      className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                      title={isRestricted ? "Disabled: Temporary access only" : "Delete image"}
-                    >
-                      <Trash2 className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-red-600"}`} />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        onClick={() => handleViewImage(img)}
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0 hover:bg-blue-50"
+                        title="View image"
+                      >
+                        <Eye className="w-4 h-4 text-blue-600" />
+                      </Button>
+                      <Button
+                        onClick={() => handleDownloadImage(img)}
+                        size="sm"
+                        variant="ghost"
+                        disabled={isRestricted || isDownloading}
+                        className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-50"
+                        title={isRestricted ? "Disabled: Temporary access only" : "Download image"}
+                      >
+                        <Download className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-green-600"}`} />
+                      </Button>
+                      <Button
+                        onClick={() => handleShareImage(img)}
+                        size="sm"
+                        variant="ghost"
+                        disabled={isRestricted}
+                        className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50"
+                        title={isRestricted ? "Disabled: Temporary access only" : "Share image"}
+                      >
+                        <Lock className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-purple-600"}`} />
+                      </Button>
+                      <Button
+                        onClick={() => handleDeleteImage(img.id)}
+                        size="sm"
+                        variant="ghost"
+                        disabled={isRestricted}
+                        className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-50"
+                        title={isRestricted ? "Disabled: Temporary access only" : "Delete image"}
+                      >
+                        <Trash2 className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-red-600"}`} />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -723,6 +839,111 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         {activePage === "vault" && <VaultPage key="vault" />}
         {activePage === "analyzer" && <AnalyzerPage key="analyzer" />}
       </AnimatePresence>
+
+      {/* IMAGE VIEWER MODAL */}
+      {showImageModal && selectedVaultImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-white rounded-lg max-w-2xl w-full max-h-96 overflow-hidden flex flex-col"
+          >
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900">{selectedVaultImage.fileName}</h2>
+              <Button
+                onClick={() => setShowImageModal(false)}
+                variant="ghost"
+                className="h-8 w-8 p-0"
+              >
+                ✕
+              </Button>
+            </div>
+            
+            <div className="flex-1 flex items-center justify-center bg-gray-50 p-4 overflow-auto">
+              {selectedVaultImage.thumbnail ? (
+                <img
+                  src={selectedVaultImage.thumbnail}
+                  alt={selectedVaultImage.fileName}
+                  className="max-w-full max-h-full object-contain rounded"
+                />
+              ) : (
+                <div className="text-center text-gray-500">
+                  <Image className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>No preview available</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <Button
+                onClick={() => handleDownloadImage(selectedVaultImage)}
+                variant="default"
+                disabled={isDownloading}
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowImageModal(false);
+                  handleShareImage(selectedVaultImage);
+                }}
+                variant="outline"
+                className="gap-2"
+              >
+                <Lock className="w-4 h-4" />
+                Share
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* SHARE LINK MODAL */}
+      {showShareModal && shareLink && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-white rounded-lg max-w-md w-full p-6"
+          >
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Share Image</h2>
+            
+            <div className="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+              <p className="text-xs text-gray-600 mb-2">Share Link:</p>
+              <input
+                type="text"
+                value={shareLink}
+                readOnly
+                className="w-full text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={copyShareLink}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                📋 Copy Link
+              </Button>
+              <Button
+                onClick={() => setShowShareModal(false)}
+                variant="outline"
+                className="flex-1"
+              >
+                Close
+              </Button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              Share this link with others to let them view your encrypted image.
+            </p>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

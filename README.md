@@ -371,20 +371,20 @@ flowchart TD
 ┌─────────────────────────────────────────────────────────────────┐
 │                    NEW USER REGISTRATION FLOW                   │
 │                        (/register route)                        │
-│                                                                  │
-│  Step 1: Generate Temporary ID                                 │
-│  Step 2: Scan Fingerprint (register mode)                      │
-│           → Store in MongoDB with user temp ID                 │
-│  Step 3: Scan Face (register mode)                             │
-│           → Save face embedding                                │
-│  Step 4: Generate Unique USER_ID from MongoDB                 │
-│  Step 5: Click "Store & Verify" button                         │
-│           → POST to MongoDB with all biometrics                │
-│  Step 6: Registration Success → Options:                       │
-│           • "Login Now" → /login                               │
-│           • "Home" → /                                         │
-│                                                                  │
-│  Result: Full access to /dashboard                             │
+│                                                                 │
+│  Step 1: Generate Temporary ID                                  │
+│  Step 2: Scan Fingerprint (register mode)                       │
+│           → Store in MongoDB with user temp ID                  │
+│  Step 3: Scan Face (register mode)                              │
+│           → Save face embedding                                 │
+│  Step 4: Generate Unique USER_ID from MongoDB                   │
+│  Step 5: Click "Store & Verify" button                          │
+│           → POST to MongoDB with all biometrics                 │
+│  Step 6: Registration Success → Options:                        │
+│           • "Login Now" → /login                                │
+│           • "Home" → /                                          │
+│                                                                 │
+│  Result: Full access to /dashboard                              │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
