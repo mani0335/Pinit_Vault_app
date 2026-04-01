@@ -7,6 +7,10 @@ import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
 import { appStorage } from "@/lib/storage";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
+import { Camera as CameraPlugin } from "@capacitor/camera";
+import { CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera as CameraPlugin } from "@capacitor/camera";
+import { CameraResultType, CameraSource } from "@capacitor/camera";
 
 interface PINITDashboardProps {
   userId?: string;
@@ -27,7 +31,9 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   // IMAGE ANALYZER STATE
   const [cryptoFile, setCryptoFile] = useState<File | null>(null);
   const [cryptoPreview, setCryptoPreview] = useState<string>("");
+  const [cryptoBase64, setCryptoBase64] = useState<string>("");
   const [isEncrypting, setIsEncrypting] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [encryptedResult, setEncryptedResult] = useState<any>(null);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -123,17 +129,39 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   };
 
   // ===================== IMAGE ANALYZER FUNCTIONS =====================
-  const handleFileSelect = (e: any) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setCryptoFile(file);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setCryptoPreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-      setEncryptedResult(null);
-      setAnalysisResult(null);
+  const handleCameraCapture = async () => {
+    try {
+      setIsCameraOpen(true);
+      const photo = await CameraPlugin.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera,
+      });
+
+      if (photo.base64String) {
+        const base64 = `data:image/${photo.format};base64,${photo.base64String}`;
+        setCryptoPreview(base64);
+        setCryptoBase64(photo.base64String);
+        
+        // Create a mock File object for file name
+        const fileName = `IMG_${Date.now()}.${photo.format || 'jpg'}`;
+        const blob = await (async () => {
+          const res = await fetch(base64);
+          return res.blob();
+        })();
+        const file = new File([blob], fileName, { type: `image/${photo.format || 'jpeg'}` });
+        setCryptoFile(file);
+        
+        console.log('✅ Camera: Image captured -', fileName);
+        setEncryptedResult(null);
+        setAnalysisResult(null);
+      }
+    } catch (err) {
+      console.error('❌ Camera Error:', err);
+      alert('Failed to capture image from camera');
+    } finally {
+      setIsCameraOpen(false);
     }
   };
 
@@ -159,29 +187,30 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         console.log('🔓 Encryption: Retrieved userId from storage:', currentUserId);
       }
       
-      // Step 4: Create thumbnail base64 from the file
-      let thumbnailBase64 = null;
-      try {
-        thumbnailBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            console.log('📷 Encryption: Created thumbnail, size:', result.length);
-            resolve(result);
-          };
-          reader.onerror = () => {
-            console.warn('⚠️ Encryption: Could not read file for thumbnail');
-            reject(reader.error);
-          };
-          reader.readAsDataURL(cryptoFile);
-        });
-      } catch (thumbErr) {
-        console.warn('⚠️ Encryption: Thumbnail creation failed:', thumbErr);
-        // Continue without thumbnail
-        thumbnailBase64 = null;
+      // Step 4: Create thumbnail base64 from the file (or use camera base64)
+      let thumbnailBase64 = cryptoBase64 || null;
+      if (!thumbnailBase64) {
+        try {
+          thumbnailBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              console.log('📷 Encryption: Created thumbnail, size:', result.length);
+              resolve(result);
+            };
+            reader.onerror = () => {
+              console.warn('⚠️ Encryption: Could not read file for thumbnail');
+              reject(reader.error);
+            };
+            reader.readAsDataURL(cryptoFile);
+          });
+        } catch (thumbErr) {
+          console.warn('⚠️ Encryption: Thumbnail creation failed:', thumbErr);
+          thumbnailBase64 = null;
+        }
       }
       
-      // Step 5: Prepare vault data
+      // Step 5: Prepare vault data (store FULL encrypted image + thumbnail)
       const vaultData = {
         asset_id: assetId,
         user_id: currentUserId,
@@ -192,6 +221,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         resolution: "encrypted",
         capture_timestamp: timestamp,
         thumbnail_base64: thumbnailBase64,
+        image_base64: thumbnailBase64,
         certificate_id: null,
         owner_name: "BioVault User",
         owner_email: "user@biovault.app",
@@ -231,6 +261,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       // Step 9: Clear file after successful encryption
       setCryptoFile(null);
       setCryptoPreview("");
+      setCryptoBase64("");
       
       console.log('✅ Encryption: Complete!');
       alert("✅ Image encrypted and saved to vault successfully!");
@@ -308,82 +339,65 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('⬇️ Downloading image:', image.fileName);
       
-      if (!image.thumbnail) {
+      // Use stored image_base64 first, fallback to thumbnail
+      let base64String = image.image_base64 || image.thumbnail_base64;
+      
+      if (!base64String && image.thumbnail) {
+        console.log('📥 Fetching image from thumbnail URL...');
+        const response = await fetch(image.thumbnail, {
+          method: 'GET',
+          headers: { 'Accept': 'image/*' }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch image');
+        const blob = await response.blob();
+        
+        // Convert blob to base64
+        const arrayBuffer = await blob.arrayBuffer();
+        base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      }
+      
+      if (!base64String) {
         alert('⚠️ Download URL not available for this image');
         setIsDownloading(false);
         return;
       }
-
-      // Fetch image blob from thumbnail URL
-      const response = await fetch(image.thumbnail, {
-        method: 'GET',
-        headers: { 'Accept': 'image/*' }
-      });
       
-      if (!response.ok) throw new Error('Failed to fetch image');
-      
-      const blob = await response.blob();
       const fileName = image.fileName || 'encrypted-image.jpg';
+      console.log('📝 Base64 ready, size:', base64String.length);
       
-      console.log('📦 Blob size:', blob.size, 'bytes, Type:', blob.type);
-      
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64Data = (reader.result as string).split(',')[1];
-          console.log('📝 Base64 ready, length:', base64Data.length);
-          
-          // Save using Capacitor Filesystem
-          try {
-            const writeResult = await (Filesystem as any).writeFile({
-              path: fileName,
-              data: base64Data,
-              directory: Directory.Downloads,
-              encoding: Encoding.UTF8,
-            });
-            
-            console.log('✅ File saved to Downloads:', writeResult);
-            alert(`✅ Image Downloaded Successfully!\n\n📁 File: ${fileName}\n\n📸 Check your Gallery/Downloads folder.`);
-            
-          } catch (fsErr: any) {
-            console.error('⚠️ Filesystem save failed:', fsErr);
-            
-            // Fallback: Browser download
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            setTimeout(() => {
-              document.body.removeChild(link);
-              window.URL.revokeObjectURL(url);
-            }, 100);
-            
-            alert(`✅ Image Downloaded!\n\n📁 File: ${fileName}`);
-          }
-          
-        } catch (err) {
-          console.error('❌ Error processing download:', err);
-          alert('Failed to process download: ' + (err as any).message);
-        } finally {
-          setIsDownloading(false);
-        }
-      };
-      
-      reader.onerror = () => {
-        console.error('❌ FileReader error:', reader.error);
-        alert('Failed to read image file');
-        setIsDownloading(false);
-      };
-      
-      reader.readAsDataURL(blob);
-      
+      // Try Capacitor Filesystem first (Mobile)
+      try {
+        await (Filesystem as any).writeFile({
+          path: fileName,
+          data: base64String,
+          directory: Directory.Downloads,
+          encoding: Encoding.UTF8,
+        });
+        
+        console.log('✅ Mobile: File saved to Downloads:', fileName);
+        alert(`✅ Image Downloaded!\n\n📁 ${fileName}\n\n📸 Check your Gallery/Downloads folder.`);
+      } catch (fsErr: any) {
+        console.warn('⚠️ Mobile download failed, using browser fallback:', fsErr);
+        
+        // Fallback: Browser download
+        const dataUrl = `data:image/jpeg;base64,${base64String}`;
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+        }, 100);
+        
+        alert(`✅ Image Downloaded!\n\n📁 ${fileName}`);
+      }
     } catch (err) {
       console.error('❌ Download failed:', err);
       alert('Failed to download: ' + (err as any).message);
+    } finally {
       setIsDownloading(false);
     }
   };
@@ -397,90 +411,70 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('📤 Sharing image:', image.fileName);
       
-      if (!image.thumbnail) {
+      // Use stored image_base64 first
+      let base64String = image.image_base64 || image.thumbnail_base64;
+      
+      if (!base64String && image.thumbnail) {
+        console.log('📥 Fetching image from thumbnail URL...');
+        const response = await fetch(image.thumbnail, {
+          method: 'GET',
+          headers: { 'Accept': 'image/*' }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch image');
+        const blob = await response.blob();
+        const arrayBuffer = await blob.arrayBuffer();
+        base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      }
+      
+      if (!base64String) {
         alert('⚠️ No image available to share');
         return;
       }
-
-      // Fetch image blob
-      const response = await fetch(image.thumbnail, {
-        method: 'GET',
-        headers: { 'Accept': 'image/*' }
-      });
       
-      if (!response.ok) throw new Error('Failed to fetch image');
-      
-      const blob = await response.blob();
       const fileName = image.fileName || 'encrypted-image.jpg';
+      console.log('📝 Image ready for sharing');
       
-      console.log('📦 Blob ready for sharing:', blob.size, 'bytes');
-      
-      // Convert blob to base64
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
+      // Save to cache using Capacitor
+      try {
+        await (Filesystem as any).writeFile({
+          path: fileName,
+          data: base64String,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
         
-        reader.onload = async () => {
-          try {
-            const base64Data = (reader.result as string).split(',')[1];
-            
-            // Save file to cache using Capacitor
-            try {
-              const cacheDir = Directory.Cache;
-              await (Filesystem as any).writeFile({
-                path: fileName,
-                data: base64Data,
-                directory: cacheDir,
-                encoding: Encoding.UTF8,
-              });
-              
-              console.log('✅ File saved to cache:', fileName);
-              
-              // Get the file URI for sharing
-              const fileUri = `file://${cacheDir}/${fileName}`;
-              
-              // Try Capacitor Share first (native Android share picker)
-              try {
-                await Share.share({
-                  title: 'Share Encrypted Image',
-                  text: `🔐 Encrypted Image: ${fileName}\n⏰ Date: ${formatDate(image.dateEncrypted)}\n📊 Size: ${image.fileSize}`,
-                  url: fileUri,
-                });
-                console.log('✅ Shared via native share');
-                resolve(true);
-              } catch (shareErr: any) {
-                console.log('⚠️ Native share not available, opening WhatsApp fallback');
-                
-                // Fallback: Open WhatsApp with message and let user manually add image
-                const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`);
-                const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
-                
-                setShareLink(whatsappUrl);
-                setShowShareModal(true);
-                resolve(true);
-              }
-              
-            } catch (fsErr) {
-              console.error('❌ Filesystem error:', fsErr);
-              alert('⚠️ Could not save image. Try sharing via WhatsApp manually.');
-              reject(fsErr);
-            }
-            
-          } catch (err) {
-            console.error('❌ Error processing share:', err);
-            alert('Failed to prepare image for sharing');
-            reject(err);
-          }
-        };
+        console.log('✅ File saved to cache:', fileName);
         
-        reader.onerror = () => {
-          console.error('❌ FileReader error:', reader.error);
-          alert('Failed to read image file');
-          reject(reader.error);
-        };
+        // Try native Android share picker first
+        try {
+          const messageText = `🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`;
+          
+          await Share.share({
+            title: 'Share Encrypted Image',
+            text: messageText,
+            dialogTitle: 'Share to:',
+          });
+          console.log('✅ Shared via native Android picker');
+        } catch (shareErr: any) {
+          console.log('⚠️ Native share unavailable, showing WhatsApp fallback');
+          
+          // Fallback: Open WhatsApp Web
+          const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`);
+          const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
+          
+          setShareLink(whatsappUrl);
+          setShowShareModal(true);
+        }
+      } catch (fsErr) {
+        console.error('❌ Filesystem error:', fsErr);
         
-        reader.readAsDataURL(blob);
-      });
-      
+        // Fallback: Direct WhatsApp URL
+        const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}`);
+        const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
+        setShareLink(whatsappUrl);
+        setShowShareModal(true);
+      }
     } catch (err) {
       console.error('❌ Share failed:', err);
       alert('Failed to share: ' + (err as any).message);
@@ -750,9 +744,9 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
                         variant="ghost"
                         disabled={isRestricted}
                         className="h-6 w-6 p-0 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50"
-                        title={isRestricted ? "Disabled: Temporary access only" : "Share image"}
+                        title={isRestricted ? "Disabled: Temporary access only" : "Share image to WhatsApp"}
                       >
-                        <Lock className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-purple-600"}`} />
+                        <Share2 className={`w-4 h-4 ${isRestricted ? "text-gray-400" : "text-purple-600"}`} />
                       </Button>
                       <Button
                         onClick={() => handleDeleteImage(img.id)}
@@ -819,26 +813,19 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         <h1 className="text-lg font-bold text-gray-900">Image Analyzer</h1>
       </div>
 
-      {/* File Upload */}
+      {/* Camera Capture - CAMERA ONLY, NO FILE UPLOAD */}
       <motion.div variants={itemVariants}>
-        <label className={`block ${isRestricted ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
-          <div className={`border-2 border-dashed ${isRestricted ? "border-gray-300 bg-gray-50" : "border-indigo-300 hover:border-indigo-500"} rounded-lg p-4 text-center transition`}>
-            <input
-              type="file"
-              onChange={handleFileSelect}
-              accept="image/*,.pdf"
-              disabled={isRestricted}
-              className="hidden"
-            />
-            <Camera className={`w-6 h-6 ${isRestricted ? "text-gray-400" : "text-indigo-600"} mx-auto mb-2`} />
-            <p className={`text-xs font-semibold ${isRestricted ? "text-gray-600" : "text-gray-900"}`}>
-              {isRestricted ? "⏱️ Upload Disabled (Temporary Access)" : (cryptoFile ? cryptoFile.name : "Select Image or PDF")}
-            </p>
-            <p className={`text-xs ${isRestricted ? "text-gray-500" : "text-gray-500"}`}>
-              {isRestricted ? "Complete registration to upload files" : "Click to upload"}
-            </p>
-          </div>
-        </label>
+        <Button
+          onClick={handleCameraCapture}
+          disabled={isRestricted || isCameraOpen}
+          className={`w-full h-12 ${isRestricted ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"} text-white border-0 font-semibold`}
+        >
+          <Camera className="w-5 h-5 mr-2" />
+          {isCameraOpen ? "Opening Camera..." : "📷 Open Camera to Encrypt Image"}
+        </Button>
+        <p className="text-xs text-gray-500 text-center mt-2">
+          {isRestricted ? "⏱️ Camera disabled (Temporary access)" : "Click to open device camera and capture image"}
+        </p>
       </motion.div>
 
       {/* Preview */}
