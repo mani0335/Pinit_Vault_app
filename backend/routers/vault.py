@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from ..db.database import get_admin_db
 from ..models.schemas import VaultImageCreate, VaultImageResponse
 from ..utils.auth_helpers import log_action
-from ..utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail
+from ..utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail, download_image
 
 router = APIRouter(tags=["Vault"])
 
@@ -131,6 +132,51 @@ async def get_vault_image(asset_id: str, user_id: str = None):
     except Exception as e:
         print(f"❌ Vault Get: Failed - {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get vault image: {str(e)}")
+
+
+@router.get("/{asset_id}/download")
+async def download_vault_image(asset_id: str, user_id: str = None):
+    """
+    Download vault image as file (JPG, PNG, etc.).
+    Requires user_id from query parameter.
+    """
+    db = get_admin_db()
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID required")
+    
+    try:
+        # Verify ownership
+        result = db.table("vault_images").select("*") \
+            .eq("asset_id", asset_id) \
+            .eq("user_id", user_id) \
+            .execute()
+
+        if not result.data:
+            raise HTTPException(status_code=403, detail="Asset not found or access denied")
+        
+        asset = result.data[0]
+        file_name = asset.get("file_name", "image")
+        
+        # Download from Cloudinary
+        download_result = download_image(asset_id)
+        
+        if not download_result["success"]:
+            raise HTTPException(status_code=500, detail=f"Failed to download image: {download_result['error']}")
+        
+        # Stream file with download headers
+        return StreamingResponse(
+            iter([download_result["data"]]),
+            media_type=download_result["content_type"],
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_name}.{download_result["format"]}"'
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Vault Download: Failed - {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download image: {str(e)}")
 
 
 @router.delete("/{asset_id}")

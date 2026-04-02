@@ -4,6 +4,7 @@ import cloudinary.api
 from dotenv import load_dotenv
 import os
 import base64
+import httpx
 
 load_dotenv()
 
@@ -121,3 +122,47 @@ def get_thumbnail_url(asset_id: str) -> str:
         fetch_format = "auto",
         secure       = True
     )
+
+
+def download_image(asset_id: str) -> dict:
+    """
+    Download full-resolution image from Cloudinary as bytes.
+    Returns { success, data (bytes), format, error }
+    """
+    try:
+        # Build URL for full-resolution image (no resize)
+        url = cloudinary.CloudinaryImage(
+            f"{FOLDER}/{asset_id}"
+        ).build_url(
+            quality      = "auto",
+            fetch_format = "auto",
+            secure       = True
+        )
+        
+        # Download the image using httpx
+        response = httpx.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Detect format from Content-Type header
+        content_type = response.headers.get("content-type", "image/jpeg")
+        format_map = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+            "image/gif": "gif"
+        }
+        file_format = format_map.get(content_type, "jpg")
+        
+        return {
+            "success": True,
+            "data": response.content,
+            "format": file_format,
+            "content_type": content_type
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": None,
+            "format": None
+        }

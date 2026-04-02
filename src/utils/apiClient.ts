@@ -77,6 +77,57 @@ export const vaultAPI = {
     const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
     return request('GET', endpoint, null, false);
   },
+  download: async (assetId: string, userId?: string) => {
+    /**
+     * Download image as file (JPG, PNG, etc.)
+     * Returns blob URL for downloading
+     */
+    try {
+      // Use backend API URL correctly
+      const endpoint = userId 
+        ? `${BASE_URL}/vault/${assetId}/download?user_id=${encodeURIComponent(userId)}`
+        : `${BASE_URL}/vault/${assetId}/download`;
+      
+      console.log('📥 API Download: Requesting from', endpoint);
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: { 'Accept': 'image/*' }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API Download Error:', response.status, errorText);
+        throw new Error(`Download failed: ${response.status} ${response.statusText}. ${errorText}`);
+      }
+      
+      const blob = await response.blob();
+      console.log('✅ API Download: Got blob, size:', blob.size);
+      
+      // Extract filename from Content-Disposition header if available
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = 'image.jpg';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (match) filename = match[1];
+      }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      return { success: true, filename };
+    } catch (error) {
+      console.error('Download error:', error);
+      return { success: false, error: String(error) };
+    }
+  },
   delete: (id: string, userId?: string) => {
     const endpoint = userId ? `/vault/${id}?user_id=${encodeURIComponent(userId)}` : `/vault/${id}`;
     return request('DELETE', endpoint, null, false);

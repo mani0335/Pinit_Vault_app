@@ -339,61 +339,25 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('⬇️ Downloading image:', image.fileName);
       
-      // Use stored image_base64 first, fallback to thumbnail
-      let base64String = image.image_base64 || image.thumbnail_base64;
-      
-      if (!base64String && image.thumbnail) {
-        console.log('📥 Fetching image from thumbnail URL...');
-        const response = await fetch(image.thumbnail, {
-          method: 'GET',
-          headers: { 'Accept': 'image/*' }
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch image');
-        const blob = await response.blob();
-        
-        // Convert blob to base64
-        const arrayBuffer = await blob.arrayBuffer();
-        base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      // Get user ID
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        currentUserId = storedUserId || undefined;
       }
       
-      if (!base64String) {
-        alert('⚠️ Download URL not available for this image');
+      // Use new vaultAPI.download() endpoint - returns JPG/PNG/WebP/GIF automatically
+      const result = await vaultAPI.download(image.assetId || image.id, currentUserId);
+      
+      if (!result.success) {
+        alert('❌ Download failed: ' + result.error);
         setIsDownloading(false);
         return;
       }
       
-      const fileName = image.fileName || 'encrypted-image.jpg';
-      console.log('📝 Base64 ready, size:', base64String.length);
+      console.log('✅ Download successful:', result.filename);
+      alert(`✅ Image Downloaded!\n\n📁 ${result.filename}\n\n📸 Check your Downloads folder.`);
       
-      // Try Capacitor Filesystem first (Mobile)
-      try {
-        await (Filesystem as any).writeFile({
-          path: fileName,
-          data: base64String,
-          directory: Directory.Downloads,
-          encoding: Encoding.UTF8,
-        });
-        
-        console.log('✅ Mobile: File saved to Downloads:', fileName);
-        alert(`✅ Image Downloaded!\n\n📁 ${fileName}\n\n📸 Check your Gallery/Downloads folder.`);
-      } catch (fsErr: any) {
-        console.warn('⚠️ Mobile download failed, using browser fallback:', fsErr);
-        
-        // Fallback: Browser download
-        const dataUrl = `data:image/jpeg;base64,${base64String}`;
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = fileName;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => {
-          document.body.removeChild(link);
-        }, 100);
-        
-        alert(`✅ Image Downloaded!\n\n📁 ${fileName}`);
-      }
     } catch (err) {
       console.error('❌ Download failed:', err);
       alert('Failed to download: ' + (err as any).message);
