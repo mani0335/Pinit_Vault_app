@@ -369,11 +369,11 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       console.log('✅ Download successful:', result.filename);
       
       // Show location-specific message
-      const locationMsg = result.location === 'Pictures/BioVault' 
-        ? '📸 Image saved to Pictures folder - Check your Gallery app!'
+      const locationMsg = result.location === 'BioVault Cache' 
+        ? '📸 Image downloaded and saved successfully!'
         : '📁 Check your Downloads folder.';
       
-      alert(`✅ Image Downloaded!\n\n📁 ${result.filename}\n\n${locationMsg}`);
+      alert(`✅ Download Complete!\n\n${result.filename}\n\n${locationMsg}`);
       
       
     } catch (err: any) {
@@ -420,8 +420,9 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       
       // Save to cache using Capacitor
       try {
+        const filePath = `BioVault/${fileName}`;
         await (Filesystem as any).writeFile({
-          path: fileName,
+          path: filePath,
           data: base64String,
           directory: Directory.Cache,
           encoding: Encoding.UTF8,
@@ -429,34 +430,24 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         
         console.log('✅ File saved to cache:', fileName);
         
-        // Try native Android share picker first
-        try {
-          const messageText = `🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`;
-          
-          await Share.share({
-            title: 'Share Encrypted Image',
-            text: messageText,
-            dialogTitle: 'Share to:',
-          });
-          console.log('✅ Shared via native Android picker');
-        } catch (shareErr: any) {
-          console.log('⚠️ Native share unavailable, showing WhatsApp fallback');
-          
-          // Fallback: Open WhatsApp Web
-          const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}\n\nCheck out this encrypted image from BioVault!`);
-          const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
-          
-          setShareLink(whatsappUrl);
-          setShowShareModal(true);
-        }
-      } catch (fsErr) {
-        console.error('❌ Filesystem error:', fsErr);
+        // Get the file URI for sharing
+        const uri = await (Filesystem as any).getUri({
+          path: filePath,
+          directory: Directory.Cache,
+        });
         
-        // Fallback: Direct WhatsApp URL
-        const whatsappMessage = encodeURIComponent(`🔐 *Encrypted Image*\n\n📸 *File:* ${fileName}\n⏰ *Date:* ${formatDate(image.dateEncrypted)}\n📊 *Size:* ${image.fileSize}`);
-        const whatsappUrl = `https://wa.me/?text=${whatsappMessage}`;
-        setShareLink(whatsappUrl);
-        setShowShareModal(true);
+        console.log('📁 File URI:', uri.uri);
+        
+        // Share image ONLY (no text)
+        await Share.share({
+          url: uri.uri,
+          title: 'Share Image',
+          dialogTitle: 'Share to:',
+        });
+        console.log('✅ Shared image successfully');
+      } catch (shareErr: any) {
+        console.error('❌ Share failed:', shareErr.message);
+        alert('❌ Failed to share image: ' + shareErr.message);
       }
     } catch (err) {
       console.error('❌ Share failed:', err);

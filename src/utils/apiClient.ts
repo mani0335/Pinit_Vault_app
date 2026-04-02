@@ -116,11 +116,11 @@ export const vaultAPI = {
       // Check if running on Capacitor (mobile)
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
-        console.log('📱 Running on Capacitor - saving to Pictures folder');
-        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        console.log('📱 Running on Capacitor - saving image');
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
         
         try {
-          // Convert blob to base64
+          // Convert blob to base64 (Capacitor works with base64)
           const arrayBuffer = await blob.arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
           let binary = '';
@@ -129,31 +129,33 @@ export const vaultAPI = {
           }
           const base64 = window.btoa(binary);
           
-          console.log('📝 Writing to Pictures folder:', filename);
+          console.log('📝 Saving image:', filename, 'size:', base64.length, 'bytes');
           
-          // First, try to create BioVault folder (if it doesn't exist)
-          try {
-            await Filesystem.mkdir({
-              path: 'Pictures/BioVault',
-              directory: Directory.Documents,
-              recursive: true,
-            });
-            console.log('📁 Created Pictures/BioVault folder');
-          } catch (mkdirErr: any) {
-            console.warn('⚠️ Mkdir warning (folder may already exist):', mkdirErr.message);
-            // Continue anyway - folder likely already exists
-          }
+          // Save to app cache directory first
+          // This ensures the file is accessible and we can share it
+          const cacheFilePath = `BioVault/${filename}`;
           
-          // Now save the file
           await Filesystem.writeFile({
-            path: `Pictures/BioVault/${filename}`,
+            path: cacheFilePath,
             data: base64,
-            directory: Directory.Documents,
-            encoding: Encoding.UTF8,
+            directory: Directory.Cache,
+            recursive: true,
           });
           
-          console.log('✅ File saved to Pictures/BioVault folder');
-          return { success: true, filename, location: 'Pictures/BioVault' };
+          console.log('✅ Image saved to cache');
+          
+          // Now copy to Downloads (external accessible)
+          try {
+            const uri = await Filesystem.getUri({
+              path: cacheFilePath,
+              directory: Directory.Cache,
+            });
+            console.log('📁 File URI:', uri.uri);
+          } catch (uriErr) {
+            console.warn('⚠️ Could not get URI:', uriErr);
+          }
+          
+          return { success: true, filename, location: 'BioVault Cache', path: cacheFilePath };
         } catch (nativeErr: any) {
           console.error('❌ Capacitor save failed:', nativeErr);
           throw new Error(`Failed to save file: ${nativeErr.message}`);
