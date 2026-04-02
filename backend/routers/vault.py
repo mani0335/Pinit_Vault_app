@@ -146,6 +146,8 @@ async def download_vault_image(asset_id: str, user_id: str = None):
         raise HTTPException(status_code=400, detail="User ID required")
     
     try:
+        print(f"📥 Vault Download: Starting for asset_id={asset_id}, user_id={user_id}")
+        
         # Verify ownership
         result = db.table("vault_images").select("*") \
             .eq("asset_id", asset_id) \
@@ -153,29 +155,74 @@ async def download_vault_image(asset_id: str, user_id: str = None):
             .execute()
 
         if not result.data:
+            print(f"❌ Vault Download: Asset not found")
             raise HTTPException(status_code=403, detail="Asset not found or access denied")
         
         asset = result.data[0]
         file_name = asset.get("file_name", "image")
         
-        # Download from Cloudinary
+        print(f"✅ Vault Download: Found asset - {file_name}")
+        
+        # Try downloading from Cloudinary first
+        print(f"🔄 Attempting Cloudinary download...")
         download_result = download_image(asset_id)
         
-        if not download_result["success"]:
-            raise HTTPException(status_code=500, detail=f"Failed to download image: {download_result['error']}")
+        if download_result["success"]:
+            print(f"✅ Vault Download: Cloudinary succeeded")
+            return StreamingResponse(
+                iter([download_result["data"]]),
+                media_type=download_result["content_type"],
+                headers={
+                    "Content-Disposition": f'attachment; filename="{file_name}.{download_result["format"]}"'
+                }
+            )
         
-        # Stream file with download headers
+        # Fallback: Use image_base64 from database if stored
+        print(f"⚠️ Cloudinary failed, trying database fallback")
+        image_base64 = asset.get("image_base64") or asset.get("thumbnail_base64")
+        
+        if not image_base64:
+            error_msg = f"Cloudinary failed: {download_result['error']}. No fallback image stored."
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        print(f"✅ Using image from database, size: {len(image_base64)}")
+        
+        # Decode base64 and serve
+        import base64
+        if image_base64.startswith("data:"):
+            # It's a data URL, extract the base64 part
+            image_base64 = image_base64.split(",")[1]
+        
+        image_bytes = base64.b64decode(image_base64)
+        
+        # Detect format from base64 or filename
+        content_type = "image/jpeg"
+        file_format = "jpg"
+        if ".png" in file_name.lower():
+            content_type = "image/png"
+            file_format = "png"
+        elif ".webp" in file_name.lower():
+            content_type = "image/webp"
+            file_format = "webp"
+        elif ".gif" in file_name.lower():
+            content_type = "image/gif"
+            file_format = "gif"
+        
         return StreamingResponse(
-            iter([download_result["data"]]),
-            media_type=download_result["content_type"],
+            iter([image_bytes]),
+            media_type=content_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{file_name}.{download_result["format"]}"'
+                "Content-Disposition": f'attachment; filename="{file_name}.{file_format}"'
             }
         )
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Vault Download: Failed - {str(e)}")
+        print(f"❌ Vault Download: Unexpected error - {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to download image: {str(e)}")
 
 

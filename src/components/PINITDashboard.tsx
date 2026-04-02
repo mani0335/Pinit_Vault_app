@@ -338,6 +338,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     setIsDownloading(true);
     try {
       console.log('⬇️ Downloading image:', image.fileName);
+      console.log('📱 Asset ID:', image.assetId || image.id);
       
       // Get user ID
       let currentUserId = userId;
@@ -346,11 +347,21 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         currentUserId = storedUserId || undefined;
       }
       
+      console.log('👤 User ID:', currentUserId);
+      
       // Use new vaultAPI.download() endpoint - returns JPG/PNG/WebP/GIF automatically
       const result = await vaultAPI.download(image.assetId || image.id, currentUserId);
       
       if (!result.success) {
-        alert('❌ Download failed: ' + result.error);
+        const errorMsg = result.error || 'Unknown error';
+        console.error('❌ Download API error:', errorMsg);
+        
+        // Check if it's a database fallback error
+        if (errorMsg.includes('Cloudinary') && !image.image_base64) {
+          alert(`⚠️ Download temporarily unavailable.\n\n${errorMsg}\n\nTry again in a moment.`);
+        } else {
+          alert(`❌ Download failed:\n\n${errorMsg.substring(0, 200)}`);
+        }
         setIsDownloading(false);
         return;
       }
@@ -358,9 +369,10 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       console.log('✅ Download successful:', result.filename);
       alert(`✅ Image Downloaded!\n\n📁 ${result.filename}\n\n📸 Check your Downloads folder.`);
       
-    } catch (err) {
-      console.error('❌ Download failed:', err);
-      alert('Failed to download: ' + (err as any).message);
+    } catch (err: any) {
+      console.error('❌ Download catch error:', err);
+      const errorMsg = err?.message || String(err) || 'Unknown error';
+      alert(`❌ Download failed:\n\n${errorMsg}\n\nPlease try again.`);
     } finally {
       setIsDownloading(false);
     }

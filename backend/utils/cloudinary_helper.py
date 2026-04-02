@@ -127,9 +127,24 @@ def get_thumbnail_url(asset_id: str) -> str:
 def download_image(asset_id: str) -> dict:
     """
     Download full-resolution image from Cloudinary as bytes.
-    Returns { success, data (bytes), format, error }
+    Returns { success, data (bytes), format, error, debug_info }
     """
     try:
+        print(f"📥 Cloudinary Download: Starting for asset_id={asset_id}")
+        
+        # Verify Cloudinary is configured
+        if not os.getenv("CLOUDINARY_CLOUD_NAME"):
+            error_msg = "Cloudinary not configured: CLOUDINARY_CLOUD_NAME missing"
+            print(f"❌ {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "data": None,
+                "format": None
+            }
+        
+        print(f"✅ Cloudinary Cloud: {os.getenv('CLOUDINARY_CLOUD_NAME')}")
+        
         # Build URL for full-resolution image (no resize)
         url = cloudinary.CloudinaryImage(
             f"{FOLDER}/{asset_id}"
@@ -138,9 +153,23 @@ def download_image(asset_id: str) -> dict:
             fetch_format = "auto",
             secure       = True
         )
+        print(f"🔗 Cloudinary URL: {url}")
         
-        # Download the image using httpx
-        response = httpx.get(url, timeout=30)
+        # Download the image using httpx with longer timeout
+        print(f"⏳ Downloading from Cloudinary (timeout=60s)...")
+        response = httpx.get(url, timeout=60)
+        print(f"📊 Response status: {response.status_code}")
+        
+        if response.status_code != 200:
+            error_msg = f"Cloudinary returned status {response.status_code}"
+            print(f"❌ {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "data": None,
+                "format": None
+            }
+        
         response.raise_for_status()
         
         # Detect format from Content-Type header
@@ -153,16 +182,40 @@ def download_image(asset_id: str) -> dict:
         }
         file_format = format_map.get(content_type, "jpg")
         
+        print(f"📷 Downloaded: {len(response.content)} bytes, format={file_format}")
+        
         return {
             "success": True,
             "data": response.content,
             "format": file_format,
             "content_type": content_type
         }
-    except Exception as e:
+    except httpx.TimeoutException as e:
+        error_msg = f"Timeout downloading from Cloudinary: {str(e)}"
+        print(f"❌ {error_msg}")
         return {
             "success": False,
-            "error": str(e),
+            "error": error_msg,
+            "data": None,
+            "format": None
+        }
+    except httpx.HTTPError as e:
+        error_msg = f"HTTP error from Cloudinary: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {
+            "success": False,
+            "error": error_msg,
+            "data": None,
+            "format": None
+        }
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"❌ {error_msg}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": error_msg,
             "data": None,
             "format": None
         }
