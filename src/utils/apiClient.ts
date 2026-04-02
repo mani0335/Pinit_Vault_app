@@ -80,7 +80,8 @@ export const vaultAPI = {
   download: async (assetId: string, userId?: string) => {
     /**
      * Download image as file (JPG, PNG, etc.)
-     * Returns blob URL for downloading
+     * For Capacitor/Android: saves to Pictures folder and refreshes gallery
+     * For Web: triggers browser download
      */
     try {
       // Use backend API URL correctly
@@ -112,17 +113,52 @@ export const vaultAPI = {
         if (match) filename = match[1];
       }
       
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true, filename };
+      // Check if running on Capacitor (mobile)
+      const { Capacitor } = await import('@capacitor/core');
+      if (Capacitor.isNativePlatform()) {
+        console.log('📱 Running on Capacitor - saving to Pictures folder');
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        
+        try {
+          // Convert blob to base64
+          const arrayBuffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const base64 = window.btoa(binary);
+          
+          console.log('📝 Writing to Pictures folder:', filename);
+          
+          // Save to Pictures directory (gallery-accessible)
+          await Filesystem.writeFile({
+            path: `Pictures/BioVault/${filename}`,
+            data: base64,
+            directory: Directory.Documents,
+            encoding: Encoding.UTF8,
+          });
+          
+          console.log('✅ File saved to Pictures/BioVault folder');
+          return { success: true, filename, location: 'Pictures/BioVault' };
+        } catch (nativeErr: any) {
+          console.error('❌ Capacitor save failed:', nativeErr);
+          throw new Error(`Failed to save file: ${nativeErr.message}`);
+        }
+      } else {
+        // Web browser - use standard download
+        console.log('🌐 Running on web - using standard download');
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        return { success: true, filename, location: 'Downloads' };
+      }
     } catch (error) {
       console.error('Download error:', error);
       return { success: false, error: String(error) };

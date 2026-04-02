@@ -367,7 +367,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       }
       
       console.log('✅ Download successful:', result.filename);
-      alert(`✅ Image Downloaded!\n\n📁 ${result.filename}\n\n📸 Check your Downloads folder.`);
+      
+      // Show location-specific message
+      const locationMsg = result.location === 'Pictures/BioVault' 
+        ? '📸 Image saved to Pictures folder - Check your Gallery app!'
+        : '📁 Check your Downloads folder.';
+      
+      alert(`✅ Image Downloaded!\n\n📁 ${result.filename}\n\n${locationMsg}`);
+      
       
     } catch (err: any) {
       console.error('❌ Download catch error:', err);
