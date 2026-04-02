@@ -131,7 +131,20 @@ export const vaultAPI = {
           
           console.log('📝 Writing to Pictures folder:', filename);
           
-          // Save to Pictures directory (gallery-accessible)
+          // First, try to create BioVault folder (if it doesn't exist)
+          try {
+            await Filesystem.mkdir({
+              path: 'Pictures/BioVault',
+              directory: Directory.Documents,
+              recursive: true,
+            });
+            console.log('📁 Created Pictures/BioVault folder');
+          } catch (mkdirErr: any) {
+            console.warn('⚠️ Mkdir warning (folder may already exist):', mkdirErr.message);
+            // Continue anyway - folder likely already exists
+          }
+          
+          // Now save the file
           await Filesystem.writeFile({
             path: `Pictures/BioVault/${filename}`,
             data: base64,
