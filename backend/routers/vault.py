@@ -174,30 +174,21 @@ async def download_vault_image(asset_id: str, user_id: str = None):
         
         print(f"✅ Vault Download: Found asset - {file_name}")
         
-        # Try downloading from Cloudinary first
-        print(f"🔄 Attempting Cloudinary download...")
-        download_result = download_image(asset_id)
-        
-        if download_result["success"]:
-            print(f"✅ Vault Download: Cloudinary succeeded")
-            return StreamingResponse(
-                iter([download_result["data"]]),
-                media_type=download_result["content_type"],
-                headers={
-                    "Content-Disposition": f'attachment; filename="{file_name}.{download_result["format"]}"'
-                }
-            )
-        
-        # Fallback: Use image_base64 from database if stored
-        print(f"⚠️ Cloudinary failed, trying database fallback")
-        image_base64 = asset.get("image_base64") or asset.get("thumbnail_base64")
+        # IMPORTANT: Download ORIGINAL full-resolution image from database, NOT compressed Cloudinary thumbnail
+        # Cloudinary is only for preview/thumbnails (400x400)
+        print(f"📥 Serving ORIGINAL full-resolution image from database")
+        image_base64 = asset.get("image_base64")
         
         if not image_base64:
-            error_msg = f"Cloudinary failed: {download_result['error']}. No fallback image stored."
+            print(f"⚠️ No image_base64 in database, trying thumbnail_base64 fallback")
+            image_base64 = asset.get("thumbnail_base64")
+        
+        if not image_base64:
+            error_msg = "No image data stored in vault"
             print(f"❌ {error_msg}")
             raise HTTPException(status_code=500, detail=error_msg)
         
-        print(f"✅ Using image from database, size: {len(image_base64)}")
+        print(f"✅ Found image in database, size: {len(image_base64)} bytes")
         
         # Decode base64 and serve
         import base64
@@ -206,8 +197,9 @@ async def download_vault_image(asset_id: str, user_id: str = None):
             image_base64 = image_base64.split(",")[1]
         
         image_bytes = base64.b64decode(image_base64)
+        print(f"📊 Decoded image: {len(image_bytes)} bytes")
         
-        # Detect format from base64 or filename
+        # Detect format from filename
         content_type = "image/jpeg"
         file_format = "jpg"
         if ".png" in file_name.lower():
@@ -220,11 +212,13 @@ async def download_vault_image(asset_id: str, user_id: str = None):
             content_type = "image/gif"
             file_format = "gif"
         
+        print(f"✅ Sending original image: {file_name} ({content_type})")
+        
         return StreamingResponse(
             iter([image_bytes]),
             media_type=content_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{file_name}.{file_format}"'
+                "Content-Disposition": f'attachment; filename="{file_name}"'
             }
         )
         
