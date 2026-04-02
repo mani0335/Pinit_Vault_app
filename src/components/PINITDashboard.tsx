@@ -961,11 +961,33 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
                   src={selectedVaultImage.thumbnail}
                   alt={selectedVaultImage.fileName}
                   className="max-w-full max-h-full object-contain rounded"
+                  onError={(e) => {
+                    console.warn('❌ Thumbnail URL failed to load:', selectedVaultImage.thumbnail);
+                    // Try fallback to base64
+                    if (selectedVaultImage.image_base64) {
+                      console.log('📥 Switching to base64 fallback');
+                      (e.target as HTMLImageElement).src = selectedVaultImage.image_base64;
+                    } else if (selectedVaultImage.thumbnail_base64) {
+                      (e.target as HTMLImageElement).src = selectedVaultImage.thumbnail_base64;
+                    }
+                  }}
+                />
+              ) : selectedVaultImage.image_base64 ? (
+                <img
+                  src={selectedVaultImage.image_base64}
+                  alt={selectedVaultImage.fileName}
+                  className="max-w-full max-h-full object-contain rounded"
+                />
+              ) : selectedVaultImage.thumbnail_base64 ? (
+                <img
+                  src={selectedVaultImage.thumbnail_base64}
+                  alt={selectedVaultImage.fileName}
+                  className="max-w-full max-h-full object-contain rounded"
                 />
               ) : (
                 <div className="text-center text-gray-500">
                   <Image className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                  <p>No preview available</p>
+                  <p>❌ No preview available</p>
                 </div>
               )}
             </div>

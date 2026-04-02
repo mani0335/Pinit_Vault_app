@@ -62,6 +62,31 @@ def upload_thumbnail_base64(base64_str: str, asset_id: str) -> dict:
     base64_str can be a full data URL like data:image/jpeg;base64,/9j/...
     """
     try:
+        # Validate Cloudinary configuration first
+        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+        api_key = os.getenv("CLOUDINARY_API_KEY")
+        api_secret = os.getenv("CLOUDINARY_API_SECRET")
+        
+        if not all([cloud_name, api_key, api_secret]):
+            print(f"⚠️ Cloudinary config missing: cloud_name={bool(cloud_name)}, api_key={bool(api_key)}, api_secret={bool(api_secret)}")
+            return {
+                "success": False,
+                "error": "Cloudinary not configured on server",
+                "url": None
+            }
+        
+        # Validate base64 string
+        if not base64_str:
+            print("⚠️ Base64 string is empty")
+            return {"success": False, "error": "No image data provided", "url": None}
+        
+        # Clean base64 if it's a data URL
+        if base64_str.startswith("data:"):
+            base64_str = base64_str.split(",")[1]
+            print(f"📝 Cleaned base64 data URL, new length: {len(base64_str)}")
+        
+        print(f"⬆️ Uploading to Cloudinary - folder: {FOLDER}, asset_id: {asset_id}, base64_len: {len(base64_str)}")
+        
         result = cloudinary.uploader.upload(
             base64_str,
             public_id      = f"{FOLDER}/{asset_id}",
@@ -78,17 +103,23 @@ def upload_thumbnail_base64(base64_str: str, asset_id: str) -> dict:
                 }
             ]
         )
+        
+        url = result["secure_url"]
+        print(f"✅ Cloudinary upload successful - URL: {url}")
+        
         return {
             "success"   : True,
-            "url"       : result["secure_url"],
+            "url"       : url,
             "public_id" : result["public_id"],
             "width"     : result.get("width"),
             "height"    : result.get("height"),
         }
     except Exception as e:
+        error_str = str(e)
+        print(f"❌ Cloudinary upload failed: {error_str}")
         return {
             "success" : False,
-            "error"   : str(e),
+            "error"   : f"Cloudinary upload failed: {error_str}",
             "url"     : None
         }
 
