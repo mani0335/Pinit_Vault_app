@@ -418,22 +418,23 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       const fileName = image.fileName || 'encrypted-image.jpg';
       console.log('📝 Image ready for sharing');
       
-      // Save to cache using Capacitor
+      // Save to external Downloads using Capacitor
       try {
-        const filePath = `BioVault/${fileName}`;
+        const filePath = `Download/${fileName}`;
         await (Filesystem as any).writeFile({
           path: filePath,
           data: base64String,
-          directory: Directory.Cache,
+          directory: Directory.ExternalStorage,
           encoding: Encoding.UTF8,
+          recursive: true,
         });
         
-        console.log('✅ File saved to cache:', fileName);
+        console.log('✅ File saved to Downloads:', fileName);
         
         // Get the file URI for sharing
         const uri = await (Filesystem as any).getUri({
           path: filePath,
-          directory: Directory.Cache,
+          directory: Directory.ExternalStorage,
         });
         
         console.log('📁 File URI:', uri.uri);

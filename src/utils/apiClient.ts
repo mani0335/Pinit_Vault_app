@@ -116,7 +116,7 @@ export const vaultAPI = {
       // Check if running on Capacitor (mobile)
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
-        console.log('📱 Running on Capacitor - saving image');
+        console.log('📱 Running on Capacitor - saving image to accessible location');
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
         
         try {
@@ -129,36 +129,51 @@ export const vaultAPI = {
           }
           const base64 = window.btoa(binary);
           
-          console.log('📝 Saving image:', filename, 'size:', base64.length, 'bytes');
+          console.log('📝 Image converted to base64, size:', base64.length);
           
-          // Save to app cache directory first
-          // This ensures the file is accessible and we can share it
-          const cacheFilePath = `BioVault/${filename}`;
+          // Save to DOWNLOADS directory (accessible by gallery)
+          const downloadPath = `Download/${filename}`;
+          
+          console.log('📁 Saving to Downloads:', downloadPath);
           
           await Filesystem.writeFile({
-            path: cacheFilePath,
+            path: downloadPath,
             data: base64,
-            directory: Directory.Cache,
+            directory: Directory.ExternalStorage,
             recursive: true,
           });
           
-          console.log('✅ Image saved to cache');
+          console.log('✅ Image saved to Downloads folder');
           
-          // Now copy to Downloads (external accessible)
+          // Try to get URI
           try {
             const uri = await Filesystem.getUri({
-              path: cacheFilePath,
-              directory: Directory.Cache,
+              path: downloadPath,
+              directory: Directory.ExternalStorage,
             });
-            console.log('📁 File URI:', uri.uri);
+            console.log('✅ File URI:', uri.uri);
           } catch (uriErr) {
             console.warn('⚠️ Could not get URI:', uriErr);
           }
           
-          return { success: true, filename, location: 'BioVault Cache', path: cacheFilePath };
+          return { success: true, filename, location: 'Downloads' };
         } catch (nativeErr: any) {
           console.error('❌ Capacitor save failed:', nativeErr);
-          throw new Error(`Failed to save file: ${nativeErr.message}`);
+          
+          // Fallback: Try Documents directory
+          try {
+            console.log('📂 Trying fallback: Documents directory');
+            await Filesystem.writeFile({
+              path: `BioVault/${filename}`,
+              data: window.btoa(binary),
+              directory: Directory.Documents,
+              recursive: true,
+            });
+            return { success: true, filename, location: 'Documents/BioVault' };
+          } catch (fallbackErr: any) {
+            console.error('❌ Fallback also failed:', fallbackErr);
+            throw new Error(`Failed to save file: ${nativeErr.message}`);
+          }
         }
       } else {
         // Web browser - use standard download
