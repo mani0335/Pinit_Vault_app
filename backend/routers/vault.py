@@ -62,6 +62,14 @@ async def save_vault_image(
 
     # Save to Supabase
     try:
+        print(f"📝 Vault Save: Preparing to save image data...")
+        print(f"   - asset_id: {data.asset_id}")
+        print(f"   - file_name: {data.file_name}")
+        print(f"   - file_size: {data.file_size}")
+        print(f"   - image_base64 length: {len(data.image_base64) if data.image_base64 else 0}")
+        print(f"   - thumbnail_base64 length: {len(data.thumbnail_base64) if data.thumbnail_base64 else 0}")
+        
+        # Store BOTH image_base64 and thumbnail_base64 for redundancy
         record = db.table("vault_images").insert({
             "user_id"  : user_id,
             "asset_id"           : data.asset_id,
@@ -76,11 +84,14 @@ async def save_vault_image(
             "file_name"          : data.file_name,
             "thumbnail_url"      : thumbnail_url,
             "image_url"          : image_url,
-            "image_base64"       : data.image_base64 or data.thumbnail_base64,  # Store full image
+            "image_base64"       : data.image_base64 or data.thumbnail_base64,  # Primary - full image
+            "thumbnail_base64"   : data.thumbnail_base64,  # Fallback thumbnail
             "capture_timestamp"  : data.capture_timestamp
         }).execute()
         
-        print(f"✅ Vault Save: Image saved successfully - {data.asset_id}")
+        print(f"✅ Vault Save: Successfully inserted into database")
+        print(f"   - Record ID: {record.data[0].get('id') if record.data else 'N/A'}")
+        print(f"   - Asset ID: {record.data[0].get('asset_id') if record.data else 'N/A'}")
         
         log_action(
             user_id=user_id,
@@ -93,6 +104,8 @@ async def save_vault_image(
         
     except Exception as e:
         print(f"❌ Vault Save: Database insert failed - {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to save to vault: {str(e)}")
 
 
@@ -166,13 +179,16 @@ async def download_vault_image(asset_id: str, user_id: str = None):
             .execute()
 
         if not result.data:
-            print(f"❌ Vault Download: Asset not found")
+            print(f"❌ Vault Download: Asset not found for asset_id={asset_id}, user_id={user_id}")
             raise HTTPException(status_code=403, detail="Asset not found or access denied")
         
         asset = result.data[0]
         file_name = asset.get("file_name", "image")
         
         print(f"✅ Vault Download: Found asset - {file_name}")
+        print(f"   - image_base64 exists: {bool(asset.get('image_base64'))}")
+        print(f"   - image_base64 length: {len(asset.get('image_base64') or '') // 1000} KB")
+        print(f"   - thumbnail_base64 exists: {bool(asset.get('thumbnail_base64'))}")
         
         # IMPORTANT: Download ORIGINAL full-resolution image from database, NOT compressed Cloudinary thumbnail
         # Cloudinary is only for preview/thumbnails (400x400)
@@ -194,10 +210,16 @@ async def download_vault_image(asset_id: str, user_id: str = None):
         import base64
         if image_base64.startswith("data:"):
             # It's a data URL, extract the base64 part
-            image_base64 = image_base64.split(",")[1]
+            image_base64_clean = image_base64.split(",")[1]
+            print(f"📝 Cleaned data URL, original length: {len(image_base64)}, cleaned: {len(image_base64_clean)}")
+            image_base64 = image_base64_clean
         
-        image_bytes = base64.b64decode(image_base64)
-        print(f"📊 Decoded image: {len(image_bytes)} bytes")
+        try:
+            image_bytes = base64.b64decode(image_base64)
+            print(f"📊 Decoded image: {len(image_bytes)} bytes")
+        except Exception as decode_err:
+            print(f"❌ Base64 decode failed: {str(decode_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to decode image: {str(decode_err)}")
         
         # Detect format from filename
         content_type = "image/jpeg"
@@ -212,7 +234,7 @@ async def download_vault_image(asset_id: str, user_id: str = None):
             content_type = "image/gif"
             file_format = "gif"
         
-        print(f"✅ Sending original image: {file_name} ({content_type})")
+        print(f"✅ Sending original image: {file_name} ({content_type}), size: {len(image_bytes)} bytes")
         
         return StreamingResponse(
             iter([image_bytes]),
