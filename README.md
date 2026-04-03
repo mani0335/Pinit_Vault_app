@@ -2,7 +2,7 @@
 
 ## Project Info
 
-This repository contains the Biovault mobile/web app, a biometric vault demo built with Vite + React + TypeScript and packaged with Capacitor for Android.
+This repository contains the PINIT Vault mobile/web app, a biometric vault demo built with Vite + React + TypeScript and packaged with Capacitor for Android.
 
 ## Tech Stack
 
@@ -16,7 +16,7 @@ This repository contains the Biovault mobile/web app, a biometric vault demo bui
 
 ## Quick Start - App Flow Overview
 
-The **Biovault App** is a biometric-first authentication system with three main user pathways:
+The **PINIT Vault App** is a biometric-first authentication system with three main user pathways:
 
 | Scenario | Flow | Outcome |
 |----------|------|---------|
@@ -467,7 +467,7 @@ flowchart TD
 
 ### **Complete Authentication Workflow**
 
-Your BioVault app handles **THREE main scenarios**:
+Your PINIT Vault app handles **THREE main scenarios**:
 
 #### **Scenario 1: Known User (Same Device) ✅**
 ```
@@ -528,7 +528,7 @@ VAULT DASHBOARD (Full Access)
 
 ## App Current Implementation Status
 
-Your BioVault app is **fully functional** with all core flows implemented and working:
+Your PINIT Vault app is **fully functional** with all core flows implemented and working:
 
 ### **Current App Flow (With MongoDB Integration) ✅**
 

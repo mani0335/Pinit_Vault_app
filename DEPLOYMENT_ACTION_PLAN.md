@@ -91,7 +91,7 @@ adb install -r app-debug.apk
 Once app is installed:
 
 #### Registration Test:
-1. Open BioVault app
+1. Open PINIT Vault app
 2. Click **"Register"**
 3. Enter username: `test.user.1` (or any unique ID)
 4. Complete **Fingerprint scan**
@@ -184,7 +184,7 @@ After deployment, verify:
 
 **Solution:**
 1. Go to phone Settings
-2. Apps → BioVault
+2. Apps → PINIT Vault
 3. Permissions → Camera
 4. Select "Allow"
 5. Reopen app
@@ -195,7 +195,7 @@ After deployment, verify:
 
 ```
 Your Phone (User's Device)
-  ├─ BioVault App (React + Capacitor)
+  ├─ PINIT Vault App (React + Capacitor)
   │   ├─ Fingerprint scanner
   │   ├─ Face detection (TensorFlow.js)
   │   └─ Login/Register screens
@@ -204,7 +204,7 @@ Your Phone (User's Device)
 
          ↓ HTTPS
 
-Render Backend (https://biovault-app.onrender.com)
+Render Backend (https://biovault-backend-d13a.onrender.com)
   ├─ Express.js server
   ├─ API endpoints:
   │   ├─ /api/register
