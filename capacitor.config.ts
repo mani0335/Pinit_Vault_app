@@ -7,6 +7,13 @@ const config: CapacitorConfig = {
   server: {
     cleartext: true,
   },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 0,
+      autoHide: true,
+      showSpinner: false,
+    },
+  },
 };
 
 export default config;
