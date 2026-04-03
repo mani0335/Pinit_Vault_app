@@ -86,7 +86,7 @@ const Dashboard = () => {
             </Button>
             <Shield className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-display font-bold tracking-wider text-foreground text-glow-cyan">
-              BIOVAULT
+              PINIT VAULT
             </h1>
             {isTemporaryAccess && (
               <span className="ml-4 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-xs font-mono text-amber-500">
