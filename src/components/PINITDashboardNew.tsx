@@ -32,7 +32,7 @@ export function PINITDashboard({ userId }: PINITDashboardProps) {
   const [currentPage, setCurrentPage] = useState<"home" | "vault" | "portfolios" | "activity" | "security">("home");
   const [copied, setCopied] = useState(false);
 
-  const deviceId = "DEV-BIOVAULT-" + (userId || "USER").substring(0, 8).toUpperCase();
+  const deviceId = "DEV-PINIT-" + (userId || "USER").substring(0, 8).toUpperCase();
 
   const profileData = {
     name: "Manish Kumar",

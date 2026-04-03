@@ -107,11 +107,11 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
         const credential = await navigator.credentials.create({
           publicKey: {
             challenge,
-            rp: { name: "BioVault", id: window.location.hostname },
+            rp: { name: "PINIT Vault", id: window.location.hostname },
             user: {
               id: userId,
-              name: "user@biovault.io",
-              displayName: "BioVault User",
+              name: "user@pinitvault.io",
+              displayName: "PINIT Vault User",
             },
             pubKeyCredParams: [
               { alg: -7, type: "public-key" },
