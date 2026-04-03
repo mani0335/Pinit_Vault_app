@@ -4,7 +4,7 @@
 
 Go to [Supabase Dashboard](https://app.supabase.com) and run the SQL:
 
-1. Open your Biovault project
+1. Open your PINIT Vault project
 2. Click **SQL Editor** (left sidebar)
 3. Click **New Query**
 4. Copy and paste the SQL from `backend/CREATE_BIOMETRIC_USERS_TABLE.sql`

@@ -169,7 +169,7 @@ python backend/test_biometric_system.py
 **All systems operational. App is ready to install and test on phone.**
 
 📦 **APK:** `android/app/build/outputs/apk/debug/app-debug.apk`  
-🌐 **GitHub:** `https://github.com/mani0335/Biovault_App.git` (updated)  
+🌐 **GitHub:** `https://github.com/mani0335/PINIT_Vault_App.git` (updated)  
 🗄️ **Database:** Supabase `biometric_users` table ready  
 ⚙️ **Backend:** Running at `http://0.0.0.0:8000`
 
