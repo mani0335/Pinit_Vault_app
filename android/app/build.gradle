@@ -35,6 +35,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    
+    // Set APK name
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "PINIT-Vault-${variant.buildType.name}.apk"
+        }
+    }
 }
 
 repositories {

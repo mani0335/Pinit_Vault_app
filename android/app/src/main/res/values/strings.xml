@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Biovault</string>
-    <string name="title_activity_main">Biovault</string>
+    <string name="app_name">PINIT Vault</string>
+    <string name="title_activity_main">PINIT Vault</string>
     <string name="package_name">com.biovault.app</string>
     <string name="custom_url_scheme">com.biovault.app</string>
 </resources>
