@@ -567,7 +567,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         className="bg-blue-50 border border-blue-200 rounded-lg p-4"
       >
         <p className="text-xs text-blue-900">
-          <span className="font-bold">👤 User ID:</span> {userId || "USER"}
+          <span className="font-bold">👤 PINIT ID:</span> {userId || "USER"}
         </p>
       </motion.div>
     </motion.div>

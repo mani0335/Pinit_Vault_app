@@ -172,7 +172,7 @@ const Register = () => {
                 </div>
                 <div className="text-left bg-muted/50 rounded-lg p-3 mb-6 text-xs font-mono text-muted-foreground space-y-1">
                   <p>▸ Temp ID: <span className="text-secondary">{tempId}</span></p>
-                  <p>▸ User ID: <span className="text-primary">{userId}</span></p>
+                  <p>▸ PINIT ID: <span className="text-primary">{userId}</span></p>
                   <p>▸ Fingerprint: <span className="text-neon-green">ENROLLED</span></p>
                   <p>▸ Face Data: <span className="text-neon-green">CAPTURED</span></p>
                 </div>
