@@ -21,6 +21,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
   const [modelReady, setModelReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const hasAutoStarted = useRef(false);
 
   const PROCESSING_MS = 900;
   const SUCCESS_HOLD_MS = 450;
@@ -121,6 +122,26 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     setStatus("idle");
     setMessage("Camera closed");
   }, [stopCamera]);
+
+  // Auto-start scan in register mode when camera and model are ready
+  const autoStartScanInRegister = useCallback(() => {
+    // This will be called when status changes to camera and conditions are met
+  }, []);
+
+  const scanRef = useRef<() => void | null>(null);
+
+  useEffect(() => {
+    if (mode === "register" && status === "camera" && cameraReady && modelReady && !hasAutoStarted.current) {
+      hasAutoStarted.current = true;
+      console.log('🚀 FaceScanner: Auto-starting scan in register mode');
+      // Delay slightly to ensure everything is ready
+      setTimeout(() => {
+        if (scanRef.current) {
+          scanRef.current();
+        }
+      }, 300);
+    }
+  }, [mode, status, cameraReady, modelReady]);
 
   const startScan = useCallback(async () => {
     const video = videoRef.current;
@@ -347,6 +368,11 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     }, SUCCESS_HOLD_MS);
   }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
 
+  // Assign startScan to ref for auto-start in register mode
+  useEffect(() => {
+    scanRef.current = startScan;
+  }, [startScan]);
+
   return (
     <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-4">
       <div className="w-full text-center">
@@ -387,10 +413,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
               </div>
             </div>
 
-            {/* Circular face overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-44 h-44 md:w-48 md:h-48 rounded-full border-2 border-primary/50 shadow-[0_0_24px_hsl(var(--neon-glow)/0.25)]" />
-            </div>
+
           </>
         )}
 
@@ -427,11 +450,11 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
             </Button>
           )}
 
-          {status === "camera" && (
+          {status === "camera" && mode !== "register" && (
             <>
               <Button variant="cyber" size="lg" onClick={startScan} disabled={!cameraReady || !modelReady}>
                 <ScanFace className="w-4 h-4 mr-2" />
-                {!cameraReady ? "Camera Loading..." : !modelReady ? "Face Detection Loading..." : mode === "register" ? "Capture Face Profile" : "Verify Face"}
+                {!cameraReady ? "Camera Loading..." : !modelReady ? "Face Detection Loading..." : "Verify Face"}
               </Button>
               {!required && (
                 <Button variant="outline" size="lg" onClick={cancelCamera}>
@@ -439,6 +462,12 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
                 </Button>
               )}
             </>
+          )}
+          
+          {status === "camera" && mode === "register" && !required && (
+            <Button variant="outline" size="lg" onClick={cancelCamera}>
+              Cancel
+            </Button>
           )}
 
           {status === "scanning" && !required && (

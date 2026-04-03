@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Shield, ChevronRight, AlertCircle } from "lucide-react";
+import { ArrowLeft, Shield, ChevronRight, AlertCircle, Clock } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { HexGrid } from "@/components/HexGrid";
 import { FingerprintScanner } from "@/components/FingerprintScanner";
@@ -192,6 +192,14 @@ const Login = () => {
     <div className="min-h-screen relative overflow-hidden">
       <HexGrid />
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-4 md:py-8">
+        {/* Temporary Access Button at Top Right */}
+        <div className="absolute top-4 right-4 md:top-8 md:right-8">
+          <Button variant="cyber" size="sm" onClick={() => navigate("/temp-access-options")} className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            Temporary Access
+          </Button>
+        </div>
+        
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           {/* Back Button */}
           <Button variant="ghost" className="mb-6 text-muted-foreground" onClick={() => navigate("/")}>
