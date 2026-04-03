@@ -1,4 +1,4 @@
-# Biovault App
+# PINIT App
 
 ## Project Info
 

@@ -1,4 +1,4 @@
-# BioVault Deployment & Setup Guide
+# PINIT Deployment & Setup Guide
 
 ## ✅ What's Fixed
 

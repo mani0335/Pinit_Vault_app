@@ -39,7 +39,7 @@ ON public.vault_images(user_id, asset_id);
 Location: `secure-sweet-access-main/android/app/build/outputs/apk/debug/app-debug.apk`
 
 **Before installing:**
-1. Uninstall old BioVault app
+1. Uninstall old PINIT app
 2. Install new APK
 3. Login with your credentials
 
