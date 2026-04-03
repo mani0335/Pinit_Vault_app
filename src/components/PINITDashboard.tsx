@@ -491,7 +491,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     >
       <div className="text-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          🔐 BioVault Dashboard
+          🔐 PINIT Vault Dashboard
         </h1>
         <p className="text-sm text-gray-600">
           Image Forensics & Vault Management

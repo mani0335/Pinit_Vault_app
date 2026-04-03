@@ -57,7 +57,7 @@ const Index = () => {
               transition={{ delay: 0.6, duration: 0.6 }}
               className="text-4xl md:text-5xl font-display font-bold tracking-wider text-foreground text-glow-cyan"
             >
-              BIOVAULT
+              PINIT VAULT
             </motion.h1>
 
             <motion.p
@@ -66,7 +66,7 @@ const Index = () => {
               transition={{ delay: 1.0, duration: 0.4 }}
               className="text-sm text-muted-foreground font-mono tracking-widest uppercase"
             >
-              Securing access with biometrics
+              Securing access with capture
             </motion.p>
           </div>
         </motion.div>
