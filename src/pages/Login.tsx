@@ -193,12 +193,10 @@ const Login = () => {
       <HexGrid />
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-4 md:py-8">
         {/* Temporary Access Button at Top Right */}
-        <div className="absolute top-4 right-4 md:top-8 md:right-8">
-          <Button variant="cyber" size="sm" onClick={() => navigate("/temp-access-options")} className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Temporary Access
-          </Button>
-        </div>
+        <button onClick={() => navigate("/temp-access-face")} className="absolute top-3 right-3 md:top-6 md:right-6 px-2.5 py-1.5 text-xs font-mono bg-primary/10 hover:bg-primary/20 border border-primary/50 rounded-md flex items-center gap-1.5 transition-colors duration-200">
+          <Clock className="w-3 h-3 text-primary" />
+          <span className="text-primary">Temp Access</span>
+        </button>
         
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           {/* Back Button */}
