@@ -394,7 +394,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     try {
       console.log('📤 Sharing image:', image.fileName);
       
-      // Use stored image_base64 first
+      // Get base64 from multiple sources
       let base64String = image.image_base64 || image.thumbnail_base64;
       
       if (!base64String && image.thumbnail) {
@@ -416,43 +416,99 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       }
       
       const fileName = image.fileName || 'encrypted-image.jpg';
-      console.log('📝 Image ready for sharing');
+      console.log('📝 Image ready for sharing, size:', base64String.length);
       
-      // Save to external Downloads using Capacitor
-      try {
-        const filePath = `Download/${fileName}`;
-        await (Filesystem as any).writeFile({
-          path: filePath,
-          data: base64String,
-          directory: Directory.ExternalStorage,
-          encoding: Encoding.UTF8,
-          recursive: true,
-        });
+      // Check if running on Capacitor (mobile)
+      const { Capacitor } = await import('@capacitor/core');
+      
+      if (Capacitor.isNativePlatform()) {
+        console.log('📱 Running on Android/iOS - saving file first');
         
-        console.log('✅ File saved to Downloads:', fileName);
-        
-        // Get the file URI for sharing
-        const uri = await (Filesystem as any).getUri({
-          path: filePath,
-          directory: Directory.ExternalStorage,
-        });
-        
-        console.log('📁 File URI:', uri.uri);
-        
-        // Share image ONLY (no text)
-        await Share.share({
-          url: uri.uri,
-          title: 'Share Image',
-          dialogTitle: 'Share to:',
-        });
-        console.log('✅ Shared image successfully');
-      } catch (shareErr: any) {
-        console.error('❌ Share failed:', shareErr.message);
-        alert('❌ Failed to share image: ' + shareErr.message);
+        try {
+          // Save to device cache first (temporary storage for sharing)
+          const filePath = `cache/${fileName}`;
+          
+          // Remove data URI prefix if present
+          let cleanBase64 = base64String;
+          if (base64String.startsWith('data:image')) {
+            cleanBase64 = base64String.split(',')[1];
+          }
+          
+          console.log('💾 Saving to cache:', filePath);
+          
+          await (Filesystem as any).writeFile({
+            path: filePath,
+            data: cleanBase64,
+            directory: Directory.Cache,
+            encoding: Encoding.UTF8,
+            recursive: true,
+          });
+          
+          console.log('✅ File saved to cache');
+          
+          // Get the file URI
+          const uri = await (Filesystem as any).getUri({
+            path: filePath,
+            directory: Directory.Cache,
+          });
+          
+          console.log('📁 File URI:', uri.uri);
+          
+          // Share using the URI
+          await Share.share({
+            url: uri.uri,
+            title: 'PINIT Vault Image',
+            text: `Encrypted image: ${fileName}`,
+            dialogTitle: 'Share Image',
+          });
+          
+          console.log('✅ Shared via Android Intent');
+        } catch (nativeErr: any) {
+          console.error('❌ Native share failed, trying fallback:', nativeErr);
+          
+          // Fallback: Try external storage
+          try {
+            const downloadPath = `Download/${fileName}`;
+            
+            let cleanBase64 = base64String;
+            if (base64String.startsWith('data:image')) {
+              cleanBase64 = base64String.split(',')[1];
+            }
+            
+            await (Filesystem as any).writeFile({
+              path: downloadPath,
+              data: cleanBase64,
+              directory: Directory.ExternalStorage,
+              encoding: Encoding.UTF8,
+              recursive: true,
+            });
+            
+            const uri = await (Filesystem as any).getUri({
+              path: downloadPath,
+              directory: Directory.ExternalStorage,
+            });
+            
+            await Share.share({
+              url: uri.uri,
+              title: 'PINIT Vault Image',
+              text: `Encrypted image: ${fileName}`,
+              dialogTitle: 'Share Image',
+            });
+            
+            console.log('✅ Shared via fallback (ExternalStorage)');
+          } catch (fallbackErr: any) {
+            console.error('❌ Fallback also failed:', fallbackErr);
+            throw fallbackErr;
+          }
+        }
+      } else {
+        // Web browser - direct sharing not available
+        console.log('🌐 Running on web - showing URL share option');
+        alert('💡 On web: Right-click image → Save Image As, or use browser share feature');
       }
     } catch (err) {
       console.error('❌ Share failed:', err);
-      alert('Failed to share: ' + (err as any).message);
+      alert('❌ Failed to share: ' + (err as any).message);
     }
   };
 
