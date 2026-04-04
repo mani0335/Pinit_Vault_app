@@ -272,17 +272,6 @@ const Register = () => {
                 </div>
                 <h2 className="text-xl font-display tracking-wider text-neon-green mb-2">REGISTRATION COMPLETE</h2>
                 <p className="text-muted-foreground font-mono text-sm mb-6">Identity stored. Please login to continue.</p>
-                {recoveryCode && (
-                  <div className="bg-muted rounded-lg p-3 border border-border mb-6">
-                    <p className="text-xs text-muted-foreground font-mono mb-1">TEMP ACCESS CODE</p>
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="font-display text-accent text-xl tracking-widest">{recoveryCode}</span>
-                      <button onClick={() => copyId(recoveryCode)} className="text-muted-foreground hover:text-foreground">
-                        {copied ? <Check className="w-4 h-4 text-neon-green" /> : <Copy className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                )}
                 <div className="flex gap-3 justify-center">
                   <Button variant="cyber" onClick={async () => {
                     console.log('🔐 Login Now clicked');
