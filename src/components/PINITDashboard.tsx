@@ -506,15 +506,16 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     }
   };
 
+  // Simplified animations to prevent shaking
   const pageVariants = {
-    hidden: { opacity: 0, x: 20 },
-    visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
-    exit: { opacity: 0, x: -20, transition: { duration: 0.2 } },
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { duration: 0.1 } },
+    exit: { opacity: 0, transition: { duration: 0 } },
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { duration: 0.05 } },
   };
 
   // ===================== HOME PAGE =====================
@@ -964,7 +965,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
 
   return (
     <div className="w-full min-h-screen bg-white p-3 md:p-4 rounded-xl">
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="sync">
         {activePage === "home" && <HomePage key="home" />}
         {activePage === "overview" && <OverviewPage key="overview" />}
         {activePage === "vault" && <VaultPage key="vault" />}
@@ -975,9 +976,10 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       {showImageModal && selectedVaultImage && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
             className="bg-white rounded-lg max-w-2xl w-full max-h-96 overflow-hidden flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b">
@@ -1058,9 +1060,10 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       {showShareModal && shareLink && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
             className="bg-white rounded-lg max-w-md w-full p-6"
           >
             <h2 className="text-lg font-bold text-gray-900 mb-4">📤 Share Image</h2>
