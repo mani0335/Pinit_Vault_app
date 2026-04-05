@@ -538,24 +538,19 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         </p>
       </div>
 
-      {/* Navigation Cards */}
-      <motion.div className="grid grid-cols-1 gap-3">
+      {/* Navigation Cards - Icon Style */}
+      <motion.div className="grid grid-cols-3 gap-2">
         <motion.div
           variants={itemVariants}
           onClick={() => setActivePage("overview")}
+          className="flex flex-col items-center"
         >
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 hover:border-blue-500 cursor-pointer shadow-md hover:shadow-lg transition">
-            <CardContent className="p-6 text-center">
-              <LayoutDashboard className="w-10 h-10 text-blue-600 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-gray-900 mb-1">
-                Dashboard Overview
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 hover:border-blue-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
+            <CardContent className="p-3 text-center">
+              <LayoutDashboard className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+              <h2 className="text-xs font-bold text-gray-900">
+                Stats
               </h2>
-              <p className="text-sm text-gray-600 mb-4">
-                View stats and recent activity
-              </p>
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white border-0">
-                View Stats
-              </Button>
             </CardContent>
           </Card>
         </motion.div>
@@ -563,19 +558,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         <motion.div
           variants={itemVariants}
           onClick={() => setActivePage("vault")}
+          className="flex flex-col items-center"
         >
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 hover:border-purple-500 cursor-pointer shadow-md hover:shadow-lg transition">
-            <CardContent className="p-6 text-center">
-              <Database className="w-10 h-10 text-purple-600 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-gray-900 mb-1">
-                Image Vault
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 hover:border-purple-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
+            <CardContent className="p-3 text-center">
+              <Database className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+              <h2 className="text-xs font-bold text-gray-900">
+                Records
               </h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Browse encrypted images and certificates
-              </p>
-              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white border-0">
-                Open Vault
-              </Button>
             </CardContent>
           </Card>
         </motion.div>
@@ -583,19 +573,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         <motion.div
           variants={itemVariants}
           onClick={() => setActivePage("analyzer")}
+          className="flex flex-col items-center"
         >
-          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 cursor-pointer shadow-md hover:shadow-lg transition">
-            <CardContent className="p-6 text-center">
-              <Camera className="w-10 h-10 text-indigo-600 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-gray-900 mb-1">
-                Image Analyzer
+          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
+            <CardContent className="p-3 text-center">
+              <Camera className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
+              <h2 className="text-xs font-bold text-gray-900">
+                Proof Mod
               </h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Encrypt and analyze images
-              </p>
-              <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white border-0">
-                Start Analyzing
-              </Button>
             </CardContent>
           </Card>
         </motion.div>
