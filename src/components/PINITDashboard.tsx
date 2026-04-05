@@ -527,12 +527,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       exit="exit"
       className="space-y-4"
     >
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          🔐 PINIT Vault Dashboard
-        </h1>
-        <p className="text-sm text-gray-600">
-          Image Forensics & Vault Management
+      <div className="text-center mb-6 flex flex-col items-center">
+        <img 
+          src="/logo.png" 
+          alt="PINIT Vault" 
+          className="w-20 h-20 mb-4 object-contain"
+        />
+        <p className="text-lg font-semibold text-gray-800">
+          Secure it. Control it. Own it.
         </p>
       </div>
 
