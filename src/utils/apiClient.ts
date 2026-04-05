@@ -80,7 +80,7 @@ export const vaultAPI = {
   download: async (assetId: string, userId?: string) => {
     /**
      * Download image as file (JPG, PNG, etc.)
-     * For Capacitor/Android: saves to Pictures folder and refreshes gallery
+     * For Capacitor/Android: saves to Documents/PINIT or App cache
      * For Web: triggers browser download
      */
     try {
@@ -116,63 +116,65 @@ export const vaultAPI = {
       // Check if running on Capacitor (mobile)
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
-        console.log('📱 Running on Capacitor - saving image to accessible location');
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        console.log('📱 Running on Capacitor - saving image to device');
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
         
+        // Convert blob to base64
+        const arrayBuffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = window.btoa(binary);
+        
+        console.log('📝 Image converted to base64, size:', base64.length);
+        
+        // Android 11+ scoped storage: use Documents directory
         try {
-          // Convert blob to base64 (Capacitor works with base64)
-          const arrayBuffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          const base64 = window.btoa(binary);
-          
-          console.log('📝 Image converted to base64, size:', base64.length);
-          
-          // Save to DOWNLOADS directory (accessible by gallery)
-          const downloadPath = `Download/${filename}`;
-          
-          console.log('📁 Saving to Downloads:', downloadPath);
+          const docPath = `PINIT_Downloads/${filename}`;
+          console.log('📁 Saving to Documents:', docPath);
           
           await Filesystem.writeFile({
-            path: downloadPath,
+            path: docPath,
             data: base64,
-            directory: Directory.ExternalStorage,
+            directory: Directory.Documents,
             recursive: true,
           });
           
-          console.log('✅ Image saved to Downloads folder');
+          console.log('✅ File saved to Documents successfully');
           
-          // Try to get URI
           try {
             const uri = await Filesystem.getUri({
-              path: downloadPath,
-              directory: Directory.ExternalStorage,
+              path: docPath,
+              directory: Directory.Documents,
             });
             console.log('✅ File URI:', uri.uri);
           } catch (uriErr) {
             console.warn('⚠️ Could not get URI:', uriErr);
           }
           
-          return { success: true, filename, location: 'Downloads' };
-        } catch (nativeErr: any) {
-          console.error('❌ Capacitor save failed:', nativeErr);
+          return { success: true, filename, location: 'Documents/PINIT_Downloads' };
+        } catch (docsErr: any) {
+          console.error('❌ Documents save failed:', docsErr);
           
-          // Fallback: Try Documents directory
+          // Fallback 1: Try app cache directory
           try {
-            console.log('📂 Trying fallback: Documents directory');
+            console.log('📂 Fallback 1: Trying app cache');
+            const cachePath = filename;
+            
             await Filesystem.writeFile({
-              path: `BioVault/${filename}`,
-              data: window.btoa(binary),
-              directory: Directory.Documents,
+              path: cachePath,
+              data: base64,
+              directory: Directory.Cache,
               recursive: true,
             });
-            return { success: true, filename, location: 'Documents/BioVault' };
-          } catch (fallbackErr: any) {
-            console.error('❌ Fallback also failed:', fallbackErr);
-            throw new Error(`Failed to save file: ${nativeErr.message}`);
+            
+            console.log('✅ Saved to app cache');
+            return { success: true, filename, location: 'App Cache (Temp)' };
+          } catch (cacheErr: any) {
+            console.error('❌ Cache save failed:', cacheErr);
+            throw new Error(`Failed to save file: ${docsErr.message}`);
           }
         }
       } else {

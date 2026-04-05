@@ -422,89 +422,70 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       const { Capacitor } = await import('@capacitor/core');
       
       if (Capacitor.isNativePlatform()) {
-        console.log('📱 Running on Android/iOS - saving file first');
+        console.log('📱 Running on Android/iOS');
         
         try {
-          // Save to device cache first (temporary storage for sharing)
-          const filePath = `cache/${fileName}`;
-          
-          // Remove data URI prefix if present
+          // IMPORTANT: Remove data URI prefix and get clean base64
           let cleanBase64 = base64String;
-          if (base64String.startsWith('data:image')) {
+          if (base64String.startsWith('data:')) {
             cleanBase64 = base64String.split(',')[1];
+            console.log('✂️ Removed data URI prefix');
           }
           
-          console.log('💾 Saving to cache:', filePath);
+          // Try Documents directory first (most reliable on Android)
+          const documentPath = `PINIT_Share/${fileName}`;
+          
+          console.log('💾 Saving to Documents:', documentPath);
           
           await (Filesystem as any).writeFile({
-            path: filePath,
+            path: documentPath,
             data: cleanBase64,
-            directory: Directory.Cache,
-            encoding: Encoding.UTF8,
+            directory: Directory.Documents,
             recursive: true,
           });
           
-          console.log('✅ File saved to cache');
+          console.log('✅ File saved to Documents');
           
-          // Get the file URI
+          // Get the file URI for sharing
           const uri = await (Filesystem as any).getUri({
-            path: filePath,
-            directory: Directory.Cache,
+            path: documentPath,
+            directory: Directory.Documents,
           });
           
           console.log('📁 File URI:', uri.uri);
           
-          // Share using the URI
+          // Open native Android share
+          console.log('🔄 Opening Android share picker...');
           await Share.share({
             url: uri.uri,
             title: 'PINIT Vault Image',
-            text: `Encrypted image: ${fileName}`,
-            dialogTitle: 'Share Image',
+            text: `Sharing: ${fileName}`,
+            dialogTitle: 'Share Encrypted Image',
           });
           
-          console.log('✅ Shared via Android Intent');
-        } catch (nativeErr: any) {
-          console.error('❌ Native share failed, trying fallback:', nativeErr);
+          console.log('✅ Shared successfully!');
+          alert('✅ Image shared successfully!');
+        } catch (androidErr: any) {
+          console.error('❌ Android share error:', androidErr);
           
-          // Fallback: Try external storage
-          try {
-            const downloadPath = `Download/${fileName}`;
-            
-            let cleanBase64 = base64String;
-            if (base64String.startsWith('data:image')) {
-              cleanBase64 = base64String.split(',')[1];
-            }
-            
-            await (Filesystem as any).writeFile({
-              path: downloadPath,
-              data: cleanBase64,
-              directory: Directory.ExternalStorage,
-              encoding: Encoding.UTF8,
-              recursive: true,
-            });
-            
-            const uri = await (Filesystem as any).getUri({
-              path: downloadPath,
-              directory: Directory.ExternalStorage,
-            });
-            
+          // If that fails, try just showing a share button with URL
+          if (image.thumbnail) {
+            console.log('📌 Falling back to URL share');
             await Share.share({
-              url: uri.uri,
+              url: image.thumbnail,
               title: 'PINIT Vault Image',
-              text: `Encrypted image: ${fileName}`,
+              text: `Image: ${fileName}`,
               dialogTitle: 'Share Image',
             });
-            
-            console.log('✅ Shared via fallback (ExternalStorage)');
-          } catch (fallbackErr: any) {
-            console.error('❌ Fallback also failed:', fallbackErr);
-            throw fallbackErr;
+            alert('✅ Shared via thumbnail URL');
+          } else {
+            throw androidErr;
           }
         }
       } else {
-        // Web browser - direct sharing not available
-        console.log('🌐 Running on web - showing URL share option');
-        alert('💡 On web: Right-click image → Save Image As, or use browser share feature');
+        // Web browser
+        console.log('🌐 Running on web');
+        alert('💡 On web: Use browser download/share features or right-click the image');
       }
     } catch (err) {
       console.error('❌ Share failed:', err);
