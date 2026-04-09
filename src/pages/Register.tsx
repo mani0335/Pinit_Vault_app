@@ -226,12 +226,15 @@ const Register = () => {
                       }
                       
                       // IMPORTANT: Save tokens if returned from backend
+                      // 🔐 CRITICAL FIX: Save to BOTH appStorage AND localStorage for Android compatibility
                       if (data.token) {
                         console.log('💾 Saving access token from registration');
+                        await appStorage.setItem('biovault_token', data.token);
                         localStorage.setItem('biovault_token', data.token);
                       }
                       if (data.refreshToken) {
                         console.log('💾 Saving refresh token from registration');
+                        await appStorage.setItem('biovault_refresh_token', data.refreshToken);
                         localStorage.setItem('biovault_refresh_token', data.refreshToken);
                       }
                       

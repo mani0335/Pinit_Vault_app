@@ -147,7 +147,25 @@ const Login = () => {
       const result = await verifyFaceBackend(faceEmbedding, verification.userId);
       
       if (result.verified) {
-        console.log('✅ Face verified! Showing success and redirecting to dashboard');
+        console.log('✅ Face verified! Storing tokens and redirecting to dashboard');
+        
+        // 🔐 CRITICAL FIX #1: Store authentication tokens (using biovault_token for consistency)
+        if (result.token) {
+          await appStorage.setItem('biovault_token', result.token);
+          localStorage.setItem('biovault_token', result.token);
+          console.log('💾 Access token stored');
+        }
+        if (result.refreshToken) {
+          await appStorage.setItem('biovault_refresh_token', result.refreshToken);
+          localStorage.setItem('biovault_refresh_token', result.refreshToken);
+          console.log('💾 Refresh token stored');
+        }
+        
+        // 🔐 CRITICAL FIX #2: Store userId so dashboard can find it
+        await appStorage.setItem('biovault_userId', verification.userId);
+        localStorage.setItem('biovault_userId', verification.userId);
+        console.log('💾 User ID stored:', verification.userId);
+        
         setVerification(prev => ({
           ...prev,
           step: "success"
@@ -300,9 +318,6 @@ const Login = () => {
             >
               {verification.step === "fingerprint" && (
                 <div>
-                  <h2 className="text-xl md:text-2xl font-display tracking-wide text-center mb-6 text-foreground">
-                    Fingerprint Verification
-                  </h2>
                   <FingerprintScanner
                     mode="login"
                     required={true}
@@ -321,9 +336,6 @@ const Login = () => {
 
               {verification.step === "face" && (
                 <div>
-                  <h2 className="text-xl md:text-2xl font-display tracking-wide text-center mb-6 text-foreground">
-                    Face Verification
-                  </h2>
                   <FaceScanner
                     mode="login"
                     onSuccess={handleFaceSuccess}

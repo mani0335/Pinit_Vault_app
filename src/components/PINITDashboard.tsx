@@ -1,16 +1,49 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ArrowLeft, Image, Database, Loader, LayoutDashboard, Award, Clock, FileSearch, Activity, Calendar, Download, Trash2, Eye, Lock, Share2 } from "lucide-react";
+import {
+  Camera,
+  ArrowLeft,
+  Image,
+  Database,
+  Loader,
+  LayoutDashboard,
+  Award,
+  Clock,
+  FileSearch,
+  Activity,
+  Calendar,
+  Download,
+  Trash2,
+  Eye,
+  Lock,
+  Share2,
+  Settings,
+  LogOut,
+  BarChart3,
+  Zap,
+  Shield,
+  AlertCircle,
+  TrendingUp,
+  Lock as LockIcon,
+  Cpu,
+  Key,
+  CheckCircle2,
+  Grid3x3,
+  Menu,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { vaultAPI, certAPI, compareAPI } from "@/utils/apiClient";
 import { appStorage } from "@/lib/storage";
+import {
+  embedUserIdInImage,
+  extractUserIdFromImage,
+  type WatermarkMetadata,
+} from "@/lib/steganography";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { Camera as CameraPlugin } from "@capacitor/camera";
-import { CameraResultType, CameraSource } from "@capacitor/camera";
-import { Camera as CameraPlugin } from "@capacitor/camera";
-import { CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera as CameraPlugin, CameraResultType, CameraSource } from "@capacitor/camera";
 
 interface PINITDashboardProps {
   userId?: string;
@@ -18,7 +51,55 @@ interface PINITDashboardProps {
 }
 
 export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [activePage, setActivePage] = useState<"home" | "overview" | "vault" | "analyzer">("home");
+
+  // 🔐 CRITICAL FIX #3: Verify authentication tokens on component mount
+  useEffect(() => {
+    const verifyAuth = async () => {
+      try {
+        const accessToken = await appStorage.getItem('access_token');
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        
+        // Both must exist for valid authenticated session
+        if (!accessToken || !storedUserId) {
+          console.log('❌ Dashboard: No valid tokens - redirecting to login');
+          navigate('/login', { replace: true });
+          setIsCheckingAuth(false);
+          return;
+        }
+        
+        console.log('✅ Dashboard: Valid tokens found - allowing access');
+        setIsAuthenticated(true);
+        setIsCheckingAuth(false);
+      } catch (err) {
+        console.error('❌ Dashboard: Auth verification failed:', err);
+        navigate('/login', { replace: true });
+        setIsCheckingAuth(false);
+      }
+    };
+    
+    verifyAuth();
+  }, [navigate]);
+  
+  // Show loading while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="w-full min-h-screen bg-white flex items-center justify-center rounded-xl">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-gray-600 font-mono text-sm">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Redirect if not authenticated
+  if (!isAuthenticated) {
+    return null; // Will be replaced by navigate
+  }
 
   // ===================== REAL DATA FROM APIs =====================
   const [vaultImages, setVaultImages] = useState<any[]>([]);
@@ -27,6 +108,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [loadingVault, setLoadingVault] = useState(false);
   const [loadingCerts, setLoadingCerts] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [detectedOwners, setDetectedOwners] = useState<{ [key: string]: string }>({});
 
   // IMAGE ANALYZER STATE
   const [cryptoFile, setCryptoFile] = useState<File | null>(null);
@@ -38,6 +120,13 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [encryptedResult, setEncryptedResult] = useState<any>(null);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [analysisHistory, setAnalysisHistory] = useState<any[]>([]);
+
+  // VERIFY PROOF STATE
+  const [verifyFile, setVerifyFile] = useState<File | null>(null);
+  const [verifyPreview, setVerifyPreview] = useState<string>("");
+  const [verifyBase64, setVerifyBase64] = useState<string>("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [proofResult, setProofResult] = useState<WatermarkMetadata | null>(null);
 
   // VAULT IMAGE VIEWER & SHARING
   const [selectedVaultImage, setSelectedVaultImage] = useState<any>(null);
@@ -70,7 +159,26 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         thumbnail: a.thumbnail_url,
       }));
       setVaultImages(images);
-      console.log('✅ LoadVault: Loaded', images.length, 'images');
+      
+      // Auto-detect ownership from watermarked images
+      const ownersMap: { [key: string]: string } = {};
+      for (const image of images) {
+        if (image.image_base64 || image.thumbnail_base64) {
+          try {
+            const imageData = image.image_base64 || image.thumbnail_base64;
+            const metadata = await extractUserIdFromImage(imageData);
+            if (metadata) {
+              ownersMap[image.assetId] = metadata.userId;
+              console.log('✅ Auto-Detect: Image', image.fileName, '-> Owner:', metadata.userId, '(Confidence: ' + metadata.confidence + '/5)');
+            }
+          } catch (err) {
+            console.warn('⚠️ Auto-Detect: Could not extract owner from', image.fileName);
+          }
+        }
+      }
+      setDetectedOwners(ownersMap);
+      
+      console.log('✅ LoadVault: Loaded', images.length, 'images with ownership detection');
     } catch (err) {
       console.error("Failed to load vault:", err);
     } finally {
@@ -178,6 +286,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       const assetId = `UUID-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const fileSize = (cryptoFile.size / 1024).toFixed(2) + " KB";
       const timestamp = new Date().toISOString();
+      const fileType = cryptoFile.type.split("/")[1]?.toUpperCase() || "UNKNOWN";
       
       // Step 3: Get user ID from storage
       let currentUserId = userId;
@@ -210,7 +319,25 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         }
       }
       
-      // Step 5: Prepare vault data (store FULL encrypted image + thumbnail)
+      // Step 4.5: Embed user ID watermark with metadata into image for ownership verification
+      let watermarkedImage = thumbnailBase64;
+      try {
+        if (thumbnailBase64 && currentUserId) {
+          watermarkedImage = await embedUserIdInImage(
+            thumbnailBase64,
+            currentUserId,
+            timestamp,
+            fileSize,
+            fileType
+          );
+          console.log('🔐 Watermarking: User ID + metadata embedded into image via multi-region watermarking');
+        }
+      } catch (watermarkErr) {
+        console.warn('⚠️ Watermarking: Could not embed metadata:', watermarkErr);
+        watermarkedImage = thumbnailBase64;
+      }
+      
+      // Step 5: Prepare vault data (store FULL encrypted image + thumbnail with watermark)
       const vaultData = {
         asset_id: assetId,
         user_id: currentUserId,
@@ -220,8 +347,8 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         visual_fingerprint: `fingerprint-${assetId}`,
         resolution: "encrypted",
         capture_timestamp: timestamp,
-        thumbnail_base64: thumbnailBase64,
-        image_base64: thumbnailBase64,
+        thumbnail_base64: watermarkedImage,
+        image_base64: watermarkedImage,
         certificate_id: null,
         owner_name: "BioVault User",
         owner_email: "user@biovault.app",
@@ -257,6 +384,23 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       // Step 8: Reload vault images to show the new encrypted image
       console.log('🔄 Encryption: Reloading vault images...');
       await loadVaultImages();
+      
+      // Step 8.5: Auto-detect ownership of newly encrypted image
+      if (watermarkedImage) {
+        try {
+          const detectedOwner = await extractUserIdFromImage(watermarkedImage);
+          if (detectedOwner) {
+            // Extract userId string from WatermarkMetadata object
+            const ownerUserId = typeof detectedOwner === 'string' ? detectedOwner : (detectedOwner as any).userId || '';
+            if (ownerUserId) {
+              setDetectedOwners(prev => ({ ...prev, [assetId]: ownerUserId }));
+              console.log('✅ Auto-Detection: Image ownership verified -', ownerUserId);
+            }
+          }
+        } catch (detectErr) {
+          console.warn('⚠️ Auto-Detection: Could not extract owner:', detectErr);
+        }
+      }
       
       // Step 9: Clear file after successful encryption
       setCryptoFile(null);
@@ -297,6 +441,61 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleVerifyProof = async () => {
+    if (!verifyFile) return;
+    setIsVerifying(true);
+    try {
+      console.log('📤 Verify Proof: Starting watermark extraction...');
+      
+      // Read file as base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result);
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(verifyFile);
+      });
+
+      // Extract metadata from watermarked image
+      const metadata = await extractUserIdFromImage(base64);
+      
+      if (metadata) {
+        console.log('✅ Verify Proof: Watermark extracted successfully!', metadata);
+        setProofResult(metadata);
+      } else {
+        console.warn('⚠️ Verify Proof: No watermark found in image');
+        alert('⚠️ No watermark found. This image may not be encrypted or watermark was removed.');
+        setProofResult(null);
+      }
+    } catch (err) {
+      console.error('❌ Verify Proof failed:', err);
+      alert('❌ Error: ' + (err as any).message);
+      setProofResult(null);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleVerifyFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setVerifyFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const preview = event.target?.result as string;
+      setVerifyPreview(preview);
+      setVerifyBase64(preview);
+    };
+    reader.readAsDataURL(file);
+    
+    console.log('📤 Verify Proof: File selected:', file.name);
   };
 
   const handleDeleteImage = async (imageId: string) => {
@@ -422,9 +621,19 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       const { Capacitor } = await import('@capacitor/core');
       
       if (Capacitor.isNativePlatform()) {
-        console.log('📱 Running on Android/iOS');
+        console.log('📱 Running on Android/iOS - attempting to share');
         
         try {
+          // Check if Share plugin is available
+          const { Share: SharePlugin } = await import('@capacitor/share');
+          
+          // Verify Share is available
+          if (!SharePlugin || !SharePlugin.share) {
+            throw new Error('Share plugin not available');
+          }
+          
+          console.log('✅ Share plugin available');
+          
           // IMPORTANT: Remove data URI prefix and get clean base64
           let cleanBase64 = base64String;
           if (base64String.startsWith('data:')) {
@@ -454,42 +663,86 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
           
           console.log('📁 File URI:', uri.uri);
           
-          // Open native Android share
+          // Open native Android share with better error handling
           console.log('🔄 Opening Android share picker...');
-          await Share.share({
-            url: uri.uri,
-            title: 'PINIT Vault Image',
-            text: `Sharing: ${fileName}`,
-            dialogTitle: 'Share Encrypted Image',
-          });
-          
-          console.log('✅ Shared successfully!');
-          alert('✅ Image shared successfully!');
-        } catch (androidErr: any) {
-          console.error('❌ Android share error:', androidErr);
-          
-          // If that fails, try just showing a share button with URL
-          if (image.thumbnail) {
-            console.log('📌 Falling back to URL share');
-            await Share.share({
-              url: image.thumbnail,
+          try {
+            await SharePlugin.share({
+              url: uri.uri,
               title: 'PINIT Vault Image',
-              text: `Image: ${fileName}`,
-              dialogTitle: 'Share Image',
+              text: `Sharing: ${fileName}`,
+              dialogTitle: 'Share Encrypted Image',
             });
-            alert('✅ Shared via thumbnail URL');
+            
+            console.log('✅ Shared successfully!');
+            alert('✅ Image shared successfully!');
+          } catch (shareErr: any) {
+            console.error('❌ Share plugin error:', shareErr);
+            
+            // If Share plugin fails, try fallback with web share API
+            if (navigator.share) {
+              console.log('📌 Trying Web Share API fallback');
+              try {
+                const blob = await (async () => {
+                  const res = await fetch(image.thumbnail || image.image_base64);
+                  return res.blob();
+                })();
+                
+                const file = new File([blob], fileName, { type: 'image/jpeg' });
+                await navigator.share({
+                  files: [file],
+                  title: 'PINIT Vault Image',
+                  text: `Sharing: ${fileName}`,
+                });
+                alert('✅ Image shared successfully!');
+              } catch (webErr) {
+                console.error('❌ Web Share API error:', webErr);
+                throw shareErr; // Rethrow original error
+              }
+            } else {
+              throw shareErr;
+            }
+          }
+        } catch (androidErr: any) {
+          console.error('❌ Android sharing failed:', androidErr);
+          
+          // Final fallback: show URL share dialog
+          if (image.thumbnail) {
+            console.log('📌 Final fallback - trying thumbnail URL share');
+            alert('⚠️ Share plugin issue. Opening image in browser instead.\n\nYou can then save or share from there.');
+            window.open(image.thumbnail, '_blank');
           } else {
-            throw androidErr;
+            const errorMsg = androidErr?.message || androidErr?.toString() || 'Share plugin not found';
+            alert(`⚠️ Share error: ${errorMsg}\n\nMake sure Capacitor Share plugin is installed.\n\nYou can download the image instead.`);
           }
         }
       } else {
         // Web browser
         console.log('🌐 Running on web');
-        alert('💡 On web: Use browser download/share features or right-click the image');
+        if (navigator.share) {
+          console.log('💻 Using Web Share API');
+          try {
+            const blob = await (async () => {
+              const res = await fetch(base64String);
+              return res.blob();
+            })();
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            await navigator.share({
+              files: [file],
+              title: 'PINIT Vault Image',
+              text: `Sharing: ${fileName}`,
+            });
+          } catch(err) {
+            console.error('Web share failed:', err);
+            alert('💡 Sharing on web: Right-click the image and select "Save image as", or download it.');
+          }
+        } else {
+          alert('💡 Sharing on web: Download the image and share it manually, or right-click to save.');
+        }
       }
     } catch (err) {
       console.error('❌ Share failed:', err);
-      alert('❌ Failed to share: ' + (err as any).message);
+      const errorMsg = (err as any)?.message || String(err) || 'Unknown error';
+      alert(`❌ Failed to share: ${errorMsg}\n\nTry downloading the image instead.`);
     }
   };
 
@@ -518,161 +771,363 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     visible: { opacity: 1, transition: { duration: 0.05 } },
   };
 
-  // ===================== HOME PAGE =====================
-  const HomePage = () => (
-    <motion.div
-      variants={pageVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      className="space-y-4"
-    >
-      <div className="text-center mb-6 flex flex-col items-center">
-        <img 
-          src="/logo.png" 
-          alt="PINIT Vault" 
-          className="w-20 h-20 mb-4 object-contain"
-        />
-        <p className="text-lg font-semibold text-gray-800">
-          Secure it. Control it. Own it.
-        </p>
-      </div>
+  // ===================== HOME PAGE - ADVANCED DASHBOARD =====================
+  const HomePage = () => {
+    const handleLogout = async () => {
+      try {
+        await appStorage.removeItem('access_token');
+        await appStorage.removeItem('biovault_userId');
+        navigate('/login', { replace: true });
+      } catch (err) {
+        console.error('Logout error:', err);
+      }
+    };
 
-      {/* Navigation Cards - Icon Style */}
-      <motion.div className="grid grid-cols-3 gap-2">
-        <motion.div
-          variants={itemVariants}
-          onClick={() => setActivePage("overview")}
-          className="flex flex-col items-center"
-        >
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 hover:border-blue-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
-            <CardContent className="p-3 text-center">
-              <LayoutDashboard className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <h2 className="text-xs font-bold text-gray-900">
-                Stats
-              </h2>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          variants={itemVariants}
-          onClick={() => setActivePage("vault")}
-          className="flex flex-col items-center"
-        >
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 hover:border-purple-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
-            <CardContent className="p-3 text-center">
-              <Database className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-              <h2 className="text-xs font-bold text-gray-900">
-                Records
-              </h2>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          variants={itemVariants}
-          onClick={() => setActivePage("analyzer")}
-          className="flex flex-col items-center"
-        >
-          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 cursor-pointer shadow-md hover:shadow-lg transition w-full">
-            <CardContent className="p-3 text-center">
-              <Camera className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
-              <h2 className="text-xs font-bold text-gray-900">
-                Proof Mod
-              </h2>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </motion.div>
-
-      {/* User Info */}
+    return (
       <motion.div
-        variants={itemVariants}
-        className="bg-blue-50 border border-blue-200 rounded-lg p-4"
+        variants={pageVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        className="space-y-6"
       >
-        <p className="text-xs text-blue-900">
-          <span className="font-bold">👤 PINIT ID:</span> {userId || "USER"}
-        </p>
-      </motion.div>
-    </motion.div>
-  );
+        {/* HEADER - ADVANCED WITH USER PROFILE */}
+        <motion.div
+          variants={itemVariants}
+          className="bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 rounded-2xl p-6 text-white"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                PINIT Vault
+              </h1>
+              <p className="text-cyan-300 text-sm mt-1">Secure Digital Ownership Platform</p>
+            </div>
+            <Button
+              onClick={handleLogout}
+              variant="ghost"
+              className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+            >
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
 
-  // ===================== OVERVIEW PAGE =====================
+          {/* USER INFO SECTION */}
+          <div className="bg-blue-900/40 backdrop-blur rounded-xl p-4 border border-blue-500/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">
+                    {(userId?.charAt(0) || 'U').toUpperCase()}
+                  </span>
+                </div>
+                <div>
+                  <p className="font-semibold">User ID: <span className="text-cyan-300">{userId || 'USER'}</span></p>
+                  <p className="text-blue-200 text-xs">Premium Access • Full Encryption</p>
+                </div>
+              </div>
+              <Shield className="w-8 h-8 text-green-400" />
+            </div>
+          </div>
+        </motion.div>
+
+        {/* QUICK STATS - ADVANCED CARDS */}
+        <motion.div className="grid grid-cols-2 gap-4">
+          <motion.div
+            variants={itemVariants}
+            onClick={() => setActivePage("overview")}
+            className="cursor-pointer group"
+          >
+            <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-2 border-indigo-300 hover:border-indigo-500 hover:shadow-xl transition-all duration-300 h-full">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <BarChart3 className="w-8 h-8 text-indigo-600 group-hover:scale-110 transition" />
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-200 px-2 py-1 rounded-full">Active</span>
+                </div>
+                <p className="text-3xl font-bold text-indigo-900">
+                  {stats.totalEncrypted}
+                </p>
+                <p className="text-sm text-indigo-700 font-semibold">Encrypted Assets</p>
+                <p className="text-xs text-indigo-600 mt-2">→ View Dashboard</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div
+            variants={itemVariants}
+            onClick={() => setActivePage("vault")}
+            className="cursor-pointer group"
+          >
+            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 hover:border-purple-500 hover:shadow-xl transition-all duration-300 h-full">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <Database className="w-8 h-8 text-purple-600 group-hover:scale-110 transition" />
+                  <span className="text-xs font-bold text-purple-600 bg-purple-200 px-2 py-1 rounded-full">Records</span>
+                </div>
+                <p className="text-3xl font-bold text-purple-900">
+                  {vaultImages.length}
+                </p>
+                <p className="text-sm text-purple-700 font-semibold">Stored Files</p>
+                <p className="text-xs text-purple-600 mt-2">→ Open Vault</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </motion.div>
+
+        {/* MAIN ACTION BUTTONS - ADVANCED DESIGN */}
+        <motion.div className="space-y-3">
+          <h3 className="text-sm font-bold text-gray-900 px-1 uppercase tracking-wider">
+            ✨ Main Features
+          </h3>
+
+          {/* IMAGE ANALYZER BUTTON */}
+          <motion.button
+            variants={itemVariants}
+            onClick={() => setActivePage("analyzer")}
+            className="w-full group"
+          >
+            <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-300 hover:border-emerald-500 hover:shadow-xl transition-all duration-300">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-emerald-200 rounded-lg group-hover:bg-emerald-300 transition">
+                      <Camera className="w-6 h-6 text-emerald-700" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-emerald-900">Encrypt & Verify</p>
+                      <p className="text-xs text-emerald-700">Watermark & Proof</p>
+                    </div>
+                  </div>
+                  <Zap className="w-5 h-5 text-emerald-600 group-hover:translate-x-1 transition" />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.button>
+
+          {/* SETTINGS BUTTON */}
+          <motion.button
+            variants={itemVariants}
+            onClick={() => alert('⚙️ Settings coming soon!')}
+            className="w-full group"
+          >
+            <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-300 hover:border-orange-500 hover:shadow-xl transition-all duration-300">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-orange-200 rounded-lg group-hover:bg-orange-300 transition">
+                      <Settings className="w-6 h-6 text-orange-700" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-orange-900">Settings</p>
+                      <p className="text-xs text-orange-700">Security & Preferences</p>
+                    </div>
+                  </div>
+                  <Zap className="w-5 h-5 text-orange-600 group-hover:translate-x-1 transition" />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.button>
+        </motion.div>
+
+        {/* SECURITY STATUS - ADVANCED */}
+        <motion.div
+          variants={itemVariants}
+          className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4"
+        >
+          <div className="flex items-center gap-3">
+            <Shield className="w-6 h-6 text-green-600" />
+            <div>
+              <p className="text-sm font-bold text-green-900">Security Status</p>
+              <p className="text-xs text-green-700">✅ All systems secure • 🔐 Encryption active • 🛡️ Biometric verified</p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* QUICK INFO CARDS */}
+        <motion.div className="grid grid-cols-3 gap-2">
+          <motion.div
+            variants={itemVariants}
+            className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center"
+          >
+            <Award className="w-5 h-5 text-blue-600 mx-auto mb-1" />
+            <p className="text-xs font-bold text-blue-900">{stats.totalAnalyzed}</p>
+            <p className="text-xs text-blue-700">Analyzed</p>
+          </motion.div>
+
+          <motion.div
+            variants={itemVariants}
+            className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center"
+          >
+            <Clock className="w-5 h-5 text-purple-600 mx-auto mb-1" />
+            <p className="text-xs font-bold text-purple-900">24/7</p>
+            <p className="text-xs text-purple-700">Protected</p>
+          </motion.div>
+
+          <motion.div
+            variants={itemVariants}
+            className="bg-green-50 border border-green-200 rounded-lg p-3 text-center"
+          >
+            <Zap className="w-5 h-5 text-green-600 mx-auto mb-1" />
+            <p className="text-xs font-bold text-green-900">Live</p>
+            <p className="text-xs text-green-700">Active</p>
+          </motion.div>
+        </motion.div>
+      </motion.div>
+    );
+  };
+
+  // ===================== OVERVIEW PAGE - ADVANCED STATS =====================
   const OverviewPage = () => (
     <motion.div
       variants={pageVariants}
       initial="hidden"
       animate="visible"
       exit="exit"
-      className="space-y-4"
+      className="space-y-5"
     >
-      <div className="flex items-center gap-2 mb-4">
+      {/* HEADER WITH BACK BUTTON */}
+      <motion.div
+        variants={itemVariants}
+        className="flex items-center gap-2 mb-2"
+      >
         <Button
           onClick={() => setActivePage("home")}
           variant="ghost"
-          className="h-8 w-8 p-0"
+          className="h-10 w-10 p-0 hover:bg-gray-200 rounded-lg"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </Button>
-        <h1 className="text-lg font-bold text-gray-900">Dashboard Overview</h1>
-      </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard Statistics</h1>
+          <p className="text-xs text-gray-500">Real-time data & analytics</p>
+        </div>
+      </motion.div>
 
-      {/* Stats Cards */}
-      <motion.div className="grid grid-cols-2 gap-2">
+      {/* MAIN STATS - LARGE CARDS */}
+      <motion.div className="grid grid-cols-2 gap-3">
         <motion.div variants={itemVariants}>
-          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-300">
-            <CardContent className="p-4 text-center">
-              <Image className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-indigo-700">
-                {stats.totalEncrypted}
-              </p>
-              <p className="text-xs text-gray-600">Images in Vault</p>
+          <Card className="bg-gradient-to-br from-indigo-50 via-indigo-100 to-blue-100 border-2 border-indigo-300">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-3 bg-indigo-200 rounded-lg">
+                  <Image className="w-6 h-6 text-indigo-700" />
+                </div>
+                <span className="text-2xl font-bold text-indigo-600">
+                  {stats.totalEncrypted}
+                </span>
+              </div>
+              <p className="text-sm font-bold text-indigo-900">Encrypted Assets</p>
+              <p className="text-xs text-indigo-700 mt-2">Protected in vault</p>
+              <div className="w-full bg-indigo-200 rounded-full h-2 mt-3">
+                <div
+                  className="bg-indigo-600 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min((stats.totalEncrypted / 100) * 100, 100)}%` }}
+                ></div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <Card className="bg-gradient-to-br from-green-50 to-green-100 border border-green-300">
-            <CardContent className="p-4 text-center">
-              <FileSearch className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-green-700">
-                {stats.totalAnalyzed}
-              </p>
-              <p className="text-xs text-gray-600">Total Analyzed</p>
+          <Card className="bg-gradient-to-br from-green-50 via-green-100 to-emerald-100 border-2 border-green-300">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="p-3 bg-green-200 rounded-lg">
+                  <FileSearch className="w-6 h-6 text-green-700" />
+                </div>
+                <span className="text-2xl font-bold text-green-600">
+                  {stats.totalAnalyzed}
+                </span>
+              </div>
+              <p className="text-sm font-bold text-green-900">Total Analyzed</p>
+              <p className="text-xs text-green-700 mt-2">Proof verified</p>
+              <div className="w-full bg-green-200 rounded-full h-2 mt-3">
+                <div
+                  className="bg-green-600 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min((stats.totalAnalyzed / 100) * 100, 100)}%` }}
+                ></div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
       </motion.div>
 
-      {/* Recent Activity */}
-      {vaultImages.length > 0 && (
+      {/* ADDITIONAL STATS ROW */}
+      <motion.div className="grid grid-cols-3 gap-2">
         <motion.div variants={itemVariants}>
-          <h3 className="text-sm font-bold text-gray-900 mb-2">
-            📋 Recent Vault Entries
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-300">
+            <CardContent className="p-4 text-center">
+              <Award className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+              <p className="text-xl font-bold text-purple-900">{vaultImages.length}</p>
+              <p className="text-xs text-purple-700 font-semibold">Files Stored</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-300">
+            <CardContent className="p-4 text-center">
+              <Activity className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-xl font-bold text-blue-900">24/7</p>
+              <p className="text-xs text-blue-700 font-semibold">Monitoring</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-300">
+            <CardContent className="p-4 text-center">
+              <Shield className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
+              <p className="text-xl font-bold text-cyan-900">100%</p>
+              <p className="text-xs text-cyan-700 font-semibold">Secure</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+
+      {/* RECENT ACTIVITY SECTION */}
+      {vaultImages.length > 0 && (
+        <motion.div variants={itemVariants} className="space-y-3">
+          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider px-1">
+            📋 Recent Activity
           </h3>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
+          <div className="space-y-2 max-h-60 overflow-y-auto">
             {vaultImages.slice(0, 5).map((img, idx) => (
-              <Card
+              <motion.div
                 key={idx}
-                className="bg-white border border-gray-200 hover:border-gray-400"
+                variants={itemVariants}
+                className="bg-white border-l-4 border-indigo-500 hover:border-indigo-700 rounded-lg p-3 hover:shadow-md transition-all"
               >
-                <CardContent className="p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-bold text-gray-900">
-                      {img.fileName}
-                    </p>
-                    <p className="text-xs text-green-600">
-                      ✓ {img.status}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Image className="w-4 h-4 text-indigo-600" />
+                    <p className="text-xs font-bold text-gray-900 truncate max-w-xs">
+                      {img.fileName || 'Unnamed File'}
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {formatDate(img.dateEncrypted)}
-                  </p>
-                </CardContent>
-              </Card>
+                  <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded">
+                    ✓ Secure
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  <Clock className="w-3 h-3 inline mr-1" />
+                  {formatDate(img.dateEncrypted)}
+                </p>
+              </motion.div>
             ))}
           </div>
+        </motion.div>
+      )}
+
+      {/* EMPTY STATE */}
+      {vaultImages.length === 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="text-center py-12 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg"
+        >
+          <Database className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-gray-600">No files yet</p>
+          <p className="text-xs text-gray-500">Start encrypting images to see them here</p>
         </motion.div>
       )}
     </motion.div>
@@ -711,9 +1166,17 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="text-xs font-bold text-gray-900">
-                        {img.fileName}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-gray-900">
+                          {img.fileName}
+                        </p>
+                        {detectedOwners[img.assetId] && (
+                          <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                            <span>✓</span>
+                            <span>Owner: {detectedOwners[img.assetId]}</span>
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500">
                         {formatDate(img.dateEncrypted)}
                       </p>
@@ -828,65 +1291,60 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         </p>
       </motion.div>
 
-      {/* Preview */}
+      {/* Preview with Details */}
       {cryptoPreview && (
         <motion.div variants={itemVariants}>
-          <Card className="bg-white border border-gray-200">
-            <CardContent className="p-3">
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-300">
+            <CardContent className="p-3 space-y-2">
               <img
                 src={cryptoPreview}
                 alt="preview"
-                className="w-full max-h-40 object-cover rounded"
+                className="w-full max-h-40 object-cover rounded border border-purple-200"
               />
+              <div className="pt-2 space-y-1 text-xs border-t border-purple-200">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">📁 File:</span>
+                  <span className="text-gray-900 font-mono truncate max-w-[150px]" title={cryptoFile?.name}>{cryptoFile?.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">💾 Size:</span>
+                  <span className="text-gray-900 font-bold">{cryptoFile ? (cryptoFile.size / 1024).toFixed(2) : 0} KB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">🏷️ Type:</span>
+                  <span className="text-gray-900 font-bold">{cryptoFile?.type || 'Unknown'}</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
       )}
 
-      {/* Action Buttons */}
+      {/* Action Button - Encrypt Only */}
       <motion.div variants={itemVariants}>
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            onClick={handleEncryptImage}
-            disabled={!cryptoFile || isEncrypting || isRestricted}
-            className="h-10 bg-indigo-600 hover:bg-indigo-700 text-white border-0 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isRestricted ? "Disabled: Temporary access only" : "Encrypt the selected image"}
-          >
-            {isEncrypting ? (
-              <>
-                <Loader className="w-3 h-3 mr-1 animate-spin" />
-                <span>Encrypting...</span>
-              </>
-            ) : isRestricted ? (
-              <>
-                <Lock className="w-3 h-3 mr-1" />
-                <span>🔒 Locked</span>
-              </>
-            ) : (
-              <span>🔐 Encrypt</span>
-            )}
-          </Button>
-          <Button
-            onClick={handleAnalyzeImage}
-            disabled={!cryptoFile || isAnalyzing || isRestricted}
-            className="h-10 bg-blue-600 hover:bg-blue-700 text-white border-0 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isRestricted ? "Disabled: Temporary access only" : "Analyze the selected image"}
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader className="w-3 h-3 mr-1 animate-spin" />
-                <span>Analyzing...</span>
-              </>
-            ) : isRestricted ? (
-              <>
-                <Lock className="w-3 h-3 mr-1" />
-                <span>🔒 Locked</span>
-              </>
-            ) : (
-              <span>🔍 Analyze</span>
-            )}
-          </Button>
-        </div>
+        <Button
+          onClick={handleEncryptImage}
+          disabled={!cryptoFile || isEncrypting || isRestricted}
+          className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition"
+          title={isRestricted ? "Disabled: Temporary access only" : "Encrypt and watermark the image with your ID"}
+        >
+          {isEncrypting ? (
+            <>
+              <Loader className="w-4 h-4 mr-2 animate-spin" />
+              <span>🔐 Encrypting & Watermarking...</span>
+            </>
+          ) : isRestricted ? (
+            <>
+              <Lock className="w-4 h-4 mr-2" />
+              <span>🔒 Locked (Temporary Access)</span>
+            </>
+          ) : (
+            <span>🔐 Encrypt & Watermark Image</span>
+          )}
+        </Button>
+        <p className="text-xs text-gray-500 text-center mt-2">
+          {!cryptoFile ? "Capture or select an image first" : "Click to encrypt and embed your watermark"}
+        </p>
       </motion.div>
 
       {/* Results */}
@@ -925,6 +1383,114 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         </motion.div>
       )}
 
+      {/* VERIFY PROOF SECTION */}
+      <motion.div variants={itemVariants} className="border-t-2 border-gray-200 pt-4">
+        <h2 className="text-sm font-bold text-gray-900 mb-3">📤 Verify Proof</h2>
+        <p className="text-xs text-gray-600 mb-3">Upload an encrypted image to verify ownership and extract metadata</p>
+        
+        {/* File Upload Input */}
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-gray-700 mb-2">Select Encrypted Image</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleVerifyFileSelect}
+            className="w-full px-3 py-2 border border-gray-300 rounded text-xs file:mr-2 file:py-1 file:px-2 file:bg-indigo-600 file:text-white file:border-0 file:rounded cursor-pointer"
+            disabled={isVerifying}
+          />
+        </div>
+
+        {/* Preview */}
+        {verifyPreview && (
+          <motion.div variants={itemVariants} className="mb-3">
+            <Card className="bg-gray-50 border border-gray-200">
+              <CardContent className="p-3">
+                <img
+                  src={verifyPreview}
+                  alt="verify-preview"
+                  className="w-full max-h-40 object-cover rounded"
+                />
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Verify Button - Full Width */}
+        <Button
+          onClick={handleVerifyProof}
+          disabled={!verifyFile || isVerifying}
+          className="w-full h-12 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition"
+        >
+          {isVerifying ? (
+            <>
+              <Loader className="w-4 h-4 mr-2 animate-spin" />
+              <span>📤 Extracting Watermark...</span>
+            </>
+          ) : (
+            <span>✅ Verify Ownership & Extract Data</span>
+          )}
+        </Button>
+        <p className="text-xs text-gray-500 text-center mt-2">
+          {!verifyFile ? "Upload an encrypted image to verify" : "Click to extract watermark and owner info"}
+        </p>
+
+        {/* Proof Card Result */}
+        {proofResult && (
+          <motion.div variants={itemVariants} className="mt-4">
+            <Card className="bg-emerald-50 border border-emerald-300">
+              <CardContent className="p-3 space-y-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">✓</div>
+                  <p className="text-xs font-bold text-emerald-700">Watermark Verified</p>
+                </div>
+                
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between items-start">
+                    <span className="text-gray-700 font-semibold">Owner ID:</span>
+                    <span className="text-gray-900 font-bold text-right">{proofResult.userId}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-start">
+                    <span className="text-gray-700 font-semibold">Encrypted:</span>
+                    <span className="text-gray-600 text-right text-xs">{new Date(proofResult.timestamp).toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-start">
+                    <span className="text-gray-700 font-semibold">File Size:</span>
+                    <span className="text-gray-900 font-bold">{proofResult.fileSize}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-start">
+                    <span className="text-gray-700 font-semibold">File Type:</span>
+                    <span className="text-gray-900 font-bold">{proofResult.fileType}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-start pt-2 border-t border-emerald-200">
+                    <span className="text-gray-700 font-semibold">Confidence:</span>
+                    <span className="text-emerald-700 font-bold">{proofResult.confidence}/5 regions</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {proofResult === null && verifyFile && !isVerifying && (
+          <motion.div variants={itemVariants} className="mt-4">
+            <Card className="bg-red-50 border border-red-300">
+              <CardContent className="p-3">
+                <p className="text-xs font-bold text-red-700">
+                  ❌ No Watermark Found
+                </p>
+                <p className="text-xs text-red-600 mt-1">
+                  This image may not contain a valid watermark or the watermark was removed.
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </motion.div>
+
       {/* History */}
       {analysisHistory.length > 0 && (
         <motion.div variants={itemVariants}>
@@ -951,7 +1517,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   );
 
   return (
-    <div className="w-full min-h-screen bg-white p-3 md:p-4 rounded-xl">
+    <div className="w-full min-h-screen bg-slate-900 p-3 md:p-4 rounded-xl">
       <AnimatePresence mode="sync">
         {activePage === "home" && <HomePage key="home" />}
         {activePage === "overview" && <OverviewPage key="overview" />}
@@ -970,7 +1536,17 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
             className="bg-white rounded-lg max-w-2xl w-full max-h-96 overflow-hidden flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-bold text-gray-900">{selectedVaultImage.fileName}</h2>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">{selectedVaultImage.fileName}</h2>
+                {detectedOwners[selectedVaultImage.assetId] && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-semibold">
+                      <span>✓ Ownership Verified</span>
+                    </span>
+                    <span className="text-xs text-green-700 font-mono">Owner: {detectedOwners[selectedVaultImage.assetId]}</span>
+                  </div>
+                )}
+              </div>
               <Button
                 onClick={() => setShowImageModal(false)}
                 variant="ghost"

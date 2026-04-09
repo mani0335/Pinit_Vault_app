@@ -11,6 +11,7 @@ export async function loadFaceDetectionModel(): Promise<blazeface.BlazeFaceModel
     try {
       await tf.ready();
       model = await blazeface.load();
+      console.log('✅ Face detection model loaded');
     } catch (error) {
       console.error("Failed to load face detection model:", error);
       throw new Error("Face detection model failed to load");

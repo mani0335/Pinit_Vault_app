@@ -3,7 +3,7 @@ import { Shield, LogOut, ArrowLeft, AlertCircle, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { HexGrid } from "@/components/HexGrid";
 import { Button } from "@/components/ui/button";
-import PINITDashboard from "@/components/PINITDashboard";
+import PINITDashboard from "@/components/PINITDashboardModern";
 import { useEffect, useState } from "react";
 import { appStorage } from "@/lib/storage"; // ✅ IMPORTANT
 
@@ -11,14 +11,21 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [userId, setUserId] = useState<string | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isTemporaryAccess, setIsTemporaryAccess] = useState(false);
   const [isRestricted, setIsRestricted] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
-      const id = await appStorage.getItem("biovault_userId");
-      console.log("USER ID FROM appStorage:", id); // ✅ DEBUG
-      setUserId(id);
+      try {
+        const id = await appStorage.getItem("biovault_userId");
+        console.log("✅ USER ID FROM appStorage:", id);
+        setUserId(id);
+      } catch (err) {
+        console.error("❌ Failed to load userId:", err);
+      } finally {
+        setIsLoadingUser(false);
+      }
     };
     loadUser();
 
@@ -33,9 +40,34 @@ const Dashboard = () => {
     }
   }, [location.state]);
 
+  // Show loading state while userId is loading
+  if (isLoadingUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-black">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="w-12 h-12 border-3 border-cyan-500/30 border-t-cyan-500 rounded-full"></div>
+          <p className="text-cyan-400/70 text-sm font-mono">Loading vault...</p>
+        </motion.div>
+      </div>
+    );
+  }
+
   const handleLogout = () => {
+    // 🔐 Clear from BOTH storage systems (mobile + web)
     localStorage.removeItem("biovault_token");
     localStorage.removeItem("biovault_refresh_token");
+    localStorage.removeItem("biovault_userId");
+    
+    // CRITICAL: Also clear from appStorage (Capacitor Preferences for Android)
+    appStorage.removeItem("biovault_token");
+    appStorage.removeItem("biovault_refresh_token");
+    appStorage.removeItem("biovault_userId");
+    
+    console.log('🚪 Dashboard: Logout complete - all storage cleared');
     navigate("/login");
   };
 

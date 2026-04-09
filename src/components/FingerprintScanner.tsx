@@ -149,7 +149,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           
           console.log('📍 Saving fingerprint credential - userId:', storedUserId, 'deviceToken:', deviceToken);
           
-          const API_BASE = (import.meta.env.VITE_API_URL || 'https://biovault-app.onrender.com').trim();
+          const API_BASE = (import.meta.env.VITE_BIOMETRIC_API_URL || import.meta.env.VITE_API_URL || 'https://biovault-backend-d1f3a.onrender.com').trim();
           const url = `${API_BASE}/api/register-fingerprint`;
           console.log('🔐 Calling:', url);
           

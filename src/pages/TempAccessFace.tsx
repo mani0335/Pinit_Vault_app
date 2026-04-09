@@ -81,28 +81,71 @@ const TempAccessFace = () => {
                 
                 <FaceScanner
                   mode="temp-access"
-                  onSuccess={(faceData) => {
+                  onSuccess={async (faceData) => {
                     // CRITICAL: Prevent multiple navigations
                     if (hasNavigatedToDashboard) {
                       console.log('⚠️ Already navigating to dashboard, ignoring duplicate success');
                       return;
                     }
                     
-                    console.log('✅ Face authentication successful for temporary access');
-                    setHasNavigatedToDashboard(true);
-                    setStep("success");
-                    
-                    // Wait for success animation, then navigate with restricted flag
-                    setTimeout(() => {
-                      console.log('🚀 NAVIGATING TO DASHBOARD WITH TEMPORARY ACCESS');
-                      navigate("/dashboard", { 
-                        replace: true,
-                        state: { tempAccess: true, restricted: true }
-                      });
-                    }, 1500);
+                    // 🔐 CRITICAL FIX #4: Call backend to verify face (search all users)
+                    try {
+                      const { verifyFaceBackend } = await import('@/lib/authService');
+                      const faceEmbedding = faceData?.embedding || [];
+                      
+                      if (!faceEmbedding.length) {
+                        console.error('❌ No face embedding provided');
+                        setStep("face");
+                        return;
+                      }
+                      
+                      console.log('🔍 TempAccessFace: Verifying face with backend (searching all users)...');
+                      const result = await verifyFaceBackend(faceEmbedding, null);
+                      
+                      if (!result.verified) {
+                        console.log('❌ Face not matched in system:', result.message);
+                        setStep("face");
+                        return;
+                      }
+                      
+                      console.log('✅ Face authenticated! Storing temp token...');
+                      setHasNavigatedToDashboard(true);
+                      
+                      // Store temporary token and verified userId
+                      if (result.userId) {
+                        await appStorage.setItem('biovault_userId', result.userId);
+                        localStorage.setItem('biovault_userId', result.userId);
+                        console.log('💾 Verified userId stored:', result.userId);
+                      }
+                      if (result.token) {
+                        await appStorage.setItem('biovault_token', result.token);
+                        localStorage.setItem('biovault_token', result.token);
+                        console.log('💾 Temp access token stored');
+                      }
+                      if (result.refreshToken) {
+                        await appStorage.setItem('biovault_refresh_token', result.refreshToken);
+                        localStorage.setItem('biovault_refresh_token', result.refreshToken);
+                        console.log('💾 Temp refresh token stored');
+                      }
+                      
+                      setStep("success");
+                      
+                      // Wait for success animation, then navigate with restricted flag
+                      setTimeout(() => {
+                        console.log('🚀 NAVIGATING TO DASHBOARD WITH TEMPORARY ACCESS');
+                        navigate("/dashboard", { 
+                          replace: true,
+                          state: { tempAccess: true, restricted: true }
+                        });
+                      }, 1500);
+                    } catch (err) {
+                      console.error('❌ Temp access verification error:', err);
+                      setHasNavigatedToDashboard(false);
+                      setStep("face");
+                    }
                   }}
                   onError={() => {
-                    console.log('❌ Face authentication failed - allowing retry');
+                    console.log('❌ Face scan failed - allowing retry');
                     // Reset navigation flag to allow retry
                     setHasNavigatedToDashboard(false);
                     setStep("face");

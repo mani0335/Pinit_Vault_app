@@ -36,7 +36,7 @@ const TempAccess = () => {
       setMessage("🔍 Searching database for your face...");
       
       // Call backend to search all users and find matching face
-      const apiUrl = (import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com").trim();
+      const apiUrl = (import.meta.env.VITE_API_URL || "https://biovault-backend-d1f3a.onrender.com").trim();
       console.log("🌐 API URL:", apiUrl);
       
       const requestBody = {

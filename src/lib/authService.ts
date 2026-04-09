@@ -22,8 +22,8 @@ type AuthStore = {
 const STORE_KEY = "biovault_auth_store_v1";
 
 function apiBase(): string {
-  // Use Render FastAPI backend - actual deployed URL (d13a with latest code + Supabase)
-  return (import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com").trim();
+  // Use Render FastAPI backend - actual deployed URL (d1f3a with latest code + Supabase)
+  return (import.meta.env.VITE_API_URL || "https://biovault-backend-d1f3a.onrender.com").trim();
 }
 
 const FORCE_REMOTE = String(import.meta.env.VITE_FORCE_REMOTE || "").toLowerCase() === "true";

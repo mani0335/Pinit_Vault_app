@@ -9,16 +9,24 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Always go to Login page - it will handle the routing logic internally
-    const routeToLogin = async () => {
+    // 🔐 CRITICAL FIX #2: Check for existing valid tokens on app start
+    const route = async () => {
       try {
         // Wait for splash animation (1.8s)
         await new Promise(resolve => setTimeout(resolve, 1800));
         
-        console.log('🚀 Index: Animation complete → Routing to Login page');
-        // Always navigate to login - Login.tsx will check if user is registered
-        // If registered: show fingerprint + face verification
-        // If not registered: redirect to /biometric-options for registration or temp access
+        // Check if user has valid tokens (use biovault_token for consistency)
+        const accessToken = await appStorage.getItem('biovault_token') || localStorage.getItem('biovault_token');
+        const userId = await appStorage.getItem('biovault_userId');
+        
+        if (accessToken && userId) {
+          console.log('✅ Index: Valid tokens found → Skipping login, going to dashboard');
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+        
+        // No tokens - go to login
+        console.log('🚀 Index: No tokens found → Routing to Login page');
         navigate('/login');
       } catch (err) {
         console.error('❌ Index: Error during routing:', err);
@@ -26,7 +34,7 @@ const Index = () => {
       }
     };
     
-    routeToLogin();
+    route();
   }, [navigate]);
 
   return (

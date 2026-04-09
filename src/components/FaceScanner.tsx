@@ -35,8 +35,9 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const sampleW = 8;
-    const sampleH = 8;
+    // 🔧 FIX: Generate 128-dimensional embedding (from 16x8 pixel sample)
+    const sampleW = 16;  // Increased from 8 to 16
+    const sampleH = 8;   // Keep at 8 for 16*8 = 128 pixels
     const sampleCanvas = document.createElement("canvas");
     sampleCanvas.width = sampleW;
     sampleCanvas.height = sampleH;
@@ -47,6 +48,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     const data = sampleCtx.getImageData(0, 0, sampleW, sampleH).data;
 
     const embedding: number[] = [];
+    // Extract luminance from 16x8=128 pixels = 128-dimensional embedding
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i] || 0;
       const g = data[i + 1] || 0;
@@ -55,10 +57,22 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       embedding.push(Number(luminance.toFixed(4)));
     }
 
+    // Verify we have 128 dimensions
+    if (embedding.length !== 128) {
+      console.warn(`⚠️ Embedding has ${embedding.length} dimensions, expected 128`);
+    } else {
+      console.log(`✅ Generated 128-dimensional face embedding`);
+    }
+
     // L2 normalize embedding for cosine similarity comparison on backend.
     const norm = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
     if (norm === 0) return null;
-    return embedding.map((v) => Number((v / norm).toFixed(6)));
+    const normalized = embedding.map((v) => Number((v / norm).toFixed(6)));
+    
+    console.log(`📊 Embedding sum: ${normalized.reduce((a, b) => a + Math.abs(b), 0).toFixed(4)}`);
+    console.log(`📊 First 5 values: ${normalized.slice(0, 5).map(v => v.toFixed(4)).join(', ')}`);
+    
+    return normalized;
   }, []);
 
   const stopCamera = useCallback(() => {

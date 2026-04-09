@@ -139,17 +139,97 @@ graph TD
 
 ---
 
+## 🎥 Image Analyzer - Verify Proof Feature
+
+The **Image Analyzer** page allows users to encrypt images and verify ownership through **invisible watermarking**:
+
+### **Key Features**
+
+1. **🔐 Encrypt Image**
+   - Capture or select image from device camera
+   - Embed user ID + metadata invisibly into image pixels
+   - Metadata stored: User ID | Timestamp | File Size | File Type
+   - Multi-region watermarking: User ID embedded in 4 corners + center
+   - Watermark survives: Cropping, compression, morphing, merging
+   - Result: Encrypted image saved to vault with ownership proof
+
+2. **📤 Verify Proof**
+   - Upload encrypted image from device
+   - System automatically extracts watermark from pixels
+   - Analyzes multiple regions to find owner information
+   - Displays comprehensive **Proof Card** showing:
+     - ✅ **Owner ID** (detected from pixel watermark)
+     - 📅 **Capture Timestamp** (when image was encrypted)
+     - 📦 **File Size & Type** (from embedded metadata)
+     - ✅ **Verification Status** (watermark found/valid)
+     - 🎯 **Confidence Score** (0-5: how many regions had valid watermark)
+
+3. **🔍 Analyze Image**
+   - Analyze image type and properties
+   - Extract technical metadata from selected image
+
+### **How Watermarking Works**
+
+**LSB Steganography in Image Pixels:**
+- User ID is encoded in binary format
+- Embedded in the Least Significant Bits (LSBs) of alpha channel (opacity)
+- Invisible to human eye (no visual difference)
+- Survives JPEG/PNG compression and image editing
+- Multiple redundant copies in different pixel regions
+
+**Multi-Region Architecture:**
+```
+┌──────────────────┐
+│ ↙ Quadrant 1     │  Quadrant 1: User ID encoded
+│ (Top-Left)       │  Quadrant 2: User ID encoded
+│                  │  Quadrant 3: User ID encoded
+│ ┌──────────────┐ │  Quadrant 4: User ID encoded
+│ │ ◆ Center ◆   │ │  Center: User ID encoded
+│ └──────────────┘ │
+│ ↗ Quadrant 4     │  Even if 80% of image is cropped/removed,
+│ (Bottom-Right)   │  remaining pixels still contain owner ID
+└──────────────────┘
+```
+
+**Image Upload Flow:**
+1. User uploads encrypted image
+2. System reads pixels from all regions (corners + center)
+3. Attempts to extract user ID from each region
+4. Calculates confidence score (regions with valid data)
+5. Displays proof card with extracted metadata
+6. Shows "✅ Verified" if watermark detected and valid
+
+### **Example Usage Scenario**
+
+```
+User "john_doe" encrypts image:
+→ System embeds "john_doe" in multiple pixel regions
+→ Watermark is invisible in encrypted image file
+→ Image safely stored in vault
+
+Later, user uploads image via "Verify Proof":
+→ System extracts pixels from all regions
+→ Finds "john_doe" in 5/5 regions
+→ Displays Proof Card:
+   ✅ Owner ID: john_doe
+   📅 Encrypted: Apr 09, 2026, 2:30 PM
+   📦 File: 512 KB, PNG
+   ✅ Verification: VALID
+   🎯 Confidence: 5/5 regions
+
+User can now verify they own the image!
+```
+
 ## Current Work (What I am doing)
 
 The following items describe the active implementation workflow in this project:
 
-- Implement biometric-first login (fingerprint with secure fallback behavior).
-- Validate user + device binding through backend API checks.
-- Support temporary access flow when device mismatch occurs.
-- Support first-time user registration with biometric enrollment.
-- Keep backend verification isolated from raw biometric payloads.
-- Build and test Android debug APK through Capacitor + Gradle.
-- Improve routing and error-handling paths for login and registration.
+- Implement **Verify Proof** feature with metadata extraction (User ID, Timestamp, File Size, Type)
+- Enable **multi-region watermarking** so ownership data survives image cropping/morphing
+- Create **Proof Card** UI component showing extracted watermark metadata
+- Add **📤 Verify Proof** upload interface to Image Analyzer page
+- Build and test Android APK with image watermarking capabilities
+- Improve image pixel-level manipulation for robust watermark embedding and extraction
 
 ## App Navigation Flow
 
