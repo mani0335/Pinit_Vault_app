@@ -60,9 +60,32 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     const verifyAuth = async () => {
       try {
         console.log('🔐 [AUTH CHECK START] PINITDashboard Auth Verification');
-        // ✅ FIXED: Check for correct token key names (biovault_token, not access_token)
-        const accessToken = await appStorage.getItem('biovault_token');
-        const storedUserId = await appStorage.getItem('biovault_userId');
+        
+        // TRY 1: Check appStorage (Capacitor Preferences - Android)
+        let accessToken = null;
+        let storedUserId = null;
+        
+        try {
+          accessToken = await appStorage.getItem('biovault_token');
+          storedUserId = await appStorage.getItem('biovault_userId');
+          console.log('✅ Auth: Retrieved from appStorage (Capacitor)', { 
+            hasToken: !!accessToken, 
+            hasUserId: !!storedUserId
+          });
+        } catch (appStorageErr) {
+          console.warn('⚠️ appStorage failed, trying localStorage:', appStorageErr);
+          // TRY 2: Fallback to localStorage (Web/Backup)
+          try {
+            accessToken = localStorage.getItem('biovault_token');
+            storedUserId = localStorage.getItem('biovault_userId');
+            console.log('✅ Auth: Retrieved from localStorage (FALLBACK)', { 
+              hasToken: !!accessToken, 
+              hasUserId: !!storedUserId
+            });
+          } catch (localStorageErr) {
+            console.error('❌ Both storage methods failed:', { appStorageErr, localStorageErr });
+          }
+        }
 
         console.log('🔐 PINITDashboard Auth Check:', { 
           hasToken: !!accessToken, 
@@ -72,13 +95,13 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         });
 
         if (!accessToken || !storedUserId) {
-          const reason = !accessToken ? 'No token' : 'No userId';
+          const reason = !accessToken ? 'No token found in storage' : 'No userId found in storage';
           console.log(`❌ PINITDashboard: ${reason} - redirecting to login`);
           setAuthError(reason);
           setIsCheckingAuth(false);
           setIsAuthenticated(false);
           // Give it a moment to display error before redirecting
-          await new Promise(resolve => setTimeout(resolve, 800));
+          await new Promise(resolve => setTimeout(resolve, 1200));
           navigate('/login', { replace: true });
           return;
         }
@@ -94,7 +117,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         setIsCheckingAuth(false);
         setIsAuthenticated(false);
         // Give it a moment to display error before redirecting
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1200));
         navigate('/login', { replace: true });
       }
     };
@@ -105,7 +128,17 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   // Loading state
   if (isCheckingAuth) {
     return (
-      <div className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center">
+      <div className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center relative">
+        {/* ON-SCREEN DEBUG PANEL */}
+        <div className="fixed top-0 left-0 right-0 bg-slate-900/95 border-b border-cyan-500/30 p-4 text-xs font-mono text-cyan-300 max-h-32 overflow-auto z-50">
+          <div className="max-w-4xl mx-auto space-y-1">
+            <div>🔐 AUTH CHECK IN PROGRESS...</div>
+            <div>📍 Checking appStorage (Capacitor Preferences)</div>
+            <div>🔄 Will fallback to localStorage if needed</div>
+            <div className="text-slate-400 mt-2">This should take 1-2 seconds...</div>
+          </div>
+        </div>
+
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -113,6 +146,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         >
           <div className="w-12 h-12 border-3 border-cyan-500/30 border-t-cyan-500 rounded-full"></div>
           <p className="text-cyan-400/70 text-sm font-mono">Authenticating...</p>
+          <p className="text-slate-500 text-xs">(Checking storage for token...)</p>
         </motion.div>
       </div>
     );
@@ -588,7 +622,8 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       isAuthenticated,
       activePage,
       loadingVault,
-      vaultImagesCount: vaultImages.length
+      vaultImagesCount: vaultImages.length,
+      userIdProp: userId
     });
 
     if (!isAuthenticated) {
@@ -603,13 +638,21 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-white overflow-hidden">
-        {/* DEBUG: Show we're rendering */}
-        <div className="fixed top-0 left-0 bg-cyan-900/20 text-cyan-400 text-xs px-2 py-1 font-mono z-50 pointer-events-none">
-          Page: {pageToRender} | Vault: {vaultImages.length} | Auth: {isAuthenticated ? '✓' : '✗'} | HomePage Ready
+        {/* ON-SCREEN DEBUG PANEL - Shows authentication success and rendering status */}
+        <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-slate-900/95 to-slate-900/95 border-b border-emerald-500/30 p-3 text-xs font-mono text-emerald-300 z-50">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div className="space-y-1">
+              <div>✅ AUTH SUCCESS | Page: <span className="text-cyan-400">{pageToRender}</span> | Vault: <span className="text-cyan-400">{vaultImages.length}</span> images</div>
+              <div className="text-slate-500">User ID: {userId ? userId.substring(0, 16) + '...' : 'loading'}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-emerald-400">Dashboard Ready</div>
+            </div>
+          </div>
         </div>
 
         {/* Main Content */}
-        <div className="max-w-4xl mx-auto p-6 pb-24">
+        <div className="max-w-4xl mx-auto p-6 pb-24 pt-20">
           {/* EMERGENCY FALLBACK: Render page directly if it matches, don't rely on AnimatePresence */}
           {pageToRender === "home" && (
             <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
