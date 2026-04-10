@@ -982,7 +982,13 @@ app.get('/api/user/:userId/biometric-status', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.send('Biovault mock server running'));
+// Serve React app static files
+app.use(express.static(join(__dirname, '../dist')));
+
+// SPA fallback: serve index.html for all unmatched routes
+app.get('*', (req, res) => {
+  res.sendFile(join(__dirname, '../dist/index.html'));
+});
 
 const port = process.env.PORT || 3333;
 
