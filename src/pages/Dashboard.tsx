@@ -88,74 +88,68 @@ const Dashboard = () => {
     navigate("/register", { replace: true });
   };
 
-  try {
-    console.log('🎨 [Dashboard] Rendering with userId:', userId);
-    return (
-      <div className="min-h-screen relative overflow-hidden">
-        <HexGrid />
-        <div className="relative z-10 min-h-screen px-4 py-8">
+  console.log('🎨 [Dashboard] Rendering with userId:', userId);
+  return (
+    <div className="min-h-screen relative overflow-hidden">
+      <HexGrid />
+      <div className="relative z-10 min-h-screen px-4 py-8">
 
-          {/* Temporary Access Banner */}
-          {isTemporaryAccess && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="max-w-6xl mx-auto mb-6 p-4 bg-amber-500/10 border-2 border-amber-500/50 rounded-xl"
-            >
-              <div className="flex items-start gap-4">
-                <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="font-display font-bold text-amber-500 mb-2">⏱️ TEMPORARY ACCESS ACTIVE</h3>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    You are currently in restricted mode with read-only access. Complete your full registration to unlock all features including upload, encryption, and export capabilities.
-                  </p>
-                  <Button 
-                    onClick={handleCompleteRegistration}
-                    className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-500 px-4 py-2 h-auto text-sm font-mono transition-all"
-                  >
-                    <Zap className="w-4 h-4 mr-2" />
-                    Complete Registration Now
-                  </Button>
-                </div>
+        {/* Temporary Access Banner */}
+        {isTemporaryAccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-6xl mx-auto mb-6 p-4 bg-amber-500/10 border-2 border-amber-500/50 rounded-xl"
+          >
+            <div className="flex items-start gap-4">
+              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-display font-bold text-amber-500 mb-2">⏱️ TEMPORARY ACCESS ACTIVE</h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  You are currently in restricted mode with read-only access. Complete your full registration to unlock all features including upload, encryption, and export capabilities.
+                </p>
+                <Button 
+                  onClick={handleCompleteRegistration}
+                  className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-500 px-4 py-2 h-auto text-sm font-mono transition-all"
+                >
+                  <Zap className="w-4 h-4 mr-2" />
+                  Complete Registration Now
+                </Button>
               </div>
-            </motion.div>
-          )}
-
-          {/* Top Bar */}
-          <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" onClick={handleBack} className="text-black hover:text-gray-700">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <Shield className="w-6 h-6 text-primary" />
-              <h1 className="text-xl font-display font-bold tracking-wider text-foreground text-glow-cyan">
-                PINIT VAULT
-              </h1>
-              {isTemporaryAccess && (
-                <span className="ml-4 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-xs font-mono text-amber-500">
-                  TEMPORARY ACCESS
-                </span>
-              )}
             </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground">
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
+          </motion.div>
+        )}
+
+        {/* Top Bar */}
+        <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={handleBack} className="text-black hover:text-gray-700">
+              <ArrowLeft className="w-5 h-5" />
             </Button>
+            <Shield className="w-6 h-6 text-primary" />
+            <h1 className="text-xl font-display font-bold tracking-wider text-foreground text-glow-cyan">
+              PINIT VAULT
+            </h1>
+            {isTemporaryAccess && (
+              <span className="ml-4 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-xs font-mono text-amber-500">
+                TEMPORARY ACCESS
+              </span>
+            )}
           </div>
-
-          {/* Dashboard Content */}
-          <div className="max-w-6xl mx-auto">
-            <PINITDashboard userId={userId || undefined} isRestricted={isRestricted} />
-          </div>
-
+          <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground">
+            <LogOut className="w-4 h-4 mr-2" />
+            Logout
+          </Button>
         </div>
+
+        {/* Dashboard Content */}
+        <div className="max-w-6xl mx-auto">
+          <PINITDashboard userId={userId || undefined} isRestricted={isRestricted} />
+        </div>
+
       </div>
-    );
-  } catch (err) {
-    console.error('❌ [Dashboard] RENDER ERROR:', err);
-    // Let the global error boundary handle this
-    throw err;
-  }
+    </div>
+  );
 };
 
 export default Dashboard;
