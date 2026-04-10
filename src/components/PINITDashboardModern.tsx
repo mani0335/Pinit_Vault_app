@@ -360,15 +360,17 @@ function SettingsPage({ userId, isRestricted, setActivePage, handleLogout }: Set
 export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
   
-  // ✅ CRITICAL FIX: ALL hooks MUST be defined at the top before ANY conditional returns
-  // This prevents React error #310 (hooks count mismatch between renders)
+  // ✅ CRITICAL FIX: ALL hooks MUST be at the top before ANY code/returns
+  // This prevents React error #310 (hooks count must be consistent across renders)
+  
+  // Auth states
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<"home" | "vault" | "analyzer" | "settings">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // Data states - defined EARLY before auth checks
+  // Data states
   const [vaultImages, setVaultImages] = useState<any[]>([]);
   const [loadingVault, setLoadingVault] = useState(false);
   const [cryptoFile, setCryptoFile] = useState<File | null>(null);
@@ -380,6 +382,48 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [verifyPreview, setVerifyPreview] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [proofResult, setProofResult] = useState<WatermarkMetadata | null>(null);
+
+  // Load vault images - useCallback MUST be at top
+  const loadVaultImages = useCallback(async () => {
+    setLoadingVault(true);
+    try {
+      let currentUserId = userId;
+      if (!currentUserId) {
+        currentUserId = await appStorage.getItem('biovault_userId');
+      }
+
+      if (!currentUserId) {
+        console.warn('⚠️ No userId available for vault load');
+        setLoadingVault(false);
+        return;
+      }
+
+      console.log('📦 Loading vault images for userId:', currentUserId);
+      const res = await vaultAPI.list(currentUserId);
+      const images = (res.assets || []).map((a: any) => ({
+        ...a,
+        id: a.asset_id || a.id,
+        fileName: a.file_name || "Unknown",
+        fileSize: a.file_size || "—",
+        dateEncrypted: a.created_at,
+        status: "Verified",
+        thumbnail: a.thumbnail_url,
+      }));
+
+      setVaultImages(images);
+      console.log('✅ Vault loaded:', images.length, 'images');
+    } catch (err) {
+      console.error("❌ Failed to load vault:", err);
+      setVaultImages([]);
+    } finally {
+      setLoadingVault(false);
+    }
+  }, [userId]);
+
+  // All useEffect hooks - must be at top
+  useEffect(() => {
+    loadVaultImages();
+  }, [loadVaultImages]);
 
   // Verify authentication
   useEffect(() => {
@@ -497,47 +541,6 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       </div>
     );
   }
-
-  // Load vault images
-  const loadVaultImages = useCallback(async () => {
-    setLoadingVault(true);
-    try {
-      let currentUserId = userId;
-      if (!currentUserId) {
-        currentUserId = await appStorage.getItem('biovault_userId');
-      }
-
-      if (!currentUserId) {
-        console.warn('⚠️ No userId available for vault load');
-        setLoadingVault(false);
-        return; // Exit early if no userId
-      }
-
-      console.log('📦 Loading vault images for userId:', currentUserId);
-      const res = await vaultAPI.list(currentUserId);
-      const images = (res.assets || []).map((a: any) => ({
-        ...a,
-        id: a.asset_id || a.id,
-        fileName: a.file_name || "Unknown",
-        fileSize: a.file_size || "—",
-        dateEncrypted: a.created_at,
-        status: "Verified",
-        thumbnail: a.thumbnail_url,
-      }));
-
-      setVaultImages(images);
-      console.log('✅ Vault loaded:', images.length, 'images');
-    } catch (err) {
-      console.error("❌ Failed to load vault:", err);
-      setVaultImages([]); // Set empty array on error
-    } finally {
-      setLoadingVault(false);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    loadVaultImages();
-  }, [loadVaultImages]);
 
   // Image handlers
   const handleCameraCapture = async () => {
