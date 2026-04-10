@@ -47,6 +47,316 @@ interface PINITDashboardProps {
   isRestricted?: boolean;
 }
 
+// Animation variants (defined outside)
+const pageVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.3 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+};
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05, delayChildren: 0.1 },
+  },
+};
+
+// HomePage component (moved outside)
+interface HomePageProps {
+  userId?: string;
+  isRestricted?: boolean;
+  vaultImages: any[];
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+}
+
+function HomePage({ userId, isRestricted, vaultImages, setActivePage }: HomePageProps) {
+  return (
+    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-8">
+      {/* Hero Section */}
+      <motion.div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 p-8 text-white shadow-2xl">
+        <motion.div
+          className="absolute inset-0 opacity-20"
+          animate={{ backgroundPosition: ["0% 0%", "100% 100%"] }}
+          transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px)",
+            backgroundSize: "50px 50px",
+          }}
+        />
+
+        <div className="relative z-10">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+            <div className="flex items-center gap-3 mb-4">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                className="w-10 h-10 rounded-full border-2 border-white/30 border-t-white"
+              />
+              <span className="text-sm font-semibold uppercase tracking-wider text-cyan-100">Secure Vault</span>
+            </div>
+            <h1 className="text-4xl font-bold mb-3 leading-tight">
+              Welcome Back
+              <br />
+              <span className="bg-gradient-to-r from-cyan-200 to-white bg-clip-text text-transparent">{userId ? userId.substring(0, 12) : "User"}</span>
+            </h1>
+            <p className="text-lg text-blue-100/80 max-w-lg">
+              Your biometric vault is secure and ready. Manage your encrypted assets with confidence.
+            </p>
+          </motion.div>
+
+          {isRestricted && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 p-4 bg-orange-500/20 border border-orange-400/50 rounded-xl flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-orange-300 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-orange-200">Temporary Access Active</p>
+                <p className="text-xs text-orange-100/70 mt-1">Some features are limited until full authentication</p>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Quick Stats */}
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { icon: Image, label: "Assets", value: vaultImages.length, color: "from-blue-600 to-cyan-600" },
+          { icon: Lock, label: "Encrypted", value: "100%", color: "from-green-600 to-emerald-600" },
+          { icon: Shield, label: "Security", value: "Grade A", color: "from-purple-600 to-pink-600" },
+          { icon: TrendingUp, label: "Activity", value: "Active", color: "from-orange-600 to-red-600" },
+        ].map((stat, idx) => (
+          <motion.div key={idx} variants={itemVariants}>
+            <motion.div
+              whileHover={{ y: -4, boxShadow: "0 20px 40px rgba(0,0,0,0.3)" }}
+              className={`bg-gradient-to-br ${stat.color} rounded-2xl p-6 text-white shadow-lg cursor-pointer overflow-hidden group relative`}
+            >
+              <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-white transition-opacity duration-300" />
+              <div className="relative z-10">
+                <stat.icon className="w-6 h-6 mb-3 opacity-80" />
+                <p className="text-xs opacity-80 mb-2">{stat.label}</p>
+                <p className="text-2xl font-bold">{stat.value}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* Quick Actions */}
+      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-3">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2 px-2">
+          <Zap className="w-5 h-5 text-yellow-400" />
+          Quick Actions
+        </h2>
+
+        <motion.div className="grid grid-cols-3 gap-3">
+          {[
+            { icon: Camera, label: "Encrypt Image", action: "analyzer" as const, color: "from-cyan-600 to-blue-600" },
+            { icon: Image, label: "My Vault", action: "vault" as const, color: "from-purple-600 to-pink-600" },
+            { icon: Settings, label: "Settings", action: "settings" as const, color: "from-slate-600 to-slate-700" },
+          ].map((action, idx) => (
+            <motion.div key={idx} variants={itemVariants}>
+              <motion.button
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setActivePage(action.action)}
+                className={`w-full bg-gradient-to-br ${action.color} rounded-2xl p-6 text-white shadow-lg transition-all duration-300 group relative overflow-hidden`}
+              >
+                <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-20 bg-white" />
+                <div className="relative z-10 flex flex-col items-center gap-3">
+                  <action.icon className="w-7 h-7" />
+                  <span className="text-sm font-semibold">{action.label}</span>
+                </div>
+              </motion.button>
+            </motion.div>
+          ))}
+        </motion.div>
+      </motion.div>
+
+      {/* Recent Activity */}
+      {vaultImages.length > 0 && (
+        <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-3">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2 px-2">
+            <Activity className="w-5 h-5 text-cyan-400" />
+            Recent Assets
+          </h2>
+
+          <motion.div className="space-y-2">
+            {vaultImages.slice(0, 3).map((image, idx) => (
+              <motion.div key={idx} variants={itemVariants}>
+                <motion.div whileHover={{ x: 4 }} className="bg-gradient-to-r from-slate-800 to-slate-800/50 rounded-xl p-4 border border-slate-700/50 hover:border-cyan-500/50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                      <Image className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium truncate text-sm">{image.fileName}</p>
+                      <p className="text-slate-400 text-xs">{image.fileSize} • {image.status}</p>
+                    </div>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                  </div>
+                </motion.div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+// VaultPage component (moved outside)
+interface VaultPageProps {
+  vaultImages: any[];
+  loadingVault: boolean;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+}
+
+function VaultPage({ vaultImages, loadingVault, setActivePage }: VaultPageProps) {
+  return (
+    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <motion.button
+          whileHover={{ x: -4 }}
+          onClick={() => setActivePage("home")}
+          className="p-2 rounded-xl hover:bg-slate-800/50 transition-colors"
+        >
+          <ArrowLeft className="w-6 h-6 text-cyan-400" />
+        </motion.button>
+        <div>
+          <h1 className="text-3xl font-bold text-white">My Vault</h1>
+          <p className="text-slate-400 text-sm mt-1">{vaultImages.length} encrypted assets</p>
+        </div>
+      </div>
+
+      {loadingVault ? (
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }} className="flex justify-center py-12">
+          <div className="w-10 h-10 border-3 border-cyan-500/30 border-t-cyan-500 rounded-full" />
+        </motion.div>
+      ) : vaultImages.length === 0 ? (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-16">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/50 flex items-center justify-center">
+            <Image className="w-8 h-8 text-slate-500" />
+          </div>
+          <p className="text-slate-400 text-lg font-medium">No assets yet</p>
+          <p className="text-slate-500 text-sm mt-2">Encrypt and store your first image</p>
+        </motion.div>
+      ) : (
+         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {vaultImages.map((image, idx) => (
+            <motion.div key={idx} variants={itemVariants} whileHover={{ y: -4 }} className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl overflow-hidden border border-slate-700/50 hover:border-cyan-500/50 transition-colors shadow-lg">
+              {image.thumbnail && (
+                <img src={image.thumbnail} alt={image.fileName} className="w-full h-40 object-cover" />
+              )}
+              <div className="p-4">
+                <p className="text-white font-semibold truncate">{image.fileName}</p>
+                <p className="text-slate-400 text-xs mt-2">{image.fileSize}</p>
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/30">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span className="text-slate-400 text-xs">{image.status}</span>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+// AnalyzerPage component (moved outside)
+interface AnalyzerPageProps {
+  userId?: string;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+}
+
+function AnalyzerPage({ userId, setActivePage }: AnalyzerPageProps) {
+  return (
+    <ImageAnalyzer 
+      userId={userId || "unknown"} 
+      onBack={() => setActivePage("home")} 
+    />
+  );
+}
+
+// SettingsPage component (moved outside)
+interface SettingsPageProps {
+  userId?: string;
+  isRestricted?: boolean;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+  handleLogout: () => void;
+}
+
+function SettingsPage({ userId, isRestricted, setActivePage, handleLogout }: SettingsPageProps) {
+  return (
+    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+      <div className="flex items-center gap-3 mb-6">
+        <motion.button whileHover={{ x: -4 }} onClick={() => setActivePage("home")} className="p-2 rounded-xl hover:bg-slate-800/50 transition-colors">
+          <ArrowLeft className="w-6 h-6 text-cyan-400" />
+        </motion.button>
+        <h1 className="text-3xl font-bold text-white">Settings</h1>
+      </div>
+
+      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-4">
+        {/* User Info */}
+        <motion.div variants={itemVariants} className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-6 border border-slate-700/50">
+          <p className="text-slate-400 text-sm mb-2">User ID</p>
+          <p className="text-white font-mono font-bold text-lg break-all">{userId || "Unknown"}</p>
+        </motion.div>
+
+        {/* Security Status */}
+        <motion.div variants={itemVariants} className="bg-gradient-to-br from-emerald-600/10 to-green-600/10 rounded-2xl p-6 border border-emerald-500/30 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+            <Shield className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div className="flex-1">
+            <p className="text-emerald-300 font-semibold">Security Status</p>
+            <p className="text-emerald-200 text-sm">Your vault is secure</p>
+          </div>
+        </motion.div>
+
+        {/* Access Type */}
+        <motion.div variants={itemVariants} className={`rounded-2xl p-6 border flex items-center gap-4 ${
+          isRestricted
+            ? "bg-orange-600/10 border-orange-500/30"
+            : "bg-cyan-600/10 border-cyan-500/30"
+        }`}>
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isRestricted
+              ? "bg-orange-500/20"
+              : "bg-cyan-500/20"
+          }`}>
+            <Lock className={isRestricted ? "w-6 h-6 text-orange-400" : "w-6 h-6 text-cyan-400"} />
+          </div>
+          <div className="flex-1">
+            <p className={isRestricted ? "text-orange-300 font-semibold" : "text-cyan-300 font-semibold"}>
+              {isRestricted ? "Temporary Access" : "Full Access"}
+            </p>
+            <p className={isRestricted ? "text-orange-200 text-sm" : "text-cyan-200 text-sm"}>
+              {isRestricted ? "Limited features active" : "All features available"}
+            </p>
+          </div>
+        </motion.div>
+
+        {/* Logout */}
+        <motion.button
+          whileHover={{ scale: 1.02, y: -2 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleLogout}
+          className="w-full p-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-semibold transition-all shadow-lg flex items-center justify-center gap-2"
+        >
+          <LogOut className="w-5 h-5" />
+          Logout
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -320,302 +630,6 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     navigate("/login");
   };
 
-  // Animation variants
-  const pageVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
-    exit: { opacity: 0, y: -20, transition: { duration: 0.3 } },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.05, delayChildren: 0.1 },
-    },
-  };
-
-  // ===================== HOME PAGE =====================
-  const HomePage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 p-8 text-white shadow-2xl">
-        <motion.div
-          className="absolute inset-0 opacity-20"
-          animate={{ backgroundPosition: ["0% 0%", "100% 100%"] }}
-          transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
-          style={{
-            backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-
-        <div className="relative z-10">
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="flex items-center gap-3 mb-4">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                className="w-10 h-10 rounded-full border-2 border-white/30 border-t-white"
-              />
-              <span className="text-sm font-semibold uppercase tracking-wider text-cyan-100">Secure Vault</span>
-            </div>
-            <h1 className="text-4xl font-bold mb-3 leading-tight">
-              Welcome Back
-              <br />
-              <span className="bg-gradient-to-r from-cyan-200 to-white bg-clip-text text-transparent">{userId ? userId.substring(0, 12) : "User"}</span>
-            </h1>
-            <p className="text-lg text-blue-100/80 max-w-lg">
-              Your biometric vault is secure and ready. Manage your encrypted assets with confidence.
-            </p>
-          </motion.div>
-
-          {isRestricted && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 p-4 bg-orange-500/20 border border-orange-400/50 rounded-xl flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-orange-300 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-orange-200">Temporary Access Active</p>
-                <p className="text-xs text-orange-100/70 mt-1">Some features are limited until full authentication</p>
-              </div>
-            </motion.div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Quick Stats */}
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { icon: Image, label: "Assets", value: vaultImages.length, color: "from-blue-600 to-cyan-600" },
-          { icon: Lock, label: "Encrypted", value: "100%", color: "from-green-600 to-emerald-600" },
-          { icon: Shield, label: "Security", value: "Grade A", color: "from-purple-600 to-pink-600" },
-          { icon: TrendingUp, label: "Activity", value: "Active", color: "from-orange-600 to-red-600" },
-        ].map((stat, idx) => (
-          <motion.div key={idx} variants={itemVariants}>
-            <motion.div
-              whileHover={{ y: -4, boxShadow: "0 20px 40px rgba(0,0,0,0.3)" }}
-              className={`bg-gradient-to-br ${stat.color} rounded-2xl p-6 text-white shadow-lg cursor-pointer overflow-hidden group relative`}
-            >
-              <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-10 bg-white transition-opacity duration-300" />
-              <div className="relative z-10">
-                <stat.icon className="w-6 h-6 mb-3 opacity-80" />
-                <p className="text-xs opacity-80 mb-2">{stat.label}</p>
-                <p className="text-2xl font-bold">{stat.value}</p>
-              </div>
-            </motion.div>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Quick Actions */}
-      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-3">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2 px-2">
-          <Zap className="w-5 h-5 text-yellow-400" />
-          Quick Actions
-        </h2>
-
-        <motion.div className="grid grid-cols-2 gap-3">
-          {[
-            { icon: Camera, label: "Encrypt Image", action: "analyzer", color: "from-cyan-600 to-blue-600" },
-            { icon: FileSearch, label: "Verify Proof", action: "verify", color: "from-emerald-600 to-green-600" },
-            { icon: Image, label: "My Vault", action: "vault", color: "from-purple-600 to-pink-600" },
-            { icon: Settings, label: "Settings", action: "settings", color: "from-slate-600 to-slate-700" },
-          ].map((action, idx) => (
-            <motion.div key={idx} variants={itemVariants}>
-              <motion.button
-                whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setActivePage(action.action as any)}
-                className={`w-full bg-gradient-to-br ${action.color} rounded-2xl p-6 text-white shadow-lg transition-all duration-300 group relative overflow-hidden`}
-              >
-                <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-20 bg-white" />
-                <div className="relative z-10 flex flex-col items-center gap-3">
-                  <action.icon className="w-7 h-7" />
-                  <span className="text-sm font-semibold">{action.label}</span>
-                </div>
-              </motion.button>
-            </motion.div>
-          ))}
-        </motion.div>
-      </motion.div>
-
-      {/* Recent Activity */}
-      {vaultImages.length > 0 && (
-        <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-3">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2 px-2">
-            <Activity className="w-5 h-5 text-cyan-400" />
-            Recent Assets
-          </h2>
-
-          <motion.div className="space-y-2">
-            {vaultImages.slice(0, 3).map((image, idx) => (
-              <motion.div key={idx} variants={itemVariants}>
-                <motion.div whileHover={{ x: 4 }} className="bg-gradient-to-r from-slate-800 to-slate-800/50 rounded-xl p-4 border border-slate-700/50 hover:border-cyan-500/50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-                      <Image className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium truncate text-sm">{image.fileName}</p>
-                      <p className="text-slate-400 text-xs">{image.fileSize} • {image.status}</p>
-                    </div>
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                  </div>
-                </motion.div>
-              </motion.div>
-            ))}
-          </motion.div>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-
-  // ===================== VAULT PAGE =====================
-  const VaultPage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <motion.button
-          whileHover={{ x: -4 }}
-          onClick={() => setActivePage("home")}
-          className="p-2 rounded-xl hover:bg-slate-800/50 transition-colors"
-        >
-          <ArrowLeft className="w-6 h-6 text-cyan-400" />
-        </motion.button>
-        <div>
-          <h1 className="text-3xl font-bold text-white">My Vault</h1>
-          <p className="text-slate-400 text-sm mt-1">{vaultImages.length} encrypted assets</p>
-        </div>
-      </div>
-
-      {loadingVault ? (
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }} className="flex justify-center py-12">
-          <div className="w-10 h-10 border-3 border-cyan-500/30 border-t-cyan-500 rounded-full" />
-        </motion.div>
-      ) : vaultImages.length === 0 ? (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-16">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/50 flex items-center justify-center">
-            <Image className="w-8 h-8 text-slate-500" />
-          </div>
-          <p className="text-slate-400 text-lg font-medium">No assets yet</p>
-          <p className="text-slate-500 text-sm mt-2">Encrypt and store your first image</p>
-        </motion.div>
-      ) : (
-        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {vaultImages.map((image, idx) => (
-            <motion.div key={idx} variants={itemVariants} whileHover={{ y: -4 }} className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl overflow-hidden border border-slate-700/50 hover:border-cyan-500/50 transition-colors shadow-lg">
-              {image.thumbnail && (
-                <img src={image.thumbnail} alt={image.fileName} className="w-full h-40 object-cover" />
-              )}
-              <div className="p-4">
-                <p className="text-white font-semibold truncate">{image.fileName}</p>
-                <p className="text-slate-400 text-xs mt-2">{image.fileSize}</p>
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/30">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span className="text-slate-400 text-xs">{image.status}</span>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-      )}
-    </motion.div>
-  );
-
-  // ===================== ANALYZER PAGE =====================
-  const AnalyzerPage = () => {
-    try {
-      return (
-        <ImageAnalyzer 
-          userId={userId || "unknown"} 
-          onBack={() => setActivePage("home")} 
-        />
-      );
-    } catch (err) {
-      console.error('❌ AnalyzerPage error:', err);
-      return (
-        <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="flex items-center justify-center p-8">
-          <div className="text-center">
-            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-            <p className="text-white font-bold mb-2">Analyzer Error</p>
-            <p className="text-sm text-slate-400">{err instanceof Error ? err.message : 'Unknown error'}</p>
-            <button onClick={() => setActivePage("home")} className="mt-4 px-4 py-2 bg-cyan-600 text-white rounded text-sm">
-              Back to Home
-            </button>
-          </div>
-        </motion.div>
-      );
-    }
-  };
-
-  // ===================== SETTINGS PAGE =====================
-  const SettingsPage = () => (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <motion.button whileHover={{ x: -4 }} onClick={() => setActivePage("home")} className="p-2 rounded-xl hover:bg-slate-800/50 transition-colors">
-          <ArrowLeft className="w-6 h-6 text-cyan-400" />
-        </motion.button>
-        <h1 className="text-3xl font-bold text-white">Settings</h1>
-      </div>
-
-      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="space-y-4">
-        {/* User Info */}
-        <motion.div variants={itemVariants} className="bg-gradient-to-br from-slate-800 to-slate-800/50 rounded-2xl p-6 border border-slate-700/50">
-          <p className="text-slate-400 text-sm mb-2">User ID</p>
-          <p className="text-white font-mono font-bold text-lg break-all">{userId || "Unknown"}</p>
-        </motion.div>
-
-        {/* Security Status */}
-        <motion.div variants={itemVariants} className="bg-gradient-to-br from-emerald-600/10 to-green-600/10 rounded-2xl p-6 border border-emerald-500/30 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-            <Shield className="w-6 h-6 text-emerald-400" />
-          </div>
-          <div className="flex-1">
-            <p className="text-emerald-300 font-semibold">Security Status</p>
-            <p className="text-emerald-200 text-sm">Your vault is secure</p>
-          </div>
-        </motion.div>
-
-        {/* Access Type */}
-        <motion.div variants={itemVariants} className={`rounded-2xl p-6 border flex items-center gap-4 ${
-          isRestricted
-            ? "bg-orange-600/10 border-orange-500/30"
-            : "bg-cyan-600/10 border-cyan-500/30"
-        }`}>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-            isRestricted
-              ? "bg-orange-500/20"
-              : "bg-cyan-500/20"
-          }`}>
-            <Lock className={isRestricted ? "w-6 h-6 text-orange-400" : "w-6 h-6 text-cyan-400"} />
-          </div>
-          <div className="flex-1">
-            <p className={isRestricted ? "text-orange-300 font-semibold" : "text-cyan-300 font-semibold"}>
-              {isRestricted ? "Temporary Access" : "Full Access"}
-            </p>
-            <p className={isRestricted ? "text-orange-200 text-sm" : "text-cyan-200 text-sm"}>
-              {isRestricted ? "Limited features active" : "All features available"}
-            </p>
-          </div>
-        </motion.div>
-
-        {/* Logout */}
-        <motion.button
-          whileHover={{ scale: 1.02, y: -2 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleLogout}
-          className="w-full p-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-semibold transition-all shadow-lg flex items-center justify-center gap-2"
-        >
-          <LogOut className="w-5 h-5" />
-          Logout
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
-
   // ===================== RENDER =====================
   try {
     console.log('📊 Rendering PINITDashboard:', {
@@ -631,64 +645,41 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       return null;
     }
 
-    // CRITICAL: Always have a default fallback
     const pageToRender = activePage || 'home';
     
-    console.log('🎯 Rendering page:', pageToRender);
-
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-white overflow-hidden">
-        {/* ON-SCREEN DEBUG PANEL - Shows authentication success and rendering status */}
-        <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-slate-900/95 to-slate-900/95 border-b border-emerald-500/30 p-3 text-xs font-mono text-emerald-300 z-50">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <div className="space-y-1">
-              <div>✅ AUTH SUCCESS | Page: <span className="text-cyan-400">{pageToRender}</span> | Vault: <span className="text-cyan-400">{vaultImages.length}</span> images</div>
-              <div className="text-slate-500">User ID: {userId ? userId.substring(0, 16) + '...' : 'loading'}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-emerald-400">Dashboard Ready</div>
-            </div>
-          </div>
-        </div>
-
         {/* Main Content */}
         <div className="max-w-4xl mx-auto p-6 pb-24 pt-20">
-          {/* EMERGENCY FALLBACK: Render page directly if it matches, don't rely on AnimatePresence */}
+          {/* Render pages */}
           {pageToRender === "home" && (
-            <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <HomePage />
-            </motion.div>
+            <HomePage 
+              userId={userId} 
+              isRestricted={isRestricted} 
+              vaultImages={vaultImages} 
+              setActivePage={setActivePage} 
+            />
           )}
           {pageToRender === "vault" && (
-            <motion.div key="vault" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <VaultPage />
-            </motion.div>
+            <VaultPage 
+              vaultImages={vaultImages} 
+              loadingVault={loadingVault} 
+              setActivePage={setActivePage} 
+            />
           )}
           {pageToRender === "analyzer" && (
-            <motion.div key="analyzer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <AnalyzerPage />
-            </motion.div>
+            <AnalyzerPage 
+              userId={userId} 
+              setActivePage={setActivePage} 
+            />
           )}
           {pageToRender === "settings" && (
-            <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <SettingsPage />
-            </motion.div>
-          )}
-          
-          {/* If nothing matches, show emergency fallback */}
-          {!["home", "vault", "analyzer", "settings"].includes(pageToRender) && (
-            <div className="min-h-screen flex items-center justify-center text-center">
-              <div>
-                <p className="text-red-400 font-bold text-xl mb-2">PAGE RENDER ERROR</p>
-                <p className="text-slate-400">Unknown page: {pageToRender}</p>
-                <button
-                  onClick={() => setActivePage("home")}
-                  className="mt-4 px-4 py-2 bg-cyan-600 rounded text-white"
-                >
-                  Go to Home
-                </button>
-              </div>
-            </div>
+            <SettingsPage 
+              userId={userId} 
+              isRestricted={isRestricted} 
+              setActivePage={setActivePage} 
+              handleLogout={handleLogout} 
+            />
           )}
         </div>
 
