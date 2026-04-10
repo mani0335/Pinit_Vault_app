@@ -52,56 +52,15 @@ interface PINITDashboardProps {
 
 export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
+  
+  // ✅ CRITICAL FIX: ALL hooks MUST be at the very top - before ANY code or early returns
+  // React counts hooks on every render - if the count changes = Error #310
+  
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [activePage, setActivePage] = useState<"home" | "overview" | "vault" | "analyzer">("home");
-
-  // 🔐 CRITICAL FIX #3: Verify authentication tokens on component mount
-  useEffect(() => {
-    const verifyAuth = async () => {
-      try {
-        const accessToken = await appStorage.getItem('access_token');
-        const storedUserId = await appStorage.getItem('biovault_userId');
-        
-        // Both must exist for valid authenticated session
-        if (!accessToken || !storedUserId) {
-          console.log('❌ Dashboard: No valid tokens - redirecting to login');
-          navigate('/login', { replace: true });
-          setIsCheckingAuth(false);
-          return;
-        }
-        
-        console.log('✅ Dashboard: Valid tokens found - allowing access');
-        setIsAuthenticated(true);
-        setIsCheckingAuth(false);
-      } catch (err) {
-        console.error('❌ Dashboard: Auth verification failed:', err);
-        navigate('/login', { replace: true });
-        setIsCheckingAuth(false);
-      }
-    };
-    
-    verifyAuth();
-  }, [navigate]);
   
-  // Show loading while checking authentication
-  if (isCheckingAuth) {
-    return (
-      <div className="w-full min-h-screen bg-white flex items-center justify-center rounded-xl">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-gray-600 font-mono text-sm">Verifying authentication...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Redirect if not authenticated
-  if (!isAuthenticated) {
-    return null; // Will be replaced by navigate
-  }
-
-  // ===================== REAL DATA FROM APIs =====================
+  // ✅ ALL data state - defined at top
   const [vaultImages, setVaultImages] = useState<any[]>([]);
   const [certificates, setCertificates] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
@@ -135,11 +94,10 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // ===================== LOAD REAL DATA FROM APIs =====================
+  // ✅ ALL useCallback hooks - must be at top
   const loadVaultImages = useCallback(async () => {
     setLoadingVault(true);
     try {
-      // Get user_id from props or storage
       let currentUserId = userId;
       if (!currentUserId) {
         const storedUserId = await appStorage.getItem('biovault_userId');
@@ -209,6 +167,33 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       setLoadingReports(false);
     }
   }, []);
+
+  // ✅ ALL useEffect hooks - must be at top
+  useEffect(() => {
+    const verifyAuth = async () => {
+      try {
+        const accessToken = await appStorage.getItem('access_token');
+        const storedUserId = await appStorage.getItem('biovault_userId');
+        
+        if (!accessToken || !storedUserId) {
+          console.log('❌ Dashboard: No valid tokens - redirecting to login');
+          navigate('/login', { replace: true });
+          setIsCheckingAuth(false);
+          return;
+        }
+        
+        console.log('✅ Dashboard: Valid tokens found - allowing access');
+        setIsAuthenticated(true);
+        setIsCheckingAuth(false);
+      } catch (err) {
+        console.error('❌ Dashboard: Auth verification failed:', err);
+        navigate('/login', { replace: true });
+        setIsCheckingAuth(false);
+      }
+    };
+    
+    verifyAuth();
+  }, [navigate]);
 
   useEffect(() => {
     loadVaultImages();
