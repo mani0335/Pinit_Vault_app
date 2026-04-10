@@ -172,13 +172,18 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     setStatus("scanning");
     setMessage("Detecting face...");
 
-    // Strict face validation - require consistent face detection
+    // Strict face validation - require consistent detection
+    // For REGISTRATION: Need 3 consecutive HIGH-confidence detections (75%+)
+    // For LOGIN: Need 2 consecutive MEDIUM-confidence detections (60%+)
+    const isRegistration = mode === "register";
+    const requiredConsecutiveDetections = isRegistration ? 3 : 2; // More strict for registration
+    const minConfidenceThreshold = isRegistration ? 0.75 : 0.60; // Higher threshold for registration
+    
     let consecutiveValidDetections = 0;
-    const requiredConsecutiveDetections = 1; // Just 1 detection required - much easier
     let faceIsValid = false;
     let lastFaceError = "";
     let totalAttempts = 0;
-    const maxTotalAttempts = 50; // More attempts to find face
+    const maxTotalAttempts = 60; // Up to 60 attempts
     let validatedFaceData = null;
 
     while (consecutiveValidDetections < requiredConsecutiveDetections && totalAttempts < maxTotalAttempts) {
@@ -188,8 +193,18 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       // Use face detection to validate that only a face is in the frame
       const faceDetection = await detectFaceInVideo(video);
 
-      if (faceDetection.hasFace && faceDetection.confidence >= 0.20) {
-        // VERY lenient confidence threshold (20%) for real device conditions
+      if (faceDetection.hasFace && faceDetection.confidence >= minConfidenceThreshold) {
+        // For registration: validate landmarks indicate full face
+        if (isRegistration && faceDetection.landmarks && faceDetection.landmarks.length > 0) {
+          const face = faceDetection.landmarks[0];
+          if (!face.landmarks || face.landmarks.length < 6) {
+            // Incomplete face detected - reset
+            console.warn(`❌ Partial face detected (only ${face.landmarks?.length || 0} landmarks). Restarting...`);
+            consecutiveValidDetections = 0;
+            continue;
+          }
+        }
+        
         consecutiveValidDetections++;
         validatedFaceData = faceDetection;
         console.log(
@@ -237,20 +252,39 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
       embedding = extractEmbedding(video);
 
-      // Validate embedding quality - VERY lenient for real devices
+      // Validate embedding quality
       if (embedding) {
         const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
-        // Accept almost any non-zero embedding (0.05 to 50.0 range)
-        if (embeddingSum < 0.05 || embeddingSum > 50.0) {
-          console.warn(
-            `Attempt ${attempts}: Embedding sum out of range (sum=${embeddingSum.toFixed(2)}). Retrying...`
-          );
-          embedding = null;
+        const embeddingLength = embedding.length;
+        
+        // For registration: stricter validation (good embedding distribution)
+        // For login: lenient validation (just check it exists)
+        if (mode === "register") {
+          // Registration: embedding should be well-distributed (10-40 range)
+          if (embeddingSum < 10.0 || embeddingSum > 40.0) {
+            console.warn(
+              `Attempt ${attempts}: Embedding sum out of range for registration (sum=${embeddingSum.toFixed(2)}). Required: 10-40. Retrying...`
+            );
+            embedding = null;
+          } else {
+            console.log(
+              `✅ Perfect face embedded on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
+            );
+            break;
+          }
         } else {
-          console.log(
-            `Face captured successfully on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
-          );
-          break;
+          // Login: just validate reasonable range
+          if (embeddingSum < 0.1 || embeddingSum > 50.0) {
+            console.warn(
+              `Attempt ${attempts}: Embedding sum out of range (sum=${embeddingSum.toFixed(2)}). Retrying...`
+            );
+            embedding = null;
+          } else {
+            console.log(
+              `Face captured on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
+            );
+            break;
+          }
         }
       }
     }
@@ -266,6 +300,20 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
         setMessage("Align your face inside the frame");
       }, 1500);
       return;
+    }
+
+    // Quality validation for registration mode
+    if (mode === "register") {
+      const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
+      console.log(`🎯 REGISTRATION MODE: Face quality validation (sum=${embeddingSum.toFixed(2)})`);
+      
+      if (embeddingSum < 10 || embeddingSum > 40) {
+        throw new Error(`Face quality too low for registration (${embeddingSum.toFixed(1)}). Please ensure good lighting and hold face still.`);
+      }
+      
+      if (!validatedFaceData || validatedFaceData.confidence < 0.75) {
+        throw new Error('Face confidence too low for registration. Need 75%+ confidence. Please provide better lighting.');
+      }
     }
 
     if (mode === "login") {

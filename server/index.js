@@ -896,6 +896,14 @@ app.post('/api/register-face', (req, res) => {
   if (!userId || !deviceToken) return res.status(400).json({ error: 'Missing userId or deviceToken' });
   if (!faceEmbedding || !Array.isArray(faceEmbedding)) return res.status(400).json({ error: 'Invalid face embedding' });
 
+  // STRICT QUALITY VALIDATION: Only accept perfect faces (sum 10-40)
+  const embeddingSum = faceEmbedding.reduce((a, b) => a + Math.abs(b), 0);
+  console.log(`📸 Face Quality: sum=${embeddingSum.toFixed(2)} (valid: 10-40)`);
+  if (embeddingSum < 10.0 || embeddingSum > 40.0) {
+    console.log(`❌ REJECTED: Poor quality face (sum=${embeddingSum.toFixed(2)}) - not perfect`);
+    return res.status(400).json({ error: 'Face quality insufficient for registration', message: 'Only perfect faces accepted. Show full face with good lighting.' });
+  }
+
   if (mongoUsers) {
     (async () => {
       try {
@@ -906,13 +914,14 @@ app.post('/api/register-face', (req, res) => {
               face_embedding: normalizeVector(faceEmbedding),
               faceRegistered: true,
               faceQualityScore: qualityScore || 0,
+              registrationEmbeddingSum: embeddingSum,
               lastBiometricUpdate: Date.now(),
               updatedAt: new Date(),
             },
           },
           { upsert: true }
         );
-        return res.json({ ok: true, message: 'Face registered successfully' });
+        return res.json({ ok: true, message: 'Perfect face registered', qualityScore: embeddingSum });
       } catch (err) {
         console.error('Mongo face register error', err);
         return res.status(500).json({ error: 'Failed to register face' });

@@ -77,14 +77,16 @@ export async function detectFaceInVideo(video: HTMLVideoElement): Promise<FaceDe
     const face = predictions[0];
     const confidence = face.probability?.[0] || 0;
 
-    // EXTREMELY lenient threshold for real device conditions (20% confidence minimum)
-    // This allows capture even with poor lighting or partial face visibility
-    if (confidence < 0.20) {
+    // Different thresholds based on use case
+    // Registration: HIGH threshold (75%) - only perfect faces
+    // Login: MEDIUM threshold (60%) - recognize known user
+    // This prevents registration of partial faces (hair, side profiles)
+    if (confidence < 0.60) {
       return {
         hasFace: false,
         faceCount: 1,
         confidence,
-        error: `Face detection confidence too low (${Math.round(confidence * 100)}%). Try better lighting.`,
+        error: `Face detection confidence too low (${Math.round(confidence * 100)}%). Please ensure good lighting and face is clearly visible.`,
       };
     }
 
@@ -120,12 +122,46 @@ export async function validateFaceOnly(
 }
 
 /**
- * Get quality score for a detected face (0-100)
- * Higher scores indicate better face quality
+ * Check if face is suitable for REGISTRATION (perfect face detection)
+ * Requires HIGH confidence and validates face landmarks
  */
-export function getFaceQualityScore(result: FaceDetectionResult): number {
-  if (!result.hasFace) return 0;
-  return Math.round(result.confidence * 100);
+export function isFaceSuitableForRegistration(result: FaceDetectionResult): boolean {
+  // Confidence must be >= 75% for registration
+  const MIN_REGISTRATION_CONFIDENCE = 0.75;
+  if (!result.hasFace || result.confidence < MIN_REGISTRATION_CONFIDENCE) {
+    return false;
+  }
+  
+  // Validate landmarks exist and face is complete
+  if (!result.landmarks || result.landmarks.length === 0) {
+    return false;
+  }
+  
+  const face = result.landmarks[0];
+  // Check that major landmarks are detected (eyes, nose, mouth)
+  if (!face.landmarks || face.landmarks.length < 6) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Get face quality score for display and decision-making
+ */
+export function getFaceQualityScore(result: FaceDetectionResult): { score: number; quality: string } {
+  if (!result.hasFace) return { score: 0, quality: 'No face detected' };
+  
+  const confidencePercent = result.confidence * 100;
+  let quality = 'Poor';
+  
+  if (confidencePercent >= 90) quality = 'Perfect';
+  else if (confidencePercent >= 80) quality = 'Great';
+  else if (confidencePercent >= 75) quality = 'Good';
+  else if (confidencePercent >= 60) quality = 'Fair';
+  else quality = 'Poor';
+  
+  return { score: Math.round(confidencePercent), quality };
 }
 
 /**
