@@ -631,97 +631,85 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   };
 
   // ===================== RENDER =====================
-  try {
-    console.log('📊 Rendering PINITDashboard:', {
-      isAuthenticated,
-      activePage,
-      loadingVault,
-      vaultImagesCount: vaultImages.length,
-      userIdProp: userId
-    });
+  console.log('📊 Rendering PINITDashboard:', {
+    isAuthenticated,
+    activePage,
+    loadingVault,
+    vaultImagesCount: vaultImages.length,
+    userIdProp: userId
+  });
 
-    if (!isAuthenticated) {
-      console.warn('❌ NOT AUTHENTICATED - should not reach here');
-      return null;
-    }
-
-    const pageToRender = activePage || 'home';
-    
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-white overflow-hidden">
-        {/* Main Content */}
-        <div className="max-w-4xl mx-auto p-6 pb-24 pt-20">
-          {/* Render pages */}
-          {pageToRender === "home" && (
-            <HomePage 
-              userId={userId} 
-              isRestricted={isRestricted} 
-              vaultImages={vaultImages} 
-              setActivePage={setActivePage} 
-            />
-          )}
-          {pageToRender === "vault" && (
-            <VaultPage 
-              vaultImages={vaultImages} 
-              loadingVault={loadingVault} 
-              setActivePage={setActivePage} 
-            />
-          )}
-          {pageToRender === "analyzer" && (
-            <AnalyzerPage 
-              userId={userId} 
-              setActivePage={setActivePage} 
-            />
-          )}
-          {pageToRender === "settings" && (
-            <SettingsPage 
-              userId={userId} 
-              isRestricted={isRestricted} 
-              setActivePage={setActivePage} 
-              handleLogout={handleLogout} 
-            />
-          )}
-        </div>
-
-        {/* Bottom Navigation */}
-        <motion.div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-6 pb-6 px-6 border-t border-slate-800/50">
-          <motion.div className="max-w-4xl mx-auto grid grid-cols-4 gap-2">
-            {[
-              { icon: Home, label: "Home", page: "home" },
-              { icon: Image, label: "Vault", page: "vault" },
-              { icon: FileSearch, label: "Analyzer", page: "analyzer" },
-              { icon: Settings, label: "Settings", page: "settings" },
-            ].map((item, idx) => (
-              <motion.button
-                key={idx}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setActivePage(item.page as any)}
-                className={`p-3 rounded-xl transition-all duration-200 ${
-                  activePage === item.page
-                    ? "bg-gradient-to-br from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/30"
-                    : "bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <item.icon className="w-6 h-6 mx-auto" />
-                <p className="text-xs mt-1 font-medium">{item.label}</p>
-              </motion.button>
-            ))}
-          </motion.div>
-        </motion.div>
-      </div>
-    );
-  } catch (renderErr) {
-    console.error('❌ PINITDashboard render error:', renderErr);
-    return (
-      <div className="w-full h-screen bg-black text-white p-4 flex flex-col items-center justify-center">
-        <h2 className="text-lg font-bold text-red-400 mb-4">RENDER ERROR</h2>
-        <pre className="bg-slate-900 p-4 rounded text-xs text-red-300 overflow-auto max-w-2xl max-h-64 font-mono">
-          {renderErr instanceof Error ? renderErr.stack : String(renderErr)}
-        </pre>
-      </div>
-    );
+  if (!isAuthenticated) {
+    console.warn('❌ NOT AUTHENTICATED - should not reach here');
+    return null;
   }
+
+  const pageToRender = activePage || 'home';
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-white overflow-hidden">
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto p-6 pb-24 pt-20">
+        {/* Render pages */}
+        {pageToRender === "home" && (
+          <HomePage 
+            userId={userId} 
+            isRestricted={isRestricted} 
+            vaultImages={vaultImages} 
+            setActivePage={setActivePage} 
+          />
+        )}
+        {pageToRender === "vault" && (
+          <VaultPage 
+            vaultImages={vaultImages} 
+            loadingVault={loadingVault} 
+            setActivePage={setActivePage} 
+          />
+        )}
+        {pageToRender === "analyzer" && (
+          <AnalyzerPage 
+            userId={userId} 
+            setActivePage={setActivePage} 
+          />
+        )}
+        {pageToRender === "settings" && (
+          <SettingsPage 
+            userId={userId} 
+            isRestricted={isRestricted} 
+            setActivePage={setActivePage} 
+            handleLogout={handleLogout} 
+          />
+        )}
+      </div>
+
+      {/* Bottom Navigation */}
+      <motion.div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-6 pb-6 px-6 border-t border-slate-800/50">
+        <motion.div className="max-w-4xl mx-auto grid grid-cols-4 gap-2">
+          {[
+            { icon: Home, label: "Home", page: "home" },
+            { icon: Image, label: "Vault", page: "vault" },
+            { icon: FileSearch, label: "Analyzer", page: "analyzer" },
+            { icon: Settings, label: "Settings", page: "settings" },
+          ].map((item, idx) => (
+            <motion.button
+              key={idx}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setActivePage(item.page as any)}
+              className={`p-3 rounded-xl transition-all duration-200 ${
+                activePage === item.page
+                  ? "bg-gradient-to-br from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/30"
+                  : "bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <item.icon className="w-6 h-6 mx-auto" />
+              <p className="text-xs mt-1 font-medium">{item.label}</p>
+            </motion.button>
+          ))}
+        </motion.div>
+      </motion.div>
+    </div>
+  );
 }
 
 export default PINITDashboard;
