@@ -359,11 +359,27 @@ function SettingsPage({ userId, isRestricted, setActivePage, handleLogout }: Set
 
 export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
+  
+  // ✅ CRITICAL FIX: ALL hooks MUST be defined at the top before ANY conditional returns
+  // This prevents React error #310 (hooks count mismatch between renders)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<"home" | "vault" | "analyzer" | "settings">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // Data states - defined EARLY before auth checks
+  const [vaultImages, setVaultImages] = useState<any[]>([]);
+  const [loadingVault, setLoadingVault] = useState(false);
+  const [cryptoFile, setCryptoFile] = useState<File | null>(null);
+  const [cryptoPreview, setCryptoPreview] = useState<string>("");
+  const [isEncrypting, setIsEncrypting] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [encryptedResult, setEncryptedResult] = useState<any>(null);
+  const [verifyFile, setVerifyFile] = useState<File | null>(null);
+  const [verifyPreview, setVerifyPreview] = useState<string>("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [proofResult, setProofResult] = useState<WatermarkMetadata | null>(null);
 
   // Verify authentication
   useEffect(() => {
@@ -481,19 +497,6 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       </div>
     );
   }
-
-  // Data states
-  const [vaultImages, setVaultImages] = useState<any[]>([]);
-  const [loadingVault, setLoadingVault] = useState(false);
-  const [cryptoFile, setCryptoFile] = useState<File | null>(null);
-  const [cryptoPreview, setCryptoPreview] = useState<string>("");
-  const [isEncrypting, setIsEncrypting] = useState(false);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [encryptedResult, setEncryptedResult] = useState<any>(null);
-  const [verifyFile, setVerifyFile] = useState<File | null>(null);
-  const [verifyPreview, setVerifyPreview] = useState<string>("");
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [proofResult, setProofResult] = useState<WatermarkMetadata | null>(null);
 
   // Load vault images
   const loadVaultImages = useCallback(async () => {
