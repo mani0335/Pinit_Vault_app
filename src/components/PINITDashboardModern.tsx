@@ -425,7 +425,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     loadVaultImages();
   }, [loadVaultImages]);
 
-  // Verify authentication
+  // Verify authentication - RUNS ONLY ONCE on mount
   useEffect(() => {
     const verifyAuth = async () => {
       try {
@@ -493,7 +493,8 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     };
 
     verifyAuth();
-  }, [navigate]);
+    // REMOVED navigate from dependencies - check only runs on mount, not when navigate ref changes
+  }, []);
 
   // Loading state
   if (isCheckingAuth) {
