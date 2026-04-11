@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { appStorage } from "@/lib/storage";
 import { PINITVaultDashboard } from "@/components/PINITVaultDashboard";
 
