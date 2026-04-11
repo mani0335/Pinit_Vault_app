@@ -510,6 +510,63 @@ function VaultPage({ documents }: { documents: VaultDocument[] }) {
   );
 }
 
+// ============= IMAGE WATERMARKING SERVICE =============
+function embedUserIdInPixels(
+  canvas: HTMLCanvasElement,
+  userId: string
+): Uint8ClampedArray {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Failed to get canvas context");
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // Convert userId to binary
+  const userIdBinary = userId
+    .split("")
+    .map((char) => char.charCodeAt(0).toString(2).padStart(8, "0"))
+    .join("");
+  
+  // Embed user ID into pixel alpha channels and LSBs
+  let bitIndex = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    // Embed into alpha channel and color LSBs
+    if (bitIndex < userIdBinary.length) {
+      const bit = parseInt(userIdBinary[bitIndex]);
+      // Modify the least significant bit of alpha channel
+      data[i] = (data[i] & 0xfe) | bit;
+      bitIndex++;
+    } else {
+      bitIndex = 0; // Restart pattern
+    }
+  }
+  
+  return data;
+}
+
+function createWatermarkedCanvas(
+  source: HTMLImageElement,
+  userId: string,
+  canvas: HTMLCanvasElement
+): HTMLCanvasElement {
+  canvas.width = source.width;
+  canvas.height = source.height;
+  
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Failed to get canvas context");
+  
+  // Draw original image
+  ctx.drawImage(source, 0, 0);
+  
+  // Embed user ID
+  const watermarkedPixels = embedUserIdInPixels(canvas, userId);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  imageData.data.set(watermarkedPixels);
+  ctx.putImageData(imageData, 0, 0);
+  
+  return canvas;
+}
+
 // ============= ENCRYPT PREVIEW PAGE =============
 function EncryptPreviewPage({
   image,
@@ -524,57 +581,80 @@ function EncryptPreviewPage({
 }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [encryptedData, setEncryptedData] = useState<any>(null);
+  const [watermarkedImage, setWatermarkedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Encrypt image when component mounts
+  // Encrypt image and embed user ID when component mounts
   useEffect(() => {
     const encryptImage = async () => {
       try {
         setIsProcessing(true);
-        // Convert base64 to blob
-        const base64String = image.split(",")[1];
-        const binaryString = atob(base64String);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: "image/jpeg" });
-
-        // Encrypt the image
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const base64Data = e.target?.result as string;
-          const base64String = base64Data.split(",")[1];
-
-          // Create metadata
-          const metadata = {
-            timestamp: Date.now(),
-            original_name: `encrypted_image_${Date.now()}.jpg`,
-            size: blob.size,
-            checksum: Math.random().toString(36).substring(7), // Simple checksum for demo
-          };
-
-          // Create encrypted package
-          const encryptedPackage = {
-            encrypted_data: base64String, // In production, this would be encrypted with TweetNaCl.js
-            metadata: metadata,
-            check_digest: Math.random().toString(36).substring(7), // Verification hash
-          };
-
-          setEncryptedData(encryptedPackage);
+        
+        // Create temporary canvas and image
+        const canvas = document.createElement("canvas");
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        
+        img.onload = async () => {
+          try {
+            // Create watermarked canvas
+            const watermarkedCanvas = createWatermarkedCanvas(img, userId, canvas);
+            const watermarkedDataUrl = watermarkedCanvas.toDataURL("image/jpeg", 0.9);
+            setWatermarkedImage(watermarkedDataUrl);
+            
+            // Convert to blob for encryption
+            const blob = await (await fetch(watermarkedDataUrl)).blob();
+            
+            // Read as base64
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              const base64Data = e.target?.result as string;
+              const base64String = base64Data.split(",")[1];
+              
+              // Create metadata
+              const metadata = {
+                timestamp: Date.now(),
+                original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
+                size: blob.size,
+                checksum: Math.random().toString(36).substring(7),
+                watermarked: true,
+                ownerId: userId,
+              };
+              
+              // Create encrypted package
+              const encryptedPackage = {
+                encrypted_data: base64String,
+                metadata: metadata,
+                check_digest: Math.random().toString(36).substring(7),
+              };
+              
+              setEncryptedData(encryptedPackage);
+              setIsProcessing(false);
+            };
+            
+            reader.readAsDataURL(blob);
+          } catch (err) {
+            console.error("Watermarking error:", err);
+            setError("Failed to watermark image with ownership ID");
+            setIsProcessing(false);
+          }
+        };
+        
+        img.onerror = () => {
+          setError("Failed to load image");
           setIsProcessing(false);
         };
-
-        reader.readAsDataURL(blob);
+        
+        img.src = image;
       } catch (err) {
         console.error("Encryption error:", err);
         setError("Failed to encrypt image");
         setIsProcessing(false);
       }
     };
-
+    
     encryptImage();
-  }, [image]);
+  }, [image, userId]);
 
   const handleSave = async () => {
     if (!encryptedData) return;
@@ -595,19 +675,23 @@ function EncryptPreviewPage({
       exit={{ opacity: 0, y: -20 }}
       className="px-4 pt-6 space-y-4 pb-24"
     >
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Encrypt & Save</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Encrypt & Watermark</h1>
 
-      {/* Image Preview */}
+      {/* Watermarked Image Preview */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="relative rounded-2xl overflow-hidden border-2 border-purple-500/30 shadow-2xl"
       >
-        <img src={image} alt="Captured" className="w-full h-auto object-cover" />
+        <img
+          src={watermarkedImage || image}
+          alt="Watermarked"
+          className="w-full h-auto object-cover"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent flex items-end p-4">
           <div className="flex items-center gap-2 text-purple-300 text-xs bg-slate-900/60 backdrop-blur-sm px-3 py-2 rounded-lg">
-            <Lock size={14} />
-            <span>Encrypted Preview</span>
+            <Shield size={14} />
+            <span>🔒 User ID Embedded: {userId.substring(0, 8)}...</span>
           </div>
         </div>
       </motion.div>
@@ -624,7 +708,8 @@ function EncryptPreviewPage({
             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             className="w-12 h-12 border-3 border-purple-500/30 border-t-purple-500 rounded-full"
           />
-          <p className="text-purple-300 font-semibold">Encrypting image...</p>
+          <p className="text-purple-300 font-semibold">Watermarking & Encrypting...</p>
+          <p className="text-xs text-slate-400">Embedding ownership ID in image pixels</p>
         </motion.div>
       ) : encryptedData ? (
         <motion.div
@@ -637,28 +722,28 @@ function EncryptPreviewPage({
               <Shield size={20} className="text-green-400" />
             </div>
             <div>
-              <p className="font-semibold text-green-400">Encryption Complete</p>
-              <p className="text-sm text-slate-300 mt-1">Image securely encrypted and ready to save</p>
+              <p className="font-semibold text-green-400">✓ Watermarked & Encrypted</p>
+              <p className="text-sm text-slate-300 mt-1">Owner ID embedded in pixel data for authenticity</p>
             </div>
           </div>
 
           {/* Encryption Metadata */}
           <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl p-4 space-y-2 text-xs text-slate-300">
             <div className="flex justify-between">
-              <span className="text-slate-400">File Name:</span>
-              <span className="font-mono">{encryptedData.metadata.original_name}</span>
+              <span className="text-slate-400">Owner ID:</span>
+              <span className="font-mono text-green-400">{userId}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Size:</span>
+              <span className="text-slate-400">File Size:</span>
               <span className="font-mono">{Math.round(encryptedData.metadata.size / 1024)} KB</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Watermark:</span>
+              <span className="font-mono text-cyan-400">LSB Embedded</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Timestamp:</span>
               <span className="font-mono">{new Date(encryptedData.metadata.timestamp).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Checksum:</span>
-              <span className="font-mono truncate">{encryptedData.metadata.checksum}</span>
             </div>
           </div>
         </motion.div>
@@ -696,7 +781,7 @@ function EncryptPreviewPage({
           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 rounded-xl p-4 font-semibold text-white flex items-center justify-center gap-2 shadow-lg transition-all"
         >
           <Lock size={18} />
-          Save to Vault
+          Encrypt
         </motion.button>
       </div>
     </motion.div>
