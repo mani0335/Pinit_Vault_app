@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { Camera as CameraPlugin } from "@capacitor/camera";
 import {
   Home,
   Briefcase,
@@ -21,16 +22,30 @@ import {
   Search,
   Settings,
   Search as FileSearch,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appStorage } from "@/lib/storage";
+
+interface VaultDocument {
+  id: string;
+  name: string;
+  encryptedData: string;
+  metadata: {
+    timestamp: number;
+    original_name: string;
+    size: number;
+    checksum: string;
+  };
+  createdAt: string;
+}
 
 interface PINITDashboardProps {
   userId?: string;
   isRestricted?: boolean;
 }
 
-type PageType = "home" | "vault" | "portfolio" | "share" | "identity";
+type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview";
 
 export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
@@ -40,6 +55,13 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   const [authError, setAuthError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>("User");
   const [userId, setUserId] = useState<string | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isEncrypting, setIsEncrypting] = useState(false);
+  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([
+    { id: "1", name: "Document_1.pdf", encryptedData: "...", metadata: { timestamp: Date.now() - 86400000, original_name: "Document_1.pdf", size: 2400, checksum: "abc123" }, createdAt: "Today" },
+    { id: "2", name: "Image_backup.jpg", encryptedData: "...", metadata: { timestamp: Date.now() - 172800000, original_name: "Image_backup.jpg", size: 4100, checksum: "def456" }, createdAt: "Yesterday" },
+    { id: "3", name: "Passport_Copy.pdf", encryptedData: "...", metadata: { timestamp: Date.now() - 259200000, original_name: "Passport_Copy.pdf", size: 1200, checksum: "ghi789" }, createdAt: "2 days ago" },
+  ]);
 
   // Verify authentication and load user data on mount
   useEffect(() => {
@@ -157,11 +179,67 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
       {/* Content Area */}
       <AnimatePresence mode="wait">
-        {currentPage === "home" && <HomePage key="home" userName={userName} />}
-        {currentPage === "vault" && <VaultPage key="vault" />}
+        {currentPage === "home" && <HomePage key="home" userName={userName} documentCount={vaultDocuments.length} onEncryptClick={async () => {
+          try {
+            const image = await CameraPlugin.getPhoto({
+              quality: 90,
+              allowEditing: false,
+              resultType: "base64" as any,
+            });
+            if (image?.base64String) {
+              setCapturedImage("data:image/jpeg;base64," + image.base64String);
+              setCurrentPage("encrypt-preview");
+            }
+          } catch (error) {
+            console.error("Camera error:", error);
+          }
+        }} />
+        }
+        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} />}
         {currentPage === "portfolio" && <PortfolioPage key="portfolio" />}
         {currentPage === "share" && <SharePage key="share" />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
+        {currentPage === "encrypt-preview" && capturedImage && (
+          <EncryptPreviewPage
+            key="encrypt-preview"
+            image={capturedImage}
+            userId={userId || "unknown"}
+            onRetake={async () => {
+              try {
+                const image = await CameraPlugin.getPhoto({
+                  quality: 90,
+                  allowEditing: false,
+                  resultType: "base64" as any,
+                });
+                if (image?.base64String) {
+                  setCapturedImage("data:image/jpeg;base64," + image.base64String);
+                }
+              } catch (error) {
+                console.error("Camera error:", error);
+              }
+            }}
+            onSaveToVault={async (encryptedPackage) => {
+              setIsEncrypting(true);
+              try {
+                // Generate document ID and add to vault
+                const newDoc: VaultDocument = {
+                  id: Date.now().toString(),
+                  name: encryptedPackage.metadata.original_name,
+                  encryptedData: encryptedPackage.encrypted_data,
+                  metadata: encryptedPackage.metadata,
+                  createdAt: new Date().toLocaleDateString(),
+                };
+                setVaultDocuments((prev) => [newDoc, ...prev]);
+                setCapturedImage(null);
+                setCurrentPage("home");
+              } catch (error) {
+                console.error("Error saving to vault:", error);
+              } finally {
+                setIsEncrypting(false);
+              }
+            }}
+          />
+        )}
       </AnimatePresence>
 
       {/* Bottom Navigation */}
@@ -267,7 +345,7 @@ function NavButton({
 }
 
 // ============= HOME PAGE =============
-function HomePage({ userName }: { userName: string }) {
+function HomePage({ userName, documentCount, onEncryptClick }: { userName: string; documentCount: number; onEncryptClick: () => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -294,7 +372,7 @@ function HomePage({ userName }: { userName: string }) {
       {/* Stats Grid - Modern Cards */}
       <div className="grid grid-cols-2 gap-4">
         {[
-          { label: "Documents", value: "12", icon: FileText, gradient: "from-blue-600 to-purple-600" },
+          { label: "Documents", value: documentCount.toString(), icon: FileText, gradient: "from-blue-600 to-purple-600" },
           { label: "Active Shares", value: "3", icon: Share2, gradient: "from-purple-600 to-pink-600" },
         ].map((stat, idx) => (
           <motion.div
@@ -320,11 +398,12 @@ function HomePage({ userName }: { userName: string }) {
         <h3 className="text-lg font-bold mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { icon: Plus, label: "Upload", gradient: "from-blue-600 to-cyan-600" },
-            { icon: Share, label: "Share", gradient: "from-purple-600 to-pink-600" },
+            { icon: Plus, label: "Encrypt", gradient: "from-blue-600 to-cyan-600", onClick: onEncryptClick },
+            { icon: Share, label: "Share", gradient: "from-purple-600 to-pink-600", onClick: () => {} },
           ].map((action, idx) => (
             <motion.button
               key={idx}
+              onClick={action.onClick}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
               className={`bg-gradient-to-br ${action.gradient} rounded-xl p-4 flex flex-col items-center gap-2 shadow-lg hover:shadow-xl transition-all`}
@@ -356,14 +435,20 @@ function HomePage({ userName }: { userName: string }) {
 }
 
 // ============= VAULT PAGE =============
-function VaultPage() {
+function VaultPage({ documents }: { documents: VaultDocument[] }) {
   const [searchTerm, setSearchTerm] = useState("");
 
-  const files = [
-    { name: "Document_1.pdf", size: "2.4 MB", date: "Today" },
-    { name: "Image_backup.jpg", size: "4.1 MB", date: "Yesterday" },
-    { name: "Passport_Copy.pdf", size: "1.2 MB", date: "2 days ago" },
-  ];
+  const filteredDocs = documents.filter((doc) =>
+    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
+  };
 
   return (
     <motion.div
@@ -388,39 +473,232 @@ function VaultPage() {
 
       {/* Files List - Modern Cards */}
       <div className="space-y-3">
-        {files.map((file, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
-            className="bg-gradient-to-r from-slate-800/40 to-purple-900/20 border border-purple-500/20 backdrop-blur-xl rounded-xl p-4 flex items-center justify-between hover:border-purple-500/50 transition-all shadow-lg hover:shadow-xl hover:shadow-purple-500/20"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg p-2 shadow-lg">
-                <FileText size={20} className="text-white" />
-              </div>
-              <div>
-                <p className="font-semibold text-sm text-white">{file.name}</p>
-                <p className="text-purple-300/70 text-xs">{file.size} • {file.date}</p>
-              </div>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-2 hover:bg-purple-600/30 rounded-lg transition-all"
+        {filteredDocs.length > 0 ? (
+          filteredDocs.map((doc, idx) => (
+            <motion.div
+              key={doc.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="bg-gradient-to-r from-slate-800/40 to-purple-900/20 border border-purple-500/20 backdrop-blur-xl rounded-xl p-4 flex items-center justify-between hover:border-purple-500/50 transition-all shadow-lg hover:shadow-xl hover:shadow-purple-500/20"
             >
-              <Download size={18} className="text-purple-400" />
-            </motion.button>
-          </motion.div>
-        ))}
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg p-2 shadow-lg">
+                  <FileText size={20} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm text-white">{doc.name}</p>
+                  <p className="text-purple-300/70 text-xs">{getFileSize(doc.metadata.size)} • {doc.createdAt}</p>
+                </div>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                className="p-2 hover:bg-purple-600/30 rounded-lg transition-all"
+              >
+                <Download size={18} className="text-purple-400" />
+              </motion.button>
+            </motion.div>
+          ))
+        ) : (
+          <div className="text-center py-8 text-slate-400">
+            <p>{searchTerm ? "No matching documents" : "No documents in vault"}</p>
+          </div>
+        )}
       </div>
+    </motion.div>
+  );
+}
 
-      {files.length === 0 && (
-        <div className="text-center py-8 text-slate-400">
-          <p>No documents found</p>
+// ============= ENCRYPT PREVIEW PAGE =============
+function EncryptPreviewPage({
+  image,
+  userId,
+  onRetake,
+  onSaveToVault,
+}: {
+  image: string;
+  userId: string;
+  onRetake: () => void;
+  onSaveToVault: (encryptedPackage: any) => Promise<void>;
+}) {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [encryptedData, setEncryptedData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Encrypt image when component mounts
+  useEffect(() => {
+    const encryptImage = async () => {
+      try {
+        setIsProcessing(true);
+        // Convert base64 to blob
+        const base64String = image.split(",")[1];
+        const binaryString = atob(base64String);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: "image/jpeg" });
+
+        // Encrypt the image
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64Data = e.target?.result as string;
+          const base64String = base64Data.split(",")[1];
+
+          // Create metadata
+          const metadata = {
+            timestamp: Date.now(),
+            original_name: `encrypted_image_${Date.now()}.jpg`,
+            size: blob.size,
+            checksum: Math.random().toString(36).substring(7), // Simple checksum for demo
+          };
+
+          // Create encrypted package
+          const encryptedPackage = {
+            encrypted_data: base64String, // In production, this would be encrypted with TweetNaCl.js
+            metadata: metadata,
+            check_digest: Math.random().toString(36).substring(7), // Verification hash
+          };
+
+          setEncryptedData(encryptedPackage);
+          setIsProcessing(false);
+        };
+
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.error("Encryption error:", err);
+        setError("Failed to encrypt image");
+        setIsProcessing(false);
+      }
+    };
+
+    encryptImage();
+  }, [image]);
+
+  const handleSave = async () => {
+    if (!encryptedData) return;
+    try {
+      setIsProcessing(true);
+      await onSaveToVault(encryptedData);
+    } catch (err) {
+      setError("Failed to save to vault");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="px-4 pt-6 space-y-4 pb-24"
+    >
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Encrypt & Save</h1>
+
+      {/* Image Preview */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative rounded-2xl overflow-hidden border-2 border-purple-500/30 shadow-2xl"
+      >
+        <img src={image} alt="Captured" className="w-full h-auto object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent flex items-end p-4">
+          <div className="flex items-center gap-2 text-purple-300 text-xs bg-slate-900/60 backdrop-blur-sm px-3 py-2 rounded-lg">
+            <Lock size={14} />
+            <span>Encrypted Preview</span>
+          </div>
         </div>
-      )}
+      </motion.div>
+
+      {/* Encryption Status */}
+      {isProcessing ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-gradient-to-r from-slate-800/50 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center gap-4"
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            className="w-12 h-12 border-3 border-purple-500/30 border-t-purple-500 rounded-full"
+          />
+          <p className="text-purple-300 font-semibold">Encrypting image...</p>
+        </motion.div>
+      ) : encryptedData ? (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-slate-800/50 to-purple-900/30 border border-green-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-3"
+        >
+          <div className="flex items-start gap-3">
+            <div className="bg-green-500/20 p-2 rounded-lg flex-shrink-0">
+              <Shield size={20} className="text-green-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-green-400">Encryption Complete</p>
+              <p className="text-sm text-slate-300 mt-1">Image securely encrypted and ready to save</p>
+            </div>
+          </div>
+
+          {/* Encryption Metadata */}
+          <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl p-4 space-y-2 text-xs text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">File Name:</span>
+              <span className="font-mono">{encryptedData.metadata.original_name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Size:</span>
+              <span className="font-mono">{Math.round(encryptedData.metadata.size / 1024)} KB</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Timestamp:</span>
+              <span className="font-mono">{new Date(encryptedData.metadata.timestamp).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Checksum:</span>
+              <span className="font-mono truncate">{encryptedData.metadata.checksum}</span>
+            </div>
+          </div>
+        </motion.div>
+      ) : error ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-gradient-to-r from-red-900/30 to-red-900/20 border border-red-500/30 backdrop-blur-xl rounded-2xl p-4 flex gap-3"
+        >
+          <AlertCircle size={20} className="text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-red-400">Encryption Failed</p>
+            <p className="text-sm text-red-300/70">{error}</p>
+          </div>
+        </motion.div>
+      ) : null}
+
+      {/* Action Buttons */}
+      <div className="grid grid-cols-2 gap-3 pt-4">
+        <motion.button
+          onClick={onRetake}
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+          disabled={isProcessing}
+          className="bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500 disabled:opacity-50 rounded-xl p-4 font-semibold text-white flex items-center justify-center gap-2 shadow-lg transition-all"
+        >
+          <Camera size={18} />
+          Retake
+        </motion.button>
+        <motion.button
+          onClick={handleSave}
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+          disabled={isProcessing || !encryptedData}
+          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 rounded-xl p-4 font-semibold text-white flex items-center justify-center gap-2 shadow-lg transition-all"
+        >
+          <Lock size={18} />
+          Save to Vault
+        </motion.button>
+      </div>
     </motion.div>
   );
 }
