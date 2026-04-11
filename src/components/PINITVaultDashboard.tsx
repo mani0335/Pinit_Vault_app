@@ -129,26 +129,26 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-white pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white pb-24">
       {/* Top Bar with User Profile */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-cyan-500/20 px-4 py-4"
+        className="sticky top-0 z-40 bg-gradient-to-r from-slate-950/95 via-purple-950/95 to-slate-950/95 backdrop-blur-xl border-b border-purple-500/30 px-4 py-4 shadow-2xl"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold">
+            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/50">
               {userName.charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-semibold">{userName}</p>
-              <p className="text-xs text-cyan-400">{userId?.substring(0, 8)}...</p>
+              <p className="text-sm font-semibold text-white">{userName}</p>
+              <p className="text-xs text-purple-300">{userId?.substring(0, 8)}...</p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-red-500/20 rounded-lg transition-all hover:shadow-lg hover:shadow-red-500/50"
           >
             <LogOut size={20} className="text-red-400" />
           </button>
@@ -165,7 +165,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
       </AnimatePresence>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 border-t border-cyan-500/20 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent backdrop-blur-xl border-t border-purple-500/30">
         <div className="flex justify-around items-center h-20 px-2">
           <NavButton
             icon={Home}
@@ -249,19 +249,19 @@ function NavButton({
 }) {
   return (
     <motion.button
-      whileHover={{ scale: 1.05 }}
+      whileHover={{ scale: 1.08, y: -2 }}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${
+      className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
         highlight
-          ? "bg-blue-600 text-white shadow-lg shadow-blue-500/50"
+          ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/50 border border-purple-400/50"
           : active
-            ? "text-cyan-400"
-            : "text-slate-400 hover:text-cyan-300"
+            ? "text-purple-300 border-b-2 border-purple-500"
+            : "text-slate-400 hover:text-purple-300 hover:bg-purple-900/20"
       }`}
     >
       <Icon size={22} />
-      <span className="text-xs font-medium">{label}</span>
+      <span className="text-xs font-semibold">{label}</span>
     </motion.button>
   );
 }
@@ -273,72 +273,81 @@ function HomePage({ userName }: { userName: string }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-8 space-y-6"
+      className="px-4 pt-6 space-y-5"
     >
-      {/* Hero Banner */}
+      {/* Hero Banner with Modern Gradient */}
       <motion.div
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-600 to-purple-600 p-6 text-white"
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 p-6 text-white shadow-2xl"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
       >
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 right-0 w-40 h-40 rounded-full bg-pink-500 blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 w-40 h-40 rounded-full bg-blue-500 blur-3xl"></div>
+        </div>
         <div className="relative z-10">
-          <h2 className="text-2xl font-bold mb-2">PINIT Vault</h2>
-          <p className="text-sm text-cyan-100">Secure document management</p>
+          <h2 className="text-3xl font-bold mb-2">PINIT Vault</h2>
+          <p className="text-purple-100 text-sm">Your secure digital sanctuary</p>
         </div>
       </motion.div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid - Modern Cards */}
       <div className="grid grid-cols-2 gap-4">
         {[
-          { label: "Documents", value: "12", icon: FileText },
-          { label: "Shares", value: "3", icon: Share2 },
+          { label: "Documents", value: "12", icon: FileText, gradient: "from-blue-600 to-purple-600" },
+          { label: "Active Shares", value: "3", icon: Share2, gradient: "from-purple-600 to-pink-600" },
         ].map((stat, idx) => (
           <motion.div
             key={idx}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-4"
+            className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-5 shadow-xl hover:shadow-2xl transition-shadow`}
           >
-            <p className="text-slate-400 text-sm">{stat.label}</p>
-            <p className="text-3xl font-bold mt-2">{stat.value}</p>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-white/80 text-xs font-semibold">{stat.label}</p>
+                <p className="text-3xl font-bold mt-2 text-white">{stat.value}</p>
+              </div>
+              <stat.icon size={28} className="text-white/70" />
+            </div>
           </motion.div>
         ))}
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Actions - Modern Buttons */}
       <div>
         <h3 className="text-lg font-bold mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { icon: Plus, label: "Upload", color: "bg-blue-600" },
-            { icon: Share, label: "Share", color: "bg-cyan-600" },
+            { icon: Plus, label: "Upload", gradient: "from-blue-600 to-cyan-600" },
+            { icon: Share, label: "Share", gradient: "from-purple-600 to-pink-600" },
           ].map((action, idx) => (
             <motion.button
               key={idx}
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
-              className={`${action.color} rounded-xl p-4 flex flex-col items-center gap-2`}
+              className={`bg-gradient-to-br ${action.gradient} rounded-xl p-4 flex flex-col items-center gap-2 shadow-lg hover:shadow-xl transition-all`}
             >
               <action.icon size={24} />
-              <span className="text-xs font-medium">{action.label}</span>
+              <span className="text-sm font-bold">{action.label}</span>
             </motion.button>
           ))}
         </div>
       </div>
 
-      {/* Recent Activity */}
+      {/* Recent Activity - Modern Cards */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-4"
+        className="bg-gradient-to-br from-slate-800/50 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-5 shadow-xl"
       >
-        <h3 className="font-semibold mb-3">Recent Activity</h3>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm p-2 bg-slate-700/30 rounded-lg">
-            <span>Vault accessed</span>
-            <span className="text-cyan-400 text-xs">Just now</span>
+        <h3 className="font-semibold mb-4 text-white">Recent Activity</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl">
+            <span className="text-sm font-medium">Vault accessed</span>
+            <span className="text-purple-300 text-xs font-bold">Just now</span>
           </div>
         </div>
       </motion.div>
@@ -361,23 +370,23 @@ function VaultPage() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-8 space-y-4"
+      className="px-4 pt-6 space-y-4"
     >
-      <h1 className="text-2xl font-bold">Vault</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Vault</h1>
 
-      {/* Search Bar */}
-      <div className="bg-slate-800/50 border border-cyan-500/20 rounded-lg px-4 py-3 flex items-center gap-3">
-        <FileSearch size={20} className="text-slate-400" />
+      {/* Search Bar - Modern */}
+      <div className="bg-gradient-to-r from-slate-800/50 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
+        <FileSearch size={20} className="text-purple-400" />
         <input
           type="text"
-          placeholder="Search files..."
+          placeholder="Search documents..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-transparent outline-none flex-1 text-sm"
+          className="bg-transparent outline-none flex-1 text-sm placeholder-slate-500"
         />
       </div>
 
-      {/* Files List */}
+      {/* Files List - Modern Cards */}
       <div className="space-y-3">
         {files.map((file, idx) => (
           <motion.div
@@ -385,25 +394,28 @@ function VaultPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.05 }}
-            className="bg-slate-800/50 border border-cyan-500/10 rounded-lg p-4 flex items-center justify-between"
+            className="bg-gradient-to-r from-slate-800/40 to-purple-900/20 border border-purple-500/20 backdrop-blur-xl rounded-xl p-4 flex items-center justify-between hover:border-purple-500/50 transition-all shadow-lg hover:shadow-xl hover:shadow-purple-500/20"
           >
             <div className="flex items-center gap-3">
-              <div className="bg-slate-700 rounded p-2">
-                <FileText size={20} className="text-blue-400" />
+              <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg p-2 shadow-lg">
+                <FileText size={20} className="text-white" />
               </div>
               <div>
-                <p className="font-semibold text-sm">{file.name}</p>
-                <p className="text-slate-400 text-xs">{file.size} • {file.date}</p>
+                <p className="font-semibold text-sm text-white">{file.name}</p>
+                <p className="text-purple-300/70 text-xs">{file.size} • {file.date}</p>
               </div>
             </div>
-            <button className="p-2 hover:bg-slate-700 rounded transition-colors">
-              <Download size={18} />
-            </button>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              className="p-2 hover:bg-purple-600/30 rounded-lg transition-all"
+            >
+              <Download size={18} className="text-purple-400" />
+            </motion.button>
           </motion.div>
         ))}
       </div>
 
-      {/* Empty state message if needed */}
       {files.length === 0 && (
         <div className="text-center py-8 text-slate-400">
           <p>No documents found</p>
@@ -422,32 +434,34 @@ function PortfolioPage() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-8 space-y-4"
+      className="px-4 pt-6 space-y-4"
     >
-      <h1 className="text-2xl font-bold">Create Portfolio</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Create Portfolio</h1>
 
-      <div className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-6 space-y-4">
+      <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
         <div>
-          <label className="text-slate-400 text-sm">Portfolio Name</label>
+          <label className="text-purple-300 text-sm font-semibold">Portfolio Name</label>
           <input
             type="text"
             placeholder="e.g., Job Application"
             value={portfolioName}
             onChange={(e) => setPortfolioName(e.target.value)}
-            className="w-full mt-2 bg-slate-700/50 border border-cyan-500/20 rounded-lg px-4 py-2 text-white outline-none focus:border-cyan-500/50"
+            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all"
           />
         </div>
 
         <div>
-          <label className="text-slate-400 text-sm">Description</label>
+          <label className="text-purple-300 text-sm font-semibold">Description</label>
           <textarea
             placeholder="Add details..."
             rows={3}
-            className="w-full mt-2 bg-slate-700/50 border border-cyan-500/20 rounded-lg px-4 py-2 text-white outline-none focus:border-cyan-500/50"
+            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all resize-none"
           />
         </div>
 
-        <Button className="w-full bg-blue-600 hover:bg-blue-700">Create Portfolio</Button>
+        <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all">
+          Create Portfolio
+        </Button>
       </div>
     </motion.div>
   );
@@ -460,12 +474,12 @@ function SharePage() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-8 space-y-4"
+      className="px-4 pt-6 space-y-4"
     >
-      <h1 className="text-2xl font-bold">Secure Share</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Secure Share</h1>
 
-      <div className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-6 space-y-4">
-        <p className="text-slate-400 text-sm">Select documents and configure sharing settings</p>
+      <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
+        <p className="text-purple-300/80 text-sm">Configure sharing permissions and security</p>
 
         <div className="space-y-3">
           {[
@@ -473,17 +487,21 @@ function SharePage() {
             { icon: Download, title: "Allow Download", enabled: false },
             { icon: Lock, title: "Password Protection", enabled: true },
           ].map((perm, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+            <div key={idx} className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl hover:border-purple-500/50 transition-all">
               <div className="flex items-center gap-3">
-                <perm.icon size={18} className={perm.enabled ? "text-cyan-400" : "text-slate-600"} />
-                <span className="text-sm">{perm.title}</span>
+                <div className={`p-2 rounded-lg ${perm.enabled ? "bg-purple-600/30" : "bg-slate-700/30"}`}>
+                  <perm.icon size={18} className={perm.enabled ? "text-purple-400" : "text-slate-500"} />
+                </div>
+                <span className="text-sm font-semibold">{perm.title}</span>
               </div>
-              <div className={`w-8 h-5 rounded-full transition-colors ${perm.enabled ? "bg-cyan-600" : "bg-slate-600"}`}></div>
+              <div className={`w-10 h-6 rounded-full transition-all ${perm.enabled ? "bg-gradient-to-r from-purple-600 to-blue-600 shadow-lg shadow-purple-500/50" : "bg-slate-600"}`}></div>
             </div>
           ))}
         </div>
 
-        <Button className="w-full bg-blue-600 hover:bg-blue-700">Generate Link</Button>
+        <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all">
+          Generate Link
+        </Button>
       </div>
     </motion.div>
   );
@@ -500,31 +518,31 @@ function IdentityPage({ userName, userId }: { userName: string; userId: string |
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-8 space-y-4 pb-8"
+      className="px-4 pt-6 space-y-4 pb-8"
     >
-      <h1 className="text-2xl font-bold">Digital Identity</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Digital Identity</h1>
 
-      {/* Profile Card */}
-      <motion.div className="bg-gradient-to-br from-blue-600/20 to-cyan-600/20 border border-cyan-500/30 rounded-xl p-6 flex flex-col items-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-2xl font-bold">
+      {/* Profile Card - Modern */}
+      <motion.div className="bg-gradient-to-br from-purple-900/40 to-blue-900/40 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
+        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 flex items-center justify-center text-white text-4xl font-bold shadow-2xl shadow-purple-500/50">
           {userName.charAt(0).toUpperCase()}
         </div>
         <div className="text-center">
-          <p className="text-xl font-bold">{userName}</p>
-          <p className="text-cyan-400 text-xs font-mono mt-1">{userId?.substring(0, 12)}...</p>
-          <div className="bg-green-500/20 border border-green-500 rounded-full px-3 py-1 mt-2 inline-block">
-            <p className="text-green-400 text-xs font-medium">✓ Verified</p>
+          <p className="text-2xl font-bold text-white">{userName}</p>
+          <p className="text-purple-300/70 text-xs font-mono mt-2">{userId?.substring(0, 12)}...</p>
+          <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/50 rounded-full px-4 py-2 mt-3 inline-block">
+            <p className="text-green-400 text-xs font-bold">✓ VERIFIED</p>
           </div>
         </div>
       </motion.div>
 
       {/* Personal Details */}
-      <motion.div className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-6 space-y-4">
+      <motion.div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-semibold">Personal Details</h3>
+          <h3 className="font-bold text-lg text-white">Personal Details</h3>
           <button
             onClick={() => setIsEditing(!isEditing)}
-            className="text-blue-400 text-sm hover:text-blue-300"
+            className="text-purple-400 text-sm font-semibold hover:text-purple-300 transition-colors"
           >
             {isEditing ? "Done" : "Edit"}
           </button>
@@ -534,33 +552,33 @@ function IdentityPage({ userName, userId }: { userName: string; userId: string |
           { label: "Email", value: email, setter: setEmail },
           { label: "Phone", value: phone, setter: setPhone },
         ].map((field, idx) => (
-          <div key={idx} className="pb-3 border-b border-slate-700 last:border-0">
-            <p className="text-slate-400 text-xs">{field.label}</p>
+          <div key={idx} className="pb-4 border-b border-purple-500/20 last:border-0">
+            <p className="text-purple-300/70 text-xs font-semibold">{field.label}</p>
             {isEditing ? (
               <input
                 type="text"
                 value={field.value}
                 onChange={(e) => field.setter(e.target.value)}
-                className="w-full mt-1 bg-slate-700/50 border border-cyan-500/20 rounded px-2 py-1 text-sm outline-none"
+                className="w-full mt-2 bg-slate-700/50 border border-purple-500/30 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500/70 transition-all text-white"
               />
             ) : (
-              <p className="font-medium mt-1">{field.value}</p>
+              <p className="font-semibold mt-2 text-white">{field.value}</p>
             )}
           </div>
         ))}
       </motion.div>
 
       {/* Security Settings */}
-      <motion.div className="bg-slate-800/50 border border-cyan-500/20 rounded-xl p-6 space-y-3">
-        <h3 className="font-semibold mb-3">Security Settings</h3>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-            <div className="flex items-center gap-3">
-              <Shield size={18} className="text-cyan-400" />
-              <span className="text-sm">Biometric Login</span>
+      <motion.div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-3 shadow-xl">
+        <h3 className="font-bold text-lg text-white mb-4">Security Settings</h3>
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="bg-purple-600/30 p-2 rounded-lg">
+              <Shield size={18} className="text-purple-400" />
             </div>
-            <div className="w-8 h-5 bg-cyan-600 rounded-full"></div>
+            <span className="text-sm font-semibold">Biometric Login</span>
           </div>
+          <div className="w-10 h-6 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-lg shadow-purple-500/50"></div>
         </div>
       </motion.div>
     </motion.div>
