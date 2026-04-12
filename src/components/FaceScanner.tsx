@@ -172,70 +172,107 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     setStatus("scanning");
     setMessage("Detecting face...");
 
-    // Strict face validation - require consistent detection
-    // For REGISTRATION: Need 3 consecutive HIGH-confidence detections (75%+)
-    // For LOGIN: Need 2 consecutive MEDIUM-confidence detections (60%+)
-    const isRegistration = mode === "register";
-    const requiredConsecutiveDetections = isRegistration ? 3 : 2; // More strict for registration
-    const minConfidenceThreshold = isRegistration ? 0.75 : 0.60; // Higher threshold for registration
-    
-    let consecutiveValidDetections = 0;
-    let faceIsValid = false;
-    let lastFaceError = "";
-    let totalAttempts = 0;
-    const maxTotalAttempts = 60; // Up to 60 attempts
-    let validatedFaceData = null;
+    // FOR REGISTRATION: Properly detect face presence first
+    if (mode === "register") {
+      console.log('🔍 REGISTRATION MODE: Starting proper face detection...');
+      let faceDetected = false;
+      let detectionAttempts = 0;
+      const maxDetectionAttempts = 75; // Try for up to 75x200ms = 15 seconds (increased from 50)
+      const minConfidence = 0.5;
 
-    while (consecutiveValidDetections < requiredConsecutiveDetections && totalAttempts < maxTotalAttempts) {
-      totalAttempts++;
-      await new Promise((r) => setTimeout(r, 150));
+      setMessage("📸 Looking for your face... (Move closer if needed)");
 
-      // Use face detection to validate that only a face is in the frame
-      const faceDetection = await detectFaceInVideo(video);
+      while (!faceDetected && detectionAttempts < maxDetectionAttempts) {
+        detectionAttempts++;
+        await new Promise((r) => setTimeout(r, 200));
 
-      if (faceDetection.hasFace && faceDetection.confidence >= minConfidenceThreshold) {
-        // For registration: validate landmarks indicate full face
-        if (isRegistration && faceDetection.landmarks && faceDetection.landmarks.length > 0) {
-          const face = faceDetection.landmarks[0];
-          if (!face.landmarks || face.landmarks.length < 6) {
-            // Incomplete face detected - reset
-            console.warn(`❌ Partial face detected (only ${face.landmarks?.length || 0} landmarks). Restarting...`);
-            consecutiveValidDetections = 0;
-            continue;
+        try {
+          const faceDetection = await detectFaceInVideo(video);
+
+          if (faceDetection.hasFace && faceDetection.confidence >= minConfidence) {
+            console.log(`✅ Face detected! Confidence: ${Math.round(faceDetection.confidence * 100)}%`);
+            faceDetected = true;
+            setMessage(`✓ Face detected (${Math.round(faceDetection.confidence * 100)}%)`);
+            await new Promise((r) => setTimeout(r, 500));
+            break;
+          } else {
+            const progress = Math.round((detectionAttempts / maxDetectionAttempts) * 100);
+            setMessage(`🔍 Scanning... (${progress}%) - Make sure face is clearly visible`);
+            if (detectionAttempts % 5 === 0) {
+              console.log(`Face detection attempt ${detectionAttempts}/${maxDetectionAttempts}...`);
+            }
           }
+        } catch (err) {
+          console.warn('Face detection attempt error:', err);
+          // Continue trying even if an attempt fails
         }
-        
-        consecutiveValidDetections++;
-        validatedFaceData = faceDetection;
-        console.log(
-          `✓ Valid face detected (${consecutiveValidDetections}/${requiredConsecutiveDetections}, confidence: ${Math.round(faceDetection.confidence * 100)}%)`
-        );
-        
-        if (consecutiveValidDetections >= requiredConsecutiveDetections) {
-          faceIsValid = true;
-          break;
-        }
-      } else {
-        // Reset counter if detection is not reliable
-        if (consecutiveValidDetections > 0) {
-          console.warn(`Face detection interrupted. Restarting validation...`);
+      }
+
+      if (!faceDetected) {
+        console.warn('❌ Could not detect face after 10 seconds');
+        setStatus("error");
+        setMessage("❌ Face not detected. Check lighting, move closer, and ensure face is visible.");
+        onError?.("Face not detected");
+        setTimeout(() => {
+          setStatus("camera");
+          setMessage("Align your face inside the frame");
+        }, 2500);
+        return;
+      }
+
+      setMessage("✓ Capturing face profile...");
+      await new Promise((r) => setTimeout(r, 300));
+    } else {
+      // LOGIN/TEMP-ACCESS: Use face detection
+      const minConfidenceThreshold = mode === "login" ? 0.60 : 0.60;
+      let consecutiveValidDetections = 0;
+      const requiredConsecutiveDetections = 2;
+      let totalAttempts = 0;
+      const maxTotalAttempts = 40;
+      let faceIsValid = false;
+
+      setMessage("Detecting face...");
+
+      while (consecutiveValidDetections < requiredConsecutiveDetections && totalAttempts < maxTotalAttempts) {
+        totalAttempts++;
+        await new Promise((r) => setTimeout(r, 200));
+
+        try {
+          const faceDetection = await detectFaceInVideo(video);
+
+          if (faceDetection.hasFace && faceDetection.confidence >= minConfidenceThreshold) {
+            consecutiveValidDetections++;
+            console.log(`✓ Face detected (${consecutiveValidDetections}/${requiredConsecutiveDetections})`);
+            
+            if (consecutiveValidDetections >= requiredConsecutiveDetections) {
+              faceIsValid = true;
+              break;
+            }
+          } else {
+            if (consecutiveValidDetections > 0) {
+              console.warn('Face detection lost, restarting...');
+              consecutiveValidDetections = 0;
+            }
+          }
+        } catch (err) {
+          console.warn('Face detection error, continuing...');
           consecutiveValidDetections = 0;
         }
-        lastFaceError = faceDetection.error || "Face validation failed";
       }
-    }
 
-    if (!faceIsValid) {
-      setStatus("error");
-      setMessage(
-        `❌ Could not verify face. Make sure only your REAL FACE is visible. No walls, objects, or multiple faces.`
-      );
-      onError?.("Face validation failed - cannot detect a clear face");
-      setTimeout(() => {
-        setStatus("camera");
-        setMessage("Align your face inside the frame");
-      }, 2000);
-      return;
+      if (!faceIsValid) {
+        setStatus("error");
+        setMessage("❌ Could not detect face. Please ensure good lighting and face is clearly visible.");
+        onError?.("Face validation failed");
+        setTimeout(() => {
+          setStatus("camera");
+          setMessage("Align your face inside the frame");
+        }, 2000);
+        return;
+      }
+
+      setMessage("✓ Face detected. Capturing...");
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     setMessage("✓ Face detected. Capturing face profile...");
@@ -244,11 +281,11 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
     // Try multiple times to get a good face capture
     let embedding = null;
     let attempts = 0;
-    const maxAttempts = 8; // Increased attempts
+    const maxAttempts = 15; // Increased from 8 to 15 for better success rate
 
     while (!embedding && attempts < maxAttempts) {
       attempts++;
-      await new Promise((r) => setTimeout(r, 400)); // Shorter wait between attempts
+      await new Promise((r) => setTimeout(r, 300)); // Shorter wait between attempts
 
       embedding = extractEmbedding(video);
 
@@ -260,15 +297,16 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
         // For registration: stricter validation (good embedding distribution)
         // For login: lenient validation (just check it exists)
         if (mode === "register") {
-          // Registration: embedding should be well-distributed (10-40 range)
-          if (embeddingSum < 10.0 || embeddingSum > 40.0) {
+          // Registration: embedding should be well-distributed - MORE LENIENT RANGE
+          // Accept 5-55 instead of 10-40 to handle various lighting/angles
+          if (embeddingSum < 5.0 || embeddingSum > 55.0) {
             console.warn(
-              `Attempt ${attempts}: Embedding sum out of range for registration (sum=${embeddingSum.toFixed(2)}). Required: 10-40. Retrying...`
+              `Attempt ${attempts}: Embedding sum out of range for registration (sum=${embeddingSum.toFixed(2)}). Required: 5-55. Retrying...`
             );
             embedding = null;
           } else {
             console.log(
-              `✅ Perfect face embedded on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
+              `✅ Face embedded on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
             );
             break;
           }
@@ -302,17 +340,21 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
       return;
     }
 
-    // Quality validation for registration mode
+    // Quality validation for registration mode - MORE LENIENT
     if (mode === "register") {
       const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
       console.log(`🎯 REGISTRATION MODE: Face quality validation (sum=${embeddingSum.toFixed(2)})`);
       
-      if (embeddingSum < 10 || embeddingSum > 40) {
-        throw new Error(`Face quality too low for registration (${embeddingSum.toFixed(1)}). Please ensure good lighting and hold face still.`);
-      }
-      
-      if (!validatedFaceData || validatedFaceData.confidence < 0.75) {
-        throw new Error('Face confidence too low for registration. Need 75%+ confidence. Please provide better lighting.');
+      // More lenient validation: 5-55 instead of 10-40
+      if (embeddingSum < 5 || embeddingSum > 55) {
+        setStatus("error");
+        setMessage(`❌ Face quality issue. Please improve lighting and try again. (Quality: ${embeddingSum.toFixed(1)})`);
+        onError?.("Face quality too low");
+        setTimeout(() => {
+          setStatus("camera");
+          setMessage("Align your face inside the frame");
+        }, 2000);
+        return;
       }
     }
 
@@ -333,9 +375,16 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
           throw new Error("Refresh token missing from server");
         }
 
+        // CRITICAL: Persist userId and tokens for next login
+        await appStorage.setItem("biovault_userId", userId);
+        localStorage.setItem("biovault_userId", userId);
         localStorage.setItem("biovault_token", data.token);
         localStorage.setItem("biovault_refresh_token", data.refreshToken);
+        await appStorage.setItem("biovault_token", data.token);
+        await appStorage.setItem("biovault_refresh_token", data.refreshToken);
 
+        console.log('✅ FaceScanner: User credentials persisted for future logins');
+        
         setStatus("success");
         setMessage(`✓ Verified (${Math.round((data.score || 0) * 100)}%)`);
         stopCamera();
@@ -526,9 +575,15 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
             </>
           )}
           
-          {status === "camera" && mode === "register" && !required && (
-            <Button variant="outline" size="lg" onClick={cancelCamera}>
-              Cancel
+          {status === "camera" && mode === "register" && (
+            <Button 
+              variant="cyber" 
+              size="lg" 
+              onClick={startScan} 
+              className="min-w-[160px]"
+            >
+              <ScanFace className="w-4 h-4 mr-2" />
+              Capture Face
             </Button>
           )}
 

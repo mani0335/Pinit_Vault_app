@@ -41,6 +41,7 @@ import {
   extractUserIdFromImage,
   type WatermarkMetadata,
 } from "@/lib/steganography";
+import { saveImageToGallery } from "@/lib/vaultService";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { Camera as CameraPlugin, CameraResultType, CameraSource } from "@capacitor/camera";
@@ -533,35 +534,66 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       
       console.log('👤 User ID:', currentUserId);
       
-      // Use new vaultAPI.download() endpoint - returns JPG/PNG/WebP/GIF automatically
-      const result = await vaultAPI.download(image.assetId || image.id, currentUserId);
-      
-      if (!result.success) {
-        const errorMsg = result.error || 'Unknown error';
-        console.error('❌ Download API error:', errorMsg);
-        
-        // Check if it's a database fallback error
-        if (errorMsg.includes('Cloudinary') && !image.image_base64) {
-          alert(`⚠️ Download temporarily unavailable.\n\n${errorMsg}\n\nTry again in a moment.`);
-        } else {
-          alert(`❌ Download failed:\n\n${errorMsg.substring(0, 200)}`);
-        }
+      if (!currentUserId) {
+        alert('❌ Unable to identify user. Please login again.');
         setIsDownloading(false);
         return;
       }
       
-      console.log('✅ Download successful:', result.filename);
+      // Try to get image data from multiple sources
+      let base64Data = image.image_base64 || image.encrypted_data || image.thumbnail_base64;
       
-      // Show location-specific message
-      const locationMsg = result.location === 'BioVault Cache' 
-        ? '📸 Image downloaded and saved successfully!'
-        : '📁 Check your Downloads folder.';
+      // If no base64 in memory, try to download from Cloudinary/API
+      if (!base64Data) {
+        console.log('📥 Image data not in memory, fetching from server...');
+        try {
+          const result = await vaultAPI.download(image.assetId || image.id, currentUserId);
+          
+          if (!result.success) {
+            const errorMsg = result.error || 'Unknown error';
+            console.error('❌ Download API error:', errorMsg);
+            alert(`❌ Download failed:\n\n${errorMsg.substring(0, 200)}`);
+            setIsDownloading(false);
+            return;
+          }
+          
+          // If we got a URL, fetch the image
+          if (result.imageUrl || result.filepath) {
+            const imageUrl = result.imageUrl || result.filepath;
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+            base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+          }
+        } catch (apiErr) {
+          console.error('❌ Failed to fetch image from server:', apiErr);
+          alert('❌ Failed to download image. Please try again.');
+          setIsDownloading(false);
+          return;
+        }
+      }
       
-      alert(`✅ Download Complete!\n\n${result.filename}\n\n${locationMsg}`);
+      if (!base64Data) {
+        alert('❌ No image data available to download');
+        setIsDownloading(false);
+        return;
+      }
       
+      // Save image to device gallery in PINIT Vault folder
+      console.log('💾 Saving image to PINIT Vault folder...');
+      const fileName = image.fileName || image.file_name || 'encrypted-image.jpg';
+      const galleryResult = await saveImageToGallery(base64Data, fileName, currentUserId);
+      
+      if (galleryResult.success) {
+        console.log('✅ Image saved successfully:', galleryResult.path);
+        alert(`✅ Image Downloaded!\n\n📁 Saved to: PINIT Vault\n\n📸 ${fileName}\n\nCheck your phone's gallery for the image.`);
+      } else {
+        console.warn('⚠️ Gallery save failed:', galleryResult.error);
+        alert(`⚠️ Image download partially successful.\n\nThe image was processed but could not be saved to gallery:\n\n${galleryResult.error}\n\nYou may need to save it manually.`);
+      }
       
     } catch (err: any) {
-      console.error('❌ Download catch error:', err);
+      console.error('❌ Download error:', err);
       const errorMsg = err?.message || String(err) || 'Unknown error';
       alert(`❌ Download failed:\n\n${errorMsg}\n\nPlease try again.`);
     } finally {

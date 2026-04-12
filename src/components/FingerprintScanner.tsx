@@ -81,14 +81,28 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
         } catch (nativeErr: any) {
           // User cancelled or biometric failed
           const errMsg = nativeErr?.message || '';
+          console.error('🔴 Native biometric error:', errMsg);
+          
           if (errMsg.includes('cancel') || errMsg.includes('Cancel') || errMsg.includes('Touched')) {
             setStatus('error');
-            setMessage('❌ Fingerprint scan cancelled. Please try again.');
+            setMessage('⚠️ Scan cancelled. Please try again.');
             onError?.('Fingerprint scan was cancelled');
+          } else if (errMsg.includes('not available') || errMsg.includes('not supported')) {
+            setStatus('error');
+            setMessage('⚠️ Biometric not available. Use password login instead.');
+            onError?.('Biometric not available');
+          } else if (errMsg.includes('Timeout') || errMsg.includes('timeout')) {
+            setStatus('error');
+            setMessage('⏱️ Scan timeout. Please try again.');
+            onError?.('Scan timeout');
+          } else if (errMsg.includes('Too many')) {
+            setStatus('error');
+            setMessage('🔒 Too many attempts. Try again in a moment.');
+            onError?.('Too many attempts');
           } else {
             setStatus('error');
-            setMessage('❌ Fingerprint not recognized. Please try again.');
-            onError?.('Fingerprint authentication failed');
+            setMessage('❌ Fingerprint not matching. Ensure finger is clean and dry.');
+            onError?.('Fingerprint not recognized');
           }
           setTimeout(() => setStatus('idle'), 2500);
           return;
@@ -97,7 +111,13 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
 
       // Fallback to WebAuthn if available
       if (!window.PublicKeyCredential || typeof navigator.credentials === 'undefined') {
-        throw new Error('Biometric authentication not available on this device');
+        const supportMsg = 'Biometric authentication not available on this device. Please use password login.';
+        setStatus('error');
+        setMessage('⚠️ Biometric unavailable');
+        onError?.(supportMsg);
+        setTimeout(() => setStatus('idle'), 3000);
+        console.warn('🔴 WebAuthn not supported');
+        return;
       }
 
       if (mode === "register") {
@@ -182,9 +202,22 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           setTimeout(onSuccess, SUCCESS_HOLD_MS);
         } catch (e: any) {
           const msg = (e?.message || 'Failed to register fingerprint').toString();
+          console.error('🔴 Fingerprint registration error:', msg);
+          
+          let friendlyMsg = msg;
+          if (msg.includes('Network') || msg.includes('NetworkError')) {
+            friendlyMsg = '🌐 Network error. Check your internet connection.';
+          } else if (msg.includes('JSON parse')) {
+            friendlyMsg = '⚠️ Server communication error. Please try again.';
+          } else if (msg.includes('Failed to save')) {
+            friendlyMsg = '💾 Failed to save. Please try again.';
+          } else if (msg.includes('cancelled')) {
+            friendlyMsg = '⚠️ Registration cancelled. Please try again.';
+          }
+          
           setStatus('error');
-          setMessage('❌ ' + msg);
-          onError?.(msg);
+          setMessage('❌ ' + friendlyMsg);
+          onError?.(friendlyMsg);
           setTimeout(() => setStatus('idle'), 3000);
         }
       } else {
@@ -217,18 +250,45 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           }
         } catch (e: any) {
           const msg = (e?.message || '').toString();
-          const friendly = msg || 'User not authorized. Please register first.';
+          console.error('🔴 Fingerprint login error:', msg);
+          
+          let friendlyMsg = msg;
+          if (msg.includes('not authorized') || msg.includes('User not')) {
+            friendlyMsg = '🔐 Not registered. Please register your fingerprint first.';
+          } else if (msg.includes('Network') || msg.includes('NetworkError')) {
+            friendlyMsg = '🌐 Network error. Check your internet connection.';
+          } else if (msg.includes('device token')) {
+            friendlyMsg = '📱 Device not recognized. Re-register required.';
+          } else if (msg.includes('User not registered')) {
+            friendlyMsg = '📋 User not found. Please register first.';
+          } else if (!msg) {
+            friendlyMsg = 'Fingerprint verification failed. Please try again.';
+          }
+          
           setStatus('error');
-          setMessage('❌ ' + friendly);
-          onError?.(friendly);
+          setMessage('❌ ' + friendlyMsg);
+          onError?.(friendlyMsg);
           setTimeout(() => setStatus('idle'), 3000);
         }
       }
     } catch (err: any) {
       setStatus("error");
       const errMsg = err.message || "Fingerprint authentication failed";
-      setMessage('❌ ' + errMsg);
-      onError?.(errMsg);
+      console.error('🔴 FingerprintScanner error:', errMsg);
+      
+      let friendlyMsg = errMsg;
+      if (errMsg.includes('cancelled') || errMsg.includes('Cancelled')) {
+        friendlyMsg = '⚠️ Operation cancelled. Please try again.';
+      } else if (errMsg.includes('Network') || errMsg.includes('NetworkError')) {
+        friendlyMsg = '🌐 Network error. Check your connection.';
+      } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+        friendlyMsg = '⏱️ Operation timed out. Please try again.';
+      } else if (errMsg.includes('not available')) {
+        friendlyMsg = '⚠️ Biometric not available. Use password login.';
+      }
+      
+      setMessage('❌ ' + friendlyMsg);
+      onError?.(friendlyMsg);
       setTimeout(() => setStatus("idle"), 3000);
     }
   }, [mode, onSuccess, onError, SUCCESS_HOLD_MS]);

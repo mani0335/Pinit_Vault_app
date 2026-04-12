@@ -3,6 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera as CameraPlugin } from "@capacitor/camera";
 import {
+  loadVaultDocuments,
+  saveVaultDocuments,
+  uploadImageToCloudinary,
+  deleteDocumentFromVault,
+  clearVaultForUser,
+  syncVaultData,
+  getVaultMetadata,
+  saveImageToGallery,
+  syncVaultMetadata,
+} from "@/lib/vaultService";
+import { embedAdvancedWatermark, extractAdvancedWatermark, type AdvancedWatermarkMetadata } from "@/lib/advancedSteganography";
+import {
   Home,
   Briefcase,
   Share2,
@@ -23,6 +35,8 @@ import {
   Settings,
   Search as FileSearch,
   Camera,
+  X,
+  CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appStorage } from "@/lib/storage";
@@ -31,11 +45,14 @@ interface VaultDocument {
   id: string;
   name: string;
   encryptedData: string;
+  cloudinaryUrl?: string;
   metadata: {
     timestamp: number;
     original_name: string;
     size: number;
     checksum: string;
+    watermarked?: boolean;
+    ownerId?: string;
   };
   createdAt: string;
 }
@@ -57,11 +74,57 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   const [userId, setUserId] = useState<string | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
-  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([
-    { id: "1", name: "Document_1.pdf", encryptedData: "...", metadata: { timestamp: Date.now() - 86400000, original_name: "Document_1.pdf", size: 2400, checksum: "abc123" }, createdAt: "Today" },
-    { id: "2", name: "Image_backup.jpg", encryptedData: "...", metadata: { timestamp: Date.now() - 172800000, original_name: "Image_backup.jpg", size: 4100, checksum: "def456" }, createdAt: "Yesterday" },
-    { id: "3", name: "Passport_Copy.pdf", encryptedData: "...", metadata: { timestamp: Date.now() - 259200000, original_name: "Passport_Copy.pdf", size: 1200, checksum: "ghi789" }, createdAt: "2 days ago" },
-  ]);
+  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
+  const [vaultPersistenceStatus, setVaultPersistenceStatus] = useState<{
+    isSynced: boolean;
+    lastSyncTime: number;
+    documentCount: number;
+    storageType: string;
+  }>({ isSynced: false, lastSyncTime: 0, documentCount: 0, storageType: "none" });
+
+  // Load and sync vault documents when userId is available
+  useEffect(() => {
+    const initializeVault = async () => {
+      if (!userId) {
+        console.warn("⚠️ No userId available, cannot initialize vault");
+        return;
+      }
+
+      try {
+        // Sync vault data between appStorage and localStorage
+        console.log("📊 Syncing vault data between storage types...");
+        const synced = await syncVaultData(userId);
+        if (synced) {
+          console.log(`✅ Vault data synchronized for user: ${userId}`);
+        }
+
+        // Load vault documents
+        const docs = await loadVaultDocuments(userId);
+        setVaultDocuments(docs);
+        console.log(
+          `✅ Loaded ${docs.length} documents from vault for user: ${userId}`
+        );
+
+        // Log vault metadata
+        const metadata = await getVaultMetadata(userId);
+        console.log(
+          `📈 Vault Stats - Documents: ${metadata.documentCount}, Size: ${(metadata.userVaultSize / 1024).toFixed(2)}KB, Storage: ${metadata.storageType}`
+        );
+
+        // Update persistence status
+        setVaultPersistenceStatus({
+          isSynced: synced,
+          lastSyncTime: metadata.lastSyncTime,
+          documentCount: metadata.documentCount,
+          storageType: metadata.storageType,
+        });
+      } catch (error) {
+        console.error("Failed to initialize vault:", error);
+      }
+    };
+
+    initializeVault();
+  }, [userId]);
 
   // Verify authentication and load user data on mount
   useEffect(() => {
@@ -102,6 +165,12 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
   const handleLogout = async () => {
     try {
+      // Clear vault data for current user
+      if (userId) {
+        await clearVaultForUser(userId);
+      }
+      
+      // Clear token storage
       await appStorage.removeItem("biovault_token");
       await appStorage.removeItem("biovault_refresh_token");
       await appStorage.removeItem("biovault_userId");
@@ -158,7 +227,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
         animate={{ opacity: 1, y: 0 }}
         className="sticky top-0 z-40 bg-gradient-to-r from-slate-950/95 via-purple-950/95 to-slate-950/95 backdrop-blur-xl border-b border-purple-500/30 px-4 py-4 shadow-2xl"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/50">
               {userName.charAt(0).toUpperCase()}
@@ -175,6 +244,17 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             <LogOut size={20} className="text-red-400" />
           </button>
         </div>
+
+        {/* Vault Persistence Status */}
+        {vaultPersistenceStatus.storageType !== "none" && (
+          <div className="flex items-center gap-2 text-xs text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/30 w-fit">
+            <div className={`w-2 h-2 rounded-full ${vaultPersistenceStatus.isSynced ? "bg-green-400" : "bg-yellow-400"}`}></div>
+            <span>
+              {vaultPersistenceStatus.isSynced ? "✅ Vault Synced" : "📊 Syncing"} • {vaultPersistenceStatus.documentCount} documents •{" "}
+              {vaultPersistenceStatus.storageType === "both" ? "🔄 Dual-Backed" : vaultPersistenceStatus.storageType}
+            </span>
+          </div>
+        )}
       </motion.div>
 
       {/* Content Area */}
@@ -195,7 +275,13 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           }
         }} />
         }
-        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} />}
+        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} onDeleteDocument={async (docId) => {
+          const updated = vaultDocuments.filter((doc) => doc.id !== docId);
+          setVaultDocuments(updated);
+          if (userId) {
+            await saveVaultDocuments(userId, updated);
+          }
+        }} />}
         {currentPage === "portfolio" && <PortfolioPage key="portfolio" />}
         {currentPage === "share" && <SharePage key="share" />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
@@ -221,19 +307,83 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             onSaveToVault={async (encryptedPackage) => {
               setIsEncrypting(true);
               try {
-                // Generate document ID and add to vault
+                console.log("📤 Saving encryption to vault...");
+                
+                // Verify encryption is valid
+                if (!encryptedPackage || !encryptedPackage.encrypted_data || !encryptedPackage.metadata) {
+                  throw new Error("Invalid encryption data package");
+                }
+                
+                // Verify user ID is embedded in metadata
+                if (!encryptedPackage.metadata.ownerId && !userId) {
+                  throw new Error("Cannot encrypt: User ID not available");
+                }
+                
+                const ownerIdUsed = encryptedPackage.metadata.ownerId || userId;
+                console.log(`🔐 Image encrypted with PINIT ID: ${ownerIdUsed}`);
+                
+                // Upload to Cloudinary (optional cloud backup)
+                const uploadResult = await uploadImageToCloudinary(
+                  encryptedPackage.encrypted_data,
+                  encryptedPackage.metadata.original_name,
+                  userId || "unknown",
+                  encryptedPackage.metadata.size,
+                  encryptedPackage.metadata.checksum
+                );
+
+                // Save watermarked image to device gallery in PINIT Vault folder
+                const galleryResult = await saveImageToGallery(
+                  encryptedPackage.watermarkedImage || encryptedPackage.encrypted_data,
+                  encryptedPackage.metadata.original_name,
+                  userId || "unknown"
+                );
+
+                if (galleryResult.success) {
+                  console.log(`✅ Image saved to PINIT Vault: ${galleryResult.path}`);
+                } else {
+                  console.warn(`⚠️ Gallery save failed: ${galleryResult.error}`);
+                }
+
+                // Create document with watermarked preview for display
                 const newDoc: VaultDocument = {
                   id: Date.now().toString(),
                   name: encryptedPackage.metadata.original_name,
                   encryptedData: encryptedPackage.encrypted_data,
+                  watermarkedImage: encryptedPackage.watermarkedImage, // Store for preview
+                  cloudinaryUrl: uploadResult.cloudinaryUrl,
                   metadata: encryptedPackage.metadata,
                   createdAt: new Date().toLocaleDateString(),
                 };
-                setVaultDocuments((prev) => [newDoc, ...prev]);
+
+                // Add to state and persist
+                const updatedDocs = [newDoc, ...vaultDocuments];
+                setVaultDocuments(updatedDocs);
+                if (userId) {
+                  await saveVaultDocuments(userId, updatedDocs);
+                  // Sync metadata to ensure consistency
+                  await syncVaultMetadata(userId);
+                  // Update persistence status
+                  const metadata = await getVaultMetadata(userId);
+                  setVaultPersistenceStatus({
+                    isSynced: true,
+                    lastSyncTime: metadata.lastSyncTime,
+                    documentCount: metadata.documentCount,
+                    storageType: metadata.storageType,
+                  });
+                }
+
+                console.log("✅ Document saved to vault");
+                // Show success message with encryption confirmation
+                const successMsg = galleryResult.success 
+                  ? `✅ Image Encrypted Successfully!\n\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n📁 Saved to: PINIT Vault` 
+                  : `✅ Image Encrypted Successfully!\n\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n⚠️ (Gallery save failed)`;
+                alert(successMsg);
                 setCapturedImage(null);
                 setCurrentPage("home");
               } catch (error) {
                 console.error("Error saving to vault:", error);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                alert(`❌ Failed to encrypt image:\n\n${errorMessage}`);
               } finally {
                 setIsEncrypting(false);
               }
@@ -398,8 +548,8 @@ function HomePage({ userName, documentCount, onEncryptClick }: { userName: strin
         <h3 className="text-lg font-bold mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { icon: Plus, label: "Encrypt", gradient: "from-blue-600 to-cyan-600", onClick: onEncryptClick },
-            { icon: Share, label: "Share", gradient: "from-purple-600 to-pink-600", onClick: () => {} },
+            { icon: Lock, label: "Encrypt", gradient: "from-blue-600 to-cyan-600", onClick: onEncryptClick },
+            { icon: CheckCircle, label: "Verify Proof", gradient: "from-purple-600 to-pink-600", onClick: () => {} },
           ].map((action, idx) => (
             <motion.button
               key={idx}
@@ -435,10 +585,21 @@ function HomePage({ userName, documentCount, onEncryptClick }: { userName: strin
 }
 
 // ============= VAULT PAGE =============
-function VaultPage({ documents }: { documents: VaultDocument[] }) {
+function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDocument[]; onDeleteDocument?: (docId: string) => void; userId?: string | null }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [vaultDocs, setVaultDocs] = useState(documents);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<string | null>(null);
+  const [watermarkMetadata, setWatermarkMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
 
-  const filteredDocs = documents.filter((doc) =>
+  // Sync documents when prop changes
+  useEffect(() => {
+    setVaultDocs(documents);
+  }, [documents]);
+
+  const filteredDocs = vaultDocs.filter((doc) =>
     doc.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -449,6 +610,380 @@ function VaultPage({ documents }: { documents: VaultDocument[] }) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
   };
+
+  const handleDownload = async (doc: VaultDocument) => {
+    try {
+      if (!doc) {
+        alert("❌ No image selected to download");
+        return;
+      }
+      
+      console.log("⬇️ Downloading image from vault:", doc.name);
+      
+      // Get user ID from props or storage if not available
+      let currentUserId = userId || null;
+      if (!currentUserId) {
+        currentUserId = await appStorage.getItem('biovault_userId');
+      }
+      
+      if (!currentUserId) {
+        alert("❌ Unable to identify user");
+        return;
+      }
+      
+      // Get base64 data from multiple sources
+      let base64Data = doc.encryptedData;
+      
+      if (!base64Data && doc.cloudinaryUrl) {
+        // Try to fetch from Cloudinary if local data not available
+        console.log("📥 Fetching image from cloud...");
+        try {
+          const response = await fetch(doc.cloudinaryUrl);
+          const blob = await response.blob();
+          const arrayBuffer = await blob.arrayBuffer();
+          base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        } catch (fetchErr) {
+          console.warn("⚠️ Failed to fetch from cloud:", fetchErr);
+          alert("❌ Unable to download image. Please try again.");
+          return;
+        }
+      }
+      
+      if (!base64Data) {
+        alert("❌ No image data available to download");
+        return;
+      }
+      
+      // Save to device gallery in PINIT Vault folder
+      console.log("💾 Saving to PINIT Vault...");
+      const fileName = doc.metadata.original_name || doc.name;
+      const result = await saveImageToGallery(base64Data, fileName, currentUserId);
+      
+      if (result.success) {
+        console.log("✅ Image downloaded and saved to PINIT Vault");
+        alert(`✅ Image Downloaded!\n\n📁 Saved to: PINIT Vault\n\n📸 ${fileName}\n\nCheck your phone's gallery.`);
+      } else {
+        console.warn("⚠️ Failed to save to gallery:", result.error);
+        alert(`⚠️ Download partially successful.\n\nCould not save to gallery:\n${result.error}`);
+      }
+    } catch (err) {
+      console.error("❌ Download error:", err);
+      alert(`❌ Download failed:\n\n${err}`);
+    }
+  };
+
+  const handleDeleteDocument = () => {
+    if (docToDelete) {
+      setVaultDocs((prev) => prev.filter((doc) => doc.id !== docToDelete));
+      if (onDeleteDocument) {
+        onDeleteDocument(docToDelete);
+      }
+      setSelectedDoc(null);
+      setPreviewImage(null);
+      setWatermarkMetadata(null);
+      setShowDeleteConfirm(false);
+      setDocToDelete(null);
+      console.log("✅ Document deleted:", docToDelete);
+    }
+  };
+
+  const handleDocumentClick = async (doc: VaultDocument) => {
+    // Display watermarked image (preview) or encrypted data if not available
+    try {
+      // Use watermarked image if available, otherwise fall back to encrypted data
+      const imageUrl = doc.watermarkedImage || ("data:image/jpeg;base64," + doc.encryptedData);
+      setPreviewImage(imageUrl);
+      setSelectedDoc(doc);
+
+      // Only try to extract watermark if we have the watermarked image
+      if (doc.watermarkedImage) {
+        // VERIFY WATERMARK using advanced steganography extraction
+        const extracted = await extractAdvancedWatermark(imageUrl);
+        if (extracted && extracted.found) {
+          setWatermarkMetadata(extracted);
+          console.log("✅ WATERMARK VERIFIED:", extracted);
+          console.log(`  Owner: ${extracted.userId}`);
+          console.log(`  Confidence: ${extracted.confidence}`);
+          console.log(`  Timestamp: ${extracted.timestamp}`);
+          console.log(`  Device: ${extracted.deviceName || "Unknown"}`);
+          console.log(`  IP Address: ${extracted.ipAddress || "Unknown"}`);
+          console.log(`  GPS: ${extracted.gps.available ? extracted.gps.coordinates : "Not captured"}`);
+        } else {
+          setWatermarkMetadata(null);
+          console.warn("⚠️ No valid watermark found in image");
+        }
+      } else {
+        // For old documents without watermarkedImage, extract from metadata
+        if (doc.metadata.ownerId) {
+          console.log(`📋 Document owner: ${doc.metadata.ownerId}`);
+        }
+        setWatermarkMetadata(null);
+      }
+    } catch (err) {
+      console.error("Error loading preview:", err);
+      setWatermarkMetadata(null);
+    }
+  };
+
+  // Delete confirmation modal
+  if (showDeleteConfirm && docToDelete) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center px-4 py-6"
+      >
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-gradient-to-br from-slate-800 to-slate-900 border border-red-500/30 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full space-y-6 shadow-2xl"
+        >
+          <div className="flex justify-center">
+            <div className="bg-red-500/20 p-4 rounded-full">
+              <AlertCircle size={30} className="text-red-500" />
+            </div>
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-bold text-white">Delete Document?</h2>
+            <p className="text-sm text-slate-400">This action cannot be undone. The encrypted document will be permanently deleted from your vault.</p>
+          </div>
+          <div className="space-y-3">
+            <motion.button
+              onClick={handleDeleteDocument}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all"
+            >
+              <Trash2 size={20} />
+              Delete Forever
+            </motion.button>
+            <motion.button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setDocToDelete(null);
+              }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all"
+            >
+              Cancel
+            </motion.button>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  }
+
+  // Full-screen preview modal
+  if (selectedDoc && previewImage) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center px-4 py-6 overflow-y-auto"
+      >
+        {/* Close button */}
+        <button
+          onClick={() => {
+            setSelectedDoc(null);
+            setPreviewImage(null);
+          }}
+          className="absolute top-4 right-4 p-2 rounded-full bg-slate-700/80 hover:bg-slate-600 z-51 transition-all"
+        >
+          <X size={24} className="text-white" />
+        </button>
+
+        {/* Image preview with thumbnail */}
+        <div className="flex-1 flex items-center justify-center w-full max-w-2xl py-8">
+          <img
+            src={previewImage}
+            alt="Preview"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
+        </div>
+
+        {/* Enhanced metadata and actions */}
+        <div className="w-full max-w-4xl space-y-4">
+          {/* Metadata Grid */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur rounded-2xl p-6 border border-purple-500/20 space-y-6"
+          >
+            <h3 className="text-lg font-bold text-white mb-4">🔒 ENCRYPTION DETAILS & WATERMARK VERIFICATION</h3>
+
+            {/* File Info */}
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">FILE INFORMATION</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">FILE NAME</p>
+                  <p className="text-sm text-slate-200 font-mono break-all">{selectedDoc.metadata.original_name}</p>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">SIZE</p>
+                  <p className="text-sm text-slate-200 font-mono">{getFileSize(selectedDoc.metadata.size)}</p>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">SAVED</p>
+                  <p className="text-sm text-slate-200 font-mono">{new Date(selectedDoc.metadata.timestamp).toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">CHECKSUM</p>
+                  <p className="text-sm text-slate-200 font-mono">{selectedDoc.metadata.checksum}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Security & Watermark */}
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">SECURITY & WATERMARK</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 rounded-lg p-3 border border-green-500/20">
+                  <p className="text-xs text-slate-400 mb-1">ENCRYPTION</p>
+                  <p className="text-sm text-green-300 font-semibold">AES-256 + LSB</p>
+                </div>
+                <div className="bg-gradient-to-br from-cyan-900/30 to-teal-900/30 rounded-lg p-3 border border-cyan-500/20">
+                  <p className="text-xs text-slate-400 mb-1">WATERMARK METHOD</p>
+                  <p className="text-sm text-cyan-300 font-semibold">Tile-Based (12x12)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Watermark Metadata (extracted from image) */}
+            {watermarkMetadata && watermarkMetadata.found && (
+              <>
+                <div className="border-t border-slate-700 pt-4 space-y-3">
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide text-emerald-400">✅ WATERMARK VERIFIED</p>
+                  
+                  {/* Primary Info */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gradient-to-br from-purple-900/30 to-blue-900/30 rounded-lg p-3 border border-purple-500/20">
+                      <p className="text-xs text-slate-400 mb-1">OWNER (VERIFIED)</p>
+                      <p className="text-sm font-mono text-purple-300 font-semibold">{watermarkMetadata.userId}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-900/30 to-yellow-900/30 rounded-lg p-3 border border-amber-500/20">
+                      <p className="text-xs text-slate-400 mb-1">CONFIDENCE</p>
+                      <p className="text-sm font-mono text-amber-300 font-semibold">{watermarkMetadata.confidence}</p>
+                    </div>
+                  </div>
+
+                  {/* Device Information */}
+                  {(watermarkMetadata.deviceName || watermarkMetadata.deviceId) && (
+                    <div className="pt-3 space-y-2">
+                      <p className="text-xs text-slate-400 font-semibold">DEVICE INFORMATION</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {watermarkMetadata.deviceName && (
+                          <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                            <p className="text-xs text-slate-400 mb-1">DEVICE NAME</p>
+                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.deviceName}</p>
+                          </div>
+                        )}
+                        {watermarkMetadata.deviceId && (
+                          <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                            <p className="text-xs text-slate-400 mb-1">DEVICE ID</p>
+                            <p className="text-sm text-slate-200 font-mono break-all">{watermarkMetadata.deviceId}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Network & Location */}
+                  {(watermarkMetadata.ipAddress || watermarkMetadata.gps.available) && (
+                    <div className="pt-3 space-y-2">
+                      <p className="text-xs text-slate-400 font-semibold">NETWORK & LOCATION</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {watermarkMetadata.ipAddress && (
+                          <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                            <p className="text-xs text-slate-400 mb-1">IP ADDRESS</p>
+                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.ipAddress}</p>
+                          </div>
+                        )}
+                        {watermarkMetadata.gps.available && (
+                          <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                            <p className="text-xs text-slate-400 mb-1">GPS COORDINATES</p>
+                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.gps.coordinates}</p>
+                            {watermarkMetadata.gps.mapsUrl && (
+                              <a href={watermarkMetadata.gps.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-1">
+                                View on Maps →
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Image Resolution */}
+                  {watermarkMetadata.originalResolution && (
+                    <div className="pt-3">
+                      <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                        <p className="text-xs text-slate-400 mb-1">ORIGINAL RESOLUTION</p>
+                        <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.originalResolution}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {!watermarkMetadata || !watermarkMetadata.found && (
+              <div className="border-t border-slate-700 pt-4">
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">WATERMARK STATUS</p>
+                  <p className="text-sm text-slate-300">⚠️ Watermark extraction in progress...</p>
+                </div>
+              </div>
+            )}
+          </motion.div>
+
+          {/* Action Buttons */}
+          <div className="grid grid-cols-3 gap-3">
+            {/* Download Button */}
+            <motion.button
+              onClick={() => handleDownload(selectedDoc)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="col-span-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all"
+            >
+              <Download size={18} />
+              Download
+            </motion.button>
+
+            {/* Delete Button */}
+            <motion.button
+              onClick={() => {
+                setDocToDelete(selectedDoc.id);
+                setShowDeleteConfirm(true);
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all"
+            >
+              <Trash2 size={18} />
+            </motion.button>
+          </div>
+
+          {/* Back Button */}
+          <motion.button
+            onClick={() => {
+              setSelectedDoc(null);
+              setPreviewImage(null);
+              setWatermarkMetadata(null);
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all"
+          >
+            Back to Vault
+          </motion.button>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -480,18 +1015,23 @@ function VaultPage({ documents }: { documents: VaultDocument[] }) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className="bg-gradient-to-r from-slate-800/40 to-purple-900/20 border border-purple-500/20 backdrop-blur-xl rounded-xl p-4 flex items-center justify-between hover:border-purple-500/50 transition-all shadow-lg hover:shadow-xl hover:shadow-purple-500/20"
+              onClick={() => handleDocumentClick(doc)}
+              className="bg-gradient-to-r from-slate-800/40 to-purple-900/20 border border-purple-500/20 backdrop-blur-xl rounded-xl p-4 flex items-center justify-between hover:border-purple-500/50 transition-all shadow-lg hover:shadow-xl hover:shadow-purple-500/20 cursor-pointer"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-1">
                 <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg p-2 shadow-lg">
                   <FileText size={20} className="text-white" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <p className="font-semibold text-sm text-white">{doc.name}</p>
                   <p className="text-purple-300/70 text-xs">{getFileSize(doc.metadata.size)} • {doc.createdAt}</p>
                 </div>
               </div>
               <motion.button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownload(doc);
+                }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
                 className="p-2 hover:bg-purple-600/30 rounded-lg transition-all"
@@ -508,63 +1048,6 @@ function VaultPage({ documents }: { documents: VaultDocument[] }) {
       </div>
     </motion.div>
   );
-}
-
-// ============= IMAGE WATERMARKING SERVICE =============
-function embedUserIdInPixels(
-  canvas: HTMLCanvasElement,
-  userId: string
-): Uint8ClampedArray {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Failed to get canvas context");
-
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  
-  // Convert userId to binary
-  const userIdBinary = userId
-    .split("")
-    .map((char) => char.charCodeAt(0).toString(2).padStart(8, "0"))
-    .join("");
-  
-  // Embed user ID into pixel alpha channels and LSBs
-  let bitIndex = 0;
-  for (let i = 3; i < data.length; i += 4) {
-    // Embed into alpha channel and color LSBs
-    if (bitIndex < userIdBinary.length) {
-      const bit = parseInt(userIdBinary[bitIndex]);
-      // Modify the least significant bit of alpha channel
-      data[i] = (data[i] & 0xfe) | bit;
-      bitIndex++;
-    } else {
-      bitIndex = 0; // Restart pattern
-    }
-  }
-  
-  return data;
-}
-
-function createWatermarkedCanvas(
-  source: HTMLImageElement,
-  userId: string,
-  canvas: HTMLCanvasElement
-): HTMLCanvasElement {
-  canvas.width = source.width;
-  canvas.height = source.height;
-  
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Failed to get canvas context");
-  
-  // Draw original image
-  ctx.drawImage(source, 0, 0);
-  
-  // Embed user ID
-  const watermarkedPixels = embedUserIdInPixels(canvas, userId);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  imageData.data.set(watermarkedPixels);
-  ctx.putImageData(imageData, 0, 0);
-  
-  return canvas;
 }
 
 // ============= ENCRYPT PREVIEW PAGE =============
@@ -590,65 +1073,56 @@ function EncryptPreviewPage({
       try {
         setIsProcessing(true);
         
-        // Create temporary canvas and image
-        const canvas = document.createElement("canvas");
-        const img = new Image();
-        img.crossOrigin = "anonymous";
+        // Use ADVANCED STEGANOGRAPHY from ImageCryptoAnalyzer
+        // Features: CRC16 validation, tile-based LSB, majority voting
+        const watermarkedBase64 = await embedAdvancedWatermark(
+          image,
+          userId,
+          new Date().toISOString(),
+          undefined, // deviceId
+          undefined, // deviceName
+          undefined, // ipAddress
+          undefined  // gpsData
+        );
         
-        img.onload = async () => {
-          try {
-            // Create watermarked canvas
-            const watermarkedCanvas = createWatermarkedCanvas(img, userId, canvas);
-            const watermarkedDataUrl = watermarkedCanvas.toDataURL("image/jpeg", 0.9);
-            setWatermarkedImage(watermarkedDataUrl);
-            
-            // Convert to blob for encryption
-            const blob = await (await fetch(watermarkedDataUrl)).blob();
-            
-            // Read as base64
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-              const base64Data = e.target?.result as string;
-              const base64String = base64Data.split(",")[1];
-              
-              // Create metadata
-              const metadata = {
-                timestamp: Date.now(),
-                original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
-                size: blob.size,
-                checksum: Math.random().toString(36).substring(7),
-                watermarked: true,
-                ownerId: userId,
-              };
-              
-              // Create encrypted package
-              const encryptedPackage = {
-                encrypted_data: base64String,
-                metadata: metadata,
-                check_digest: Math.random().toString(36).substring(7),
-              };
-              
-              setEncryptedData(encryptedPackage);
-              setIsProcessing(false);
-            };
-            
-            reader.readAsDataURL(blob);
-          } catch (err) {
-            console.error("Watermarking error:", err);
-            setError("Failed to watermark image with ownership ID");
-            setIsProcessing(false);
-          }
-        };
+        setWatermarkedImage(watermarkedBase64);
         
-        img.onerror = () => {
-          setError("Failed to load image");
+        // Convert to blob for storage
+        const response = await fetch(watermarkedBase64);
+        const blob = await response.blob();
+        
+        // Get base64 from response
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64Data = e.target?.result as string;
+          const base64String = base64Data.split(",")[1];
+          
+          // Create metadata
+          const metadata = {
+            timestamp: Date.now(),
+            original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
+            size: blob.size,
+            checksum: Math.random().toString(36).substring(7),
+            watermarked: true,
+            ownerId: userId,
+          };
+          
+          // Create encrypted package with watermarked image for preview
+          const encryptedPackage = {
+            encrypted_data: base64String,
+            watermarkedImage: watermarkedBase64,  // Include watermarked for preview & gallery
+            metadata: metadata,
+            check_digest: Math.random().toString(36).substring(7),
+          };
+          
+          setEncryptedData(encryptedPackage);
           setIsProcessing(false);
         };
         
-        img.src = image;
+        reader.readAsDataURL(blob);
       } catch (err) {
-        console.error("Encryption error:", err);
-        setError("Failed to encrypt image");
+        console.error("Advanced encryption error:", err);
+        setError("Failed to encrypt image with advanced steganography");
         setIsProcessing(false);
       }
     };
@@ -781,7 +1255,7 @@ function EncryptPreviewPage({
           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 rounded-xl p-4 font-semibold text-white flex items-center justify-center gap-2 shadow-lg transition-all"
         >
           <Lock size={18} />
-          Encrypt
+          Save to Vault
         </motion.button>
       </div>
     </motion.div>

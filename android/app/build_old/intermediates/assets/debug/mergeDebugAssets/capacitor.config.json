@@ -1,0 +1,15 @@
+{
+	"appId": "com.biovault.app",
+	"appName": "PINIT",
+	"webDir": "dist",
+	"server": {
+		"cleartext": true
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 0,
+			"autoHide": true,
+			"showSpinner": false
+		}
+	}
+}

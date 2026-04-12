@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Shield, ChevronRight, AlertCircle, Clock } from "lucide-react";
+import { ArrowLeft, Shield, ChevronRight } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { HexGrid } from "@/components/HexGrid";
 import { FingerprintScanner } from "@/components/FingerprintScanner";
@@ -8,216 +8,111 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
 import { appStorage } from "@/lib/storage";
-import { verifyFingerprintBackend, verifyFaceBackend } from "@/lib/authService";
 
-type Step = "fingerprint" | "face" | "success" | "error";
-
-interface VerificationState {
-  step: Step;
-  userId: string | null;
-  fingerprintVerified: boolean;
-  errorMessage: string | null;
-}
+type Step = "fingerprint" | "face" | "success";
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [verification, setVerification] = useState<VerificationState>({
-    step: "fingerprint",
-    userId: null,
-    fingerprintVerified: false,
-    errorMessage: null,
-  });
+  const [step, setStep] = useState<Step>("fingerprint");
   const [isLoading, setIsLoading] = useState(true);
+  const [notRegisteredError, setNotRegisteredError] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [hasNavigatedToDashboard, setHasNavigatedToDashboard] = useState(false);
 
   useEffect(() => {
-    // Check if user is registered - if not, redirect to biometric options immediately
+    // Check if user has already registered (userId exists in Capacitor storage OR passed via navigation)
     const checkRegistration = async () => {
       try {
-        const userId = await appStorage.getItem("biovault_userId");
-        console.log('🔍 Login: Checking for userId:', userId);
-        
-        if (!userId) {
-          // No user registered - redirect to options page
-          console.log('❌ Login: No userId found - redirecting to BiometricOptions');
-          navigate('/biometric-options', { replace: true });
+        // FIRST: Check if userId was passed from Register page (via navigation state)
+        const passedUserId = (location.state as any)?.userId;
+        if (passedUserId) {
+          console.log('✅ Login: userId passed from Register:', passedUserId);
+          setUserId(passedUserId);
+          setIsLoading(false);
           return;
         }
+
+        // SECOND: Try to get userId from storage with retries and longer waits
+        let savedUserId = null;
+        for (let i = 0; i < 8; i++) {
+          savedUserId = await appStorage.getItem("biovault_userId");
+          console.log(`📍 Login: Storage check attempt ${i + 1}:`, savedUserId);
+          
+          if (savedUserId) {
+            console.log('✅ Login: User is registered with ID:', savedUserId);
+            setUserId(savedUserId);
+            setIsLoading(false);
+            return;
+          }
+          
+          // Wait before retry - increased from 300ms to 500ms
+          if (i < 7) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
         
-        console.log('✅ Login: User found, showing login page:', userId);
-        // User found - show loading screen briefly then let them login
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setIsLoading(false);
+        // Still no userId after retries - automatically redirect to registration
+        console.log('❌ Login: No saved userId found - redirecting to registration');
+        navigate('/register', { replace: true });
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);
-        // On error, assume not registered and go to options
-        navigate('/biometric-options', { replace: true });
+        // On error, also redirect to registration
+        navigate('/register', { replace: true });
       }
     };
     
     checkRegistration();
-  }, [navigate]);
+  }, [location.state, navigate]);
 
-  useEffect(() => {
-    // This was the old loading logic - now just a fallback timeout
-    if (!isLoading) return;
-    
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  }, [isLoading]);
-
-  const handleFingerprintSuccess = async () => {
-    console.log('✅ Fingerprint scanned locally - now verifying with backend');
-    setVerification(prev => ({ ...prev, step: "fingerprint", errorMessage: null }));
-    
-    // Get userId from storage
-    let userId: string | null = null;
+  const onShieldTap = async () => {
+    console.log("👆 SHIELD TAPPED");
     try {
-      userId = await appStorage.getItem("biovault_userId");
+      const uid = userId || "";
+      const result = await verifyFingerprintBackend(uid);
+      
+      if (result.verified) {
+        console.log("✅ FP VERIFIED");
+        setFingerVerified(true);
+        setUserId(result.userId || uid);
+        setStep("face");
+      } else {
+        console.log("❌ FP FAILED");
+        setStep("error");
+        setErrorMsg("Fingerprint not recognized");
+      }
     } catch (err) {
-      console.error('❌ Failed to get userId from storage:', err);
+      console.error("❌ ERROR:", err);
+      setStep("error");
+      setErrorMsg("Verification failed");
     }
+  };
 
-    if (!userId) {
-      console.log('❌ No userId in storage - redirecting to BiometricOptions');
-      navigate('/biometric-options', { replace: true });
-      return;
-    }
-
+  const onFaceSuccess = async () => {
+    console.log("👤 FACE SUCCESS");
     try {
-      console.log('🔍 Verifying fingerprint with backend for userId:', userId);
-      const result = await verifyFingerprintBackend(userId);
-      
-      if (result.verified) {
-        console.log('✅ Fingerprint verified! Now proceed to face verification');
-        setVerification(prev => ({
-          ...prev,
-          userId,
-          fingerprintVerified: true,
-          step: "face"
-        }));
-      } else {
-        console.log('❌ Fingerprint not found in database:', result.message);
-        // Fingerprint not in database - redirect to registration
-        navigate('/biometric-options', { replace: true });
-      }
-    } catch (err: any) {
-      console.error('❌ Fingerprint verification error:', err);
-      setVerification(prev => ({
-        ...prev,
-        step: "fingerprint",
-        errorMessage: "Fingerprint verification failed. Please try again."
-      }));
+      if (!userId) throw new Error("No userId");
+      await appStorage.setItem("biovault_userId", userId);
+      localStorage.setItem("biovault_userId", userId);
+      const token = `verified_${userId}`;
+      await appStorage.setItem("biovault_token", token);
+      localStorage.setItem("biovault_token", token);
+      setStep("success");
+      await new Promise(r => setTimeout(r, 1200));
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      console.error("❌ FACE ERROR:", err);
+      setErrorMsg("Error: " + String(err));
+      setStep("error");
     }
-  };
-
-  const handleFaceSuccess = async (faceData: any) => {
-    console.log('✅ Face scanned locally - now verifying with backend');
-    
-    if (!verification.userId) {
-      console.error('❌ No userId available for face verification');
-      setVerification(prev => ({
-        ...prev,
-        step: "error",
-        errorMessage: "Session error: No user ID. Please start over."
-      }));
-      return;
-    }
-
-    try {
-      // Extract face embedding from faceData
-      const faceEmbedding = faceData?.embedding || [];
-      
-      if (!Array.isArray(faceEmbedding) || faceEmbedding.length === 0) {
-        console.error('❌ No face embedding provided');
-        setVerification(prev => ({
-          ...prev,
-          step: "error",
-          errorMessage: "Face embedding not captured. Please try again."
-        }));
-        return;
-      }
-
-      console.log('🔍 Verifying face with backend for userId:', verification.userId);
-      console.log('📊 Embedding length:', faceEmbedding.length);
-      
-      const result = await verifyFaceBackend(faceEmbedding, verification.userId);
-      
-      if (result.verified) {
-        console.log('✅ Face verified! Storing tokens and redirecting to dashboard');
-        
-        // 🔐 CRITICAL FIX #1: Store authentication tokens (using biovault_token for consistency)
-        if (result.token) {
-          await appStorage.setItem('biovault_token', result.token);
-          localStorage.setItem('biovault_token', result.token);
-          console.log('💾 Access token stored');
-        }
-        if (result.refreshToken) {
-          await appStorage.setItem('biovault_refresh_token', result.refreshToken);
-          localStorage.setItem('biovault_refresh_token', result.refreshToken);
-          console.log('💾 Refresh token stored');
-        }
-        
-        // 🔐 CRITICAL FIX #2: Store userId so dashboard can find it
-        await appStorage.setItem('biovault_userId', verification.userId);
-        localStorage.setItem('biovault_userId', verification.userId);
-        console.log('💾 User ID stored:', verification.userId);
-        
-        setVerification(prev => ({
-          ...prev,
-          step: "success"
-        }));
-        
-        // Wait for animation then navigate
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        navigate("/dashboard", { replace: true });
-      } else {
-        console.log('❌ Face not matched:', result.message);
-        setVerification(prev => ({
-          ...prev,
-          step: "error",
-          errorMessage: result.message || "Face not matched. Please try again."
-        }));
-      }
-    } catch (err: any) {
-      console.error('❌ Face verification error:', err);
-      setVerification(prev => ({
-        ...prev,
-        step: "error",
-        errorMessage: "Face verification failed. Please try again."
-      }));
-    }
-  };
-
-  const handleFaceError = () => {
-    console.log('❌ Face capture failed - allowing retry');
-    // Optionally show error but stay on face screen for retry
-  };
-
-  const handleRetry = () => {
-    setVerification(prev => ({
-      ...prev,
-      step: "fingerprint",
-      errorMessage: null,
-      fingerprintVerified: false
-    }));
   };
 
   return (
     <div className="min-h-screen relative overflow-hidden">
       <HexGrid />
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-4 md:py-8">
-        {/* Temporary Access Button at Top Right */}
-        <button onClick={() => navigate("/temp-access-face")} className="absolute top-3 right-3 md:top-6 md:right-6 px-2.5 py-1.5 text-xs font-mono bg-primary/10 hover:bg-primary/20 border border-primary/50 rounded-md flex items-center gap-1.5 transition-colors duration-200">
-          <Clock className="w-3 h-3 text-primary" />
-          <span className="text-primary">Temp Access</span>
-        </button>
-        
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-          {/* Back Button */}
+          {/* Back */}
           <Button variant="ghost" className="mb-6 text-muted-foreground" onClick={() => navigate("/")}>
             <ArrowLeft className="w-4 h-4 mr-2" /> Back
           </Button>
@@ -233,25 +128,21 @@ const Login = () => {
             <StatusIndicator status="scanning" label="Biometric Verification" />
           </div>
 
-          {/* Steps Indicator */}
-          {verification.step !== "error" && (
-            <div className="flex items-center justify-center gap-2 mb-8">
-              {["fingerprint", "face"].map((s, i) => (
-                <div key={s} className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-mono border ${
-                    verification.step === s ? "bg-primary/20 border-primary text-primary" :
-                    ((s === "fingerprint" && (verification.step === "face" || verification.step === "success")) || 
-                     (s === "face" && verification.step === "success")) ? "bg-neon-green/20 border-neon-green text-neon-green" :
-                    "bg-muted border-border text-muted-foreground"
-                  }`}>
-                    {((s === "fingerprint" && (verification.step === "face" || verification.step === "success")) || 
-                      (s === "face" && verification.step === "success")) ? "✓" : i + 1}
-                  </div>
-                  {i < 1 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          {/* Steps indicator - Only Fingerprint and Face */}
+          <div className="flex items-center justify-center gap-2 mb-8">
+            {["fingerprint", "face"].map((s, i) => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-mono border ${
+                  step === s ? "bg-primary/20 border-primary text-primary" :
+                  ((s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "bg-neon-green/20 border-neon-green text-neon-green" :
+                  "bg-muted border-border text-muted-foreground"
+                }`}>
+                  {((s === "fingerprint" && (step === "face" || step === "success")) || (s === "face" && step === "success")) ? "✓" : i + 1}
                 </div>
-              ))}
-            </div>
-          )}
+                {i < 1 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+              </div>
+            ))}
+          </div>
 
           {/* Content */}
           {isLoading ? (
@@ -261,88 +152,119 @@ const Login = () => {
               animate={{ opacity: 1, x: 0 }}
               className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20 text-center py-8"
             >
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"
-              />
-              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">INITIALIZING</h2>
-              <p className="text-muted-foreground font-mono text-sm">Loading biometric authentication...</p>
+              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">LOADING BIOMETRIC DATA</h2>
+              <p className="text-muted-foreground font-mono text-sm">Verifying registered user...</p>
             </motion.div>
-          ) : verification.step === "error" ? (
+          ) : notRegisteredError ? (
             <motion.div
-              key="error"
+              key="not-registered"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="glass-surface rounded-2xl p-6 md:p-8 border border-accent/40 text-center"
             >
               <div className="w-16 h-16 rounded-full bg-accent/20 border-2 border-accent flex items-center justify-center mx-auto mb-4">
-                <AlertCircle className="w-8 h-8 text-accent" />
+                <span className="text-2xl">⚠️</span>
               </div>
-              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">VERIFICATION FAILED</h2>
-              <p className="text-muted-foreground font-mono text-sm mb-6">{verification.errorMessage}</p>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={handleRetry}>
-                  Retry
-                </Button>
-                <Button variant="cyber" className="flex-1" onClick={() => navigate('/biometric-options', { replace: true })}>
-                  Register
-                </Button>
-              </div>
-            </motion.div>
-          ) : verification.step === "success" ? (
-            <motion.div
-              key="success"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="glass-surface rounded-2xl p-6 md:p-8 border border-neon-green/40 text-center py-8"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring" }}
-                className="w-20 h-20 rounded-full bg-neon-green/10 border-2 border-neon-green flex items-center justify-center mx-auto mb-4"
-              >
-                <span className="text-3xl">✓</span>
-              </motion.div>
-              <h2 className="text-xl font-display tracking-wider text-neon-green mb-2">VERIFIED</h2>
-              <p className="text-muted-foreground font-mono text-sm">Redirecting to dashboard...</p>
+              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">NOT REGISTERED</h2>
+              <p className="text-muted-foreground font-mono text-sm mb-6">No user account found. Please register first.</p>
+              <Button variant="cyber" className="w-full" onClick={() => navigate('/register')}>
+                Go to Registration
+              </Button>
             </motion.div>
           ) : (
             <motion.div
-              key={verification.step}
+              key={step}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
               className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20"
             >
-              {verification.step === "fingerprint" && (
-                <div>
-                  <FingerprintScanner
-                    mode="login"
-                    required={true}
-                    onSuccess={handleFingerprintSuccess}
-                    onError={(err) => {
-                      console.log('❌ Fingerprint scan error:', err);
-                      setVerification(prev => ({
-                        ...prev,
-                        step: "error",
-                        errorMessage: "Fingerprint scan failed. Please try again."
-                      }));
-                    }}
-                  />
-                </div>
-              )}
+              {step === "fingerprint" && (
+              <div>
+                <FingerprintScanner
+                  mode="login"
+                  required={true}
+                  onSuccess={() => {
+                    console.log('✅ Fingerprint verified - proceeding to face authentication');
+                    setStep("face");
+                  }}
+                  onError={(err) => {
+                    console.log('❌ Fingerprint authentication error:', err);
+                    // Only redirect on VERY specific errors
+                    const msg = (err || '').toString().toLowerCase();
+                    
+                    // SPECIAL: User not registered in database
+                    if (msg.includes('redirect_to_register')) {
+                      console.log('🔄 User account not found - redirecting to registration');
+                      navigate('/register', { replace: true });
+                      return;
+                    }
+                    
+                    // DEFAULT: Fingerprint not matched - redirect to Register
+                    console.log('❌ Fingerprint not matched - redirecting to Register');
+                    navigate('/biometric-options', { replace: true });
+                  }}
+                />
+              </div>
+            )}
 
-              {verification.step === "face" && (
-                <div>
-                  <FaceScanner
-                    mode="login"
-                    onSuccess={handleFaceSuccess}
-                    onError={handleFaceError}
-                  />
+            {step === "face" && (
+              <div>
+                <Button variant="ghost" className="mb-4 text-xs" onClick={() => setStep("fingerprint")}>
+                  <ArrowLeft className="w-4 h-4 mr-1" /> Back
+                </Button>
+                <FaceScanner
+                  mode="login"
+                  onSuccess={(faceData) => {
+                    // CRITICAL: Prevent multiple navigations
+                    if (hasNavigatedToDashboard) {
+                      console.log('⚠️ Already navigating to dashboard, ignoring duplicate success');
+                      return;
+                    }
+                    
+                    console.log('✅ Face authentication successful - preparing dashboard navigation');
+                    setHasNavigatedToDashboard(true);
+                    setStep("success");
+                    
+                    // CRITICAL: Ensure userId is persisted before navigating to dashboard
+                    const persistAndNavigate = async () => {
+                      try {
+                        if (userId) {
+                          console.log('💾 Ensuring userId is saved to storage:', userId);
+                          await appStorage.setItem("biovault_userId", userId);
+                          localStorage.setItem("biovault_userId", userId);
+                          console.log('✅ userId persisted - ready for next login');
+                        }
+                      } catch (err) {
+                        console.error('⚠️ Error persisting userId:', err);
+                      } finally {
+                        // Navigate regardless after waiting for persistence
+                        setTimeout(() => {
+                          console.log('🚀 NAVIGATING TO DASHBOARD NOW');
+                          navigate("/dashboard", { replace: true });
+                        }, 800);
+                      }
+                    };
+                    
+                    persistAndNavigate();
+                  }}
+                  onError={() => {
+                    console.log('❌ Face authentication failed - redirecting to Register');
+                    // Redirect directly to Register page when face fails
+                    navigate('/biometric-options', { replace: true });
+                  }}
+                />
+              </div>
+            )}
+
+            {step === "success" && (
+              <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center py-8">
+                <div className="w-20 h-20 rounded-full bg-neon-green/10 border-2 border-neon-green flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">✓</span>
                 </div>
-              )}
+                <h2 className="text-xl font-display tracking-wider text-neon-green mb-2">ACCESS GRANTED</h2>
+                <p className="text-muted-foreground font-mono text-sm">Redirecting to dashboard...</p>
+              </motion.div>
+            )}
             </motion.div>
           )}
         </motion.div>
