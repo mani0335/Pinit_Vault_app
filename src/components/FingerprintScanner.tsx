@@ -69,13 +69,53 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               return;
             }
             
-            // For login mode: fingerprint scanned locally - parent (Login.tsx) will handle backend verification
+            // For login mode: verify fingerprint with backend
             if (mode === 'login') {
-              console.log('✅ Fingerprint scanned locally - parent will verify with backend');
-              setStatus('success');
-              setMessage('✓ Fingerprint Captured');
-              setTimeout(onSuccess, SUCCESS_HOLD_MS);
-              return;
+              console.log('🔐 Login mode: Verifying fingerprint with backend');
+              setMessage('Verifying with backend...');
+              try {
+                const userId = await appStorage.getItem('biovault_userId');
+                if (!userId) {
+                  throw new Error('User not authorized. Please register first.');
+                }
+                
+                // Create a credential string for backend verification
+                // Using a generated credential ID that represents this biometric scan
+                const credential = `native-fp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                
+                // Verify with backend using the verifyFingerprint function
+                const result = await verifyFingerprint(userId, credential);
+                
+                if (!result.ok || !result.match) {
+                  const msg = result.reason || 'Fingerprint does not match registered profile';
+                  throw new Error(msg);
+                }
+                
+                console.log('✅ Fingerprint verified with backend - proceeding to face authentication');
+                setStatus('success');
+                setMessage('✓ Fingerprint Verified');
+                setTimeout(onSuccess, SUCCESS_HOLD_MS);
+                return;
+              } catch (err: any) {
+                const msg = err?.message || 'Fingerprint verification failed';
+                console.error('❌ Backend fingerprint verification error:', msg);
+                
+                // Provide user-friendly error message
+                let friendlyMsg = msg;
+                if (msg.includes('User not') || msg.includes('not registered')) {
+                  friendlyMsg = 'User not recognized. Please register your fingerprint.';
+                } else if (msg.includes('does not match')) {
+                  friendlyMsg = 'Fingerprint does not match. Please try again or register.';
+                } else if (msg.includes('Network') || msg.includes('NetworkError')) {
+                  friendlyMsg = 'Network error. Check your internet connection.';
+                }
+                
+                setStatus('error');
+                setMessage('❌ ' + friendlyMsg);
+                onError?.(friendlyMsg);
+                setTimeout(() => setStatus('idle'), 2500);
+                return;
+              }
             }
           }
         } catch (nativeErr: any) {

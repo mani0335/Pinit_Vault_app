@@ -9,28 +9,19 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // 🔐 CRITICAL FIX #2: Check for existing valid tokens on app start
+    // 🔐 BIOMETRIC-FIRST AUTH: Always prompt for biometric verification on app start
     const route = async () => {
       try {
         // Wait for splash animation (1.8s)
         await new Promise(resolve => setTimeout(resolve, 1800));
         
-        // Check if user has valid tokens (use biovault_token for consistency)
-        const accessToken = await appStorage.getItem('biovault_token') || localStorage.getItem('biovault_token');
-        const userId = await appStorage.getItem('biovault_userId');
-        
-        if (accessToken && userId) {
-          console.log('✅ Index: Valid tokens found → Skipping login, going to dashboard');
-          navigate('/dashboard', { replace: true });
-          return;
-        }
-        
-        // No tokens - go to login
-        console.log('🚀 Index: No tokens found → Routing to Login page');
-        navigate('/login');
+        // 🔒 NEW FLOW: Always require biometric authentication first
+        // Don't check for existing tokens - require fresh biometric verification each time
+        console.log('🚀 Index: Starting biometric authentication flow');
+        navigate('/login', { replace: true });
       } catch (err) {
         console.error('❌ Index: Error during routing:', err);
-        navigate('/login');
+        navigate('/login', { replace: true });
       }
     };
     
