@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { appStorage } from "@/lib/storage";
-import PINITDashboard from "@/components/PINITDashboardNew";
+import { PINITVaultDashboard } from "@/components/PINITVaultDashboard";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -105,7 +105,7 @@ const Dashboard = () => {
 
   console.log('🎨 [Dashboard] Rendering with userId:', userId);
   
-  return <PINITDashboard userId={userId || undefined} />;
+  return <PINITVaultDashboard userId={userId || undefined} />;
 };
 
 export default Dashboard;
