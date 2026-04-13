@@ -16,7 +16,6 @@ const Login = () => {
   const location = useLocation();
   const [step, setStep] = useState<Step>("fingerprint");
   const [isLoading, setIsLoading] = useState(true);
-  const [notRegisteredError, setNotRegisteredError] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [hasNavigatedToDashboard, setHasNavigatedToDashboard] = useState(false);
 
@@ -28,12 +27,16 @@ const Login = () => {
         const passedUserId = (location.state as any)?.userId;
         if (passedUserId) {
           console.log('✅ Login: userId passed from Register:', passedUserId);
+          // CRITICAL: Save passed userId to storage for future sessions
+          await appStorage.setItem("biovault_userId", passedUserId);
+          localStorage.setItem("biovault_userId", passedUserId);
+          console.log('💾 Login: Saved passed userId to both storages');
           setUserId(passedUserId);
           setIsLoading(false);
           return;
         }
 
-        // SECOND: Try to get userId from storage with retries and longer waits
+        // SECOND: Try to get userId from storage with retries
         let savedUserId = null;
         for (let i = 0; i < 8; i++) {
           savedUserId = await appStorage.getItem("biovault_userId");
@@ -46,19 +49,22 @@ const Login = () => {
             return;
           }
           
-          // Wait before retry - increased from 300ms to 500ms
+          // Wait before retry
           if (i < 7) {
             await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
         
-        // Still no userId after retries - automatically redirect to registration
-        console.log('❌ Login: No saved userId found - redirecting to registration');
-        navigate('/register', { replace: true });
+        // FRESH USER: No userId found, but still allow biometric attempt
+        // FingerprintScanner will trigger BiometricOptions on failure
+        console.log('📝 Login: Fresh user detected, allowing biometric attempt');
+        setUserId(null); // Explicitly set to null for fresh users
+        setIsLoading(false);
       } catch (err) {
         console.error('❌ Login: Error checking registration:', err);
-        // On error, also redirect to registration
-        navigate('/register', { replace: true });
+        // Still allow biometric attempt on error
+        setUserId(null);
+        setIsLoading(false);
       }
     };
     
@@ -155,22 +161,6 @@ const Login = () => {
               <h2 className="text-lg font-display tracking-wider text-foreground mb-2">LOADING BIOMETRIC DATA</h2>
               <p className="text-muted-foreground font-mono text-sm">Verifying registered user...</p>
             </motion.div>
-          ) : notRegisteredError ? (
-            <motion.div
-              key="not-registered"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="glass-surface rounded-2xl p-6 md:p-8 border border-accent/40 text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-accent/20 border-2 border-accent flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">⚠️</span>
-              </div>
-              <h2 className="text-lg font-display tracking-wider text-foreground mb-2">NOT REGISTERED</h2>
-              <p className="text-muted-foreground font-mono text-sm mb-6">No user account found. Please register first.</p>
-              <Button variant="cyber" className="w-full" onClick={() => navigate('/register')}>
-                Go to Registration
-              </Button>
-            </motion.div>
           ) : (
             <motion.div
               key={step}
@@ -183,25 +173,39 @@ const Login = () => {
                 <FingerprintScanner
                   mode="login"
                   required={true}
+                  userId={userId || undefined}
                   onSuccess={() => {
                     console.log('✅ Fingerprint verified - proceeding to face authentication');
                     setStep("face");
                   }}
                   onError={(err) => {
                     console.log('❌ Fingerprint authentication error:', err);
-                    // Only redirect on VERY specific errors
                     const msg = (err || '').toString().toLowerCase();
                     
-                    // SPECIAL: User not registered in database
-                    if (msg.includes('redirect_to_register')) {
-                      console.log('🔄 User account not found - redirecting to registration');
-                      navigate('/register', { replace: true });
+                    // ✅ CRITICAL: Check if user is actually registered and has fingerprint in database
+                    
+                    if (!userId) {
+                      // User not registered - show biometric options page
+                      console.log('📝 User not registered (no userId) - redirecting to biometric options');
+                      navigate('/biometric-options', { replace: true });
                       return;
                     }
                     
-                    // DEFAULT: Fingerprint not matched - redirect to Register
-                    console.log('❌ Fingerprint not matched - redirecting to Register');
-                    navigate('/biometric-options', { replace: true });
+                    // IMPORTANT: Only redirect to biometric-options if explicitly told fingerprint not found
+                    // Most other errors (cancelled, network, etc.) should allow retry
+                    if (msg.includes('fingerprint not found') || msg.includes('user not found')) {
+                      console.log('🔓 Fingerprint not found - redirecting to biometric options');
+                      navigate('/biometric-options', { replace: true });
+                      return;
+                    }
+                    
+                    // ✅ User IS registered but fingerprint verification failed temporarily
+                    // This could be: wrong finger, dirty sensor, network timeout, cancelled, etc.
+                    // → Allow RETRY instead of full re-registration
+                    console.log('⚠️ User registered but fingerprint auth failed (temporary) - allowing retry');
+                    console.log('   Error details:', msg);
+                    console.log('   (User can click Retry button to try again)');
+                    // Stay on fingerprint page - let user retry without re-registering
                   }}
                 />
               </div>
@@ -214,43 +218,59 @@ const Login = () => {
                 </Button>
                 <FaceScanner
                   mode="login"
-                  onSuccess={(faceData) => {
+                  userId={userId}
+                  onSuccess={async (faceData) => {
                     // CRITICAL: Prevent multiple navigations
                     if (hasNavigatedToDashboard) {
                       console.log('⚠️ Already navigating to dashboard, ignoring duplicate success');
                       return;
                     }
                     
-                    console.log('✅ Face authentication successful - preparing dashboard navigation');
+                    console.log('✅✅✅ FACE AUTHENTICATION SUCCESSFUL!');
+                    console.log('✅ FaceScanner verified face, userId:', userId);
                     setHasNavigatedToDashboard(true);
                     setStep("success");
                     
-                    // CRITICAL: Ensure userId is persisted before navigating to dashboard
-                    const persistAndNavigate = async () => {
-                      try {
-                        if (userId) {
-                          console.log('💾 Ensuring userId is saved to storage:', userId);
-                          await appStorage.setItem("biovault_userId", userId);
-                          localStorage.setItem("biovault_userId", userId);
-                          console.log('✅ userId persisted - ready for next login');
-                        }
-                      } catch (err) {
-                        console.error('⚠️ Error persisting userId:', err);
-                      } finally {
-                        // Navigate regardless after waiting for persistence
-                        setTimeout(() => {
-                          console.log('🚀 NAVIGATING TO DASHBOARD NOW');
-                          navigate("/dashboard", { replace: true });
-                        }, 800);
-                      }
-                    };
+                    // ✅ NAVIGATE TO DASHBOARD WITH TOKEN VALIDATION
+                    // FaceScanner has already saved tokens from backend before calling onSuccess
+                    console.log('🚀🚀🚀 NAVIGATING TO DASHBOARD NOW');
+                    console.log('🔐 Tokens already saved by FaceScanner - proceeding to Dashboard');
                     
-                    persistAndNavigate();
+                    setTimeout(async () => {
+                      // CRITICAL: Verify tokens exist before navigation
+                      try {
+                        let token = await appStorage.getItem("biovault_token");
+                        if (!token) {
+                          token = localStorage.getItem("biovault_token");
+                        }
+                        
+                        if (!token) {
+                          console.error('❌ CRITICAL: No token found - cannot navigate to dashboard');
+                          console.error('🔄 Falling back to retry fingerprint');
+                          setStep("fingerprint");
+                          setHasNavigatedToDashboard(false);
+                          return;
+                        }
+                        
+                        console.log('✅ Token validation passed - navigating to /dashboard');
+                        console.log('🎯 Navigation triggered with valid token');
+                        navigate("/dashboard", { replace: true });
+                      } catch (err) {
+                        console.error('❌ Error validating token:', err);
+                        setStep("fingerprint");
+                        setHasNavigatedToDashboard(false);
+                      }
+                    }, 1800);  // Increased delay to ensure FaceScanner's token persistence completes
                   }}
                   onError={() => {
-                    console.log('❌ Face authentication failed - redirecting to Register');
-                    // Redirect directly to Register page when face fails
-                    navigate('/biometric-options', { replace: true });
+                    console.log('❌ Face authentication failed');
+                    // ✅ FIXED: Don't redirect on face failure
+                    // User is already authenticated with fingerprint
+                    // Face verification just failed (lighting, angle, etc.)
+                    // Let user retry without redirecting to BiometricOptions
+                    console.log('🔐 User is registered and fingerprint verified');
+                    console.log('❌ Face verification failed - allowing retry');
+                    // Stay on face page - no redirect, let user retry
                   }}
                 />
               </div>

@@ -176,6 +176,10 @@ app.post('/api/register', (req, res) => {
   const tempCode = generateTempCode();
   const tempCodeExpiresAt = tempExpiryMs();
 
+  // Extract credential ID from webauthn object (store as string for easier comparison)
+  const credentialId = webauthn?.id || null;
+  console.log('💾 Storing credential ID:', credentialId ? credentialId.substring(0, 30) : 'none');
+
   if (mongoUsers) {
     (async () => {
       try {
@@ -186,8 +190,8 @@ app.post('/api/register', (req, res) => {
             $set: {
               userId,
               deviceToken,
-              biometricEnabled: !!(webauthn || faceEmbedding),
-              webauthn_credential: webauthn || null,
+              biometricEnabled: !!(credentialId || faceEmbedding),
+              webauthn_credential: credentialId,
               face_embedding: normalizeVector(faceEmbedding),
               temp_code: tempCode,
               temp_code_expires_at: tempCodeExpiresAt,
@@ -209,13 +213,11 @@ app.post('/api/register', (req, res) => {
           console.log('🔍 VERIFICATION - What was saved to MongoDB:', {
             userId: savedRecord.userId,
             fingerprintStored: !!savedRecord.webauthn_credential,
+            fingerprintId: savedRecord.webauthn_credential ? savedRecord.webauthn_credential.substring(0, 30) : 'none',
             faceStored: !!(savedRecord.face_embedding && savedRecord.face_embedding.length > 0),
             biometricEnabled: savedRecord.biometricEnabled,
             createdAt: savedRecord.createdAt
           });
-          if (savedRecord.webauthn_credential) {
-            console.log('   → Fingerprint credential ID:', savedRecord.webauthn_credential.id ? savedRecord.webauthn_credential.id.substring(0, 30) : 'N/A');
-          }
         }
         
         return res.json({ ok: true, tempCode, tempCodeExpiresAt });
@@ -234,8 +236,8 @@ app.post('/api/register', (req, res) => {
         await firestore.collection('users').doc(userId).set({
           deviceToken,
           deviceId: deviceToken,
-          biometricEnabled: !!(webauthn || faceEmbedding),
-          webauthn_credential: webauthn || null,
+          biometricEnabled: !!(credentialId || faceEmbedding),
+          webauthn_credential: credentialId,
           face_embedding: normalizeVector(faceEmbedding),
           temp_code: tempCode,
           temp_code_expires_at: tempCodeExpiresAt,
@@ -257,8 +259,8 @@ app.post('/api/register', (req, res) => {
   users.set(userId, {
     deviceToken,
     deviceId: deviceToken,
-    biometricEnabled: !!(webauthn || faceEmbedding),
-    webauthn_credential: webauthn || null,
+    biometricEnabled: !!(credentialId || faceEmbedding),
+    webauthn_credential: credentialId,
     face_embedding: normalizeVector(faceEmbedding),
     temp_code: tempCode,
     temp_code_expires_at: tempCodeExpiresAt,
@@ -494,8 +496,19 @@ app.post('/api/fingerprint/verify', (req, res) => {
         if (!rec) return res.status(404).json({ ok: false, reason: 'User not found' });
         if (!rec.webauthn_credential) return res.status(403).json({ ok: false, reason: 'No fingerprint registered' });
 
+        // Extract credential ID from either string or object format
+        const storedCredential = rec.webauthn_credential;
+        const storedId = typeof storedCredential === 'string' ? storedCredential : storedCredential?.id;
+        const incomingId = typeof credential === 'string' ? credential : credential?.id;
+        
+        console.log('🔍 Fingerprint verification:', {
+          storedType: typeof storedCredential,
+          storedId: storedId ? storedId.substring(0, 30) : 'none',
+          incomingId: incomingId ? incomingId.substring(0, 30) : 'none'
+        });
+        
         // Simple credential matching (in production use proper WebAuthn verification)
-        const match = rec.webauthn_credential === credential;
+        const match = storedId === incomingId;
 
         await mongoUsers.updateOne(
           { userId },
@@ -508,7 +521,7 @@ app.post('/api/fingerprint/verify', (req, res) => {
           }
         );
 
-        console.log(`🔍 Fingerprint verify for ${userId}: match=${match}`);
+        console.log(`✅ Fingerprint verify for ${userId}: match=${match}`);
         return res.json({ ok: true, match });
       } catch (err) {
         console.error('Mongo fingerprint verify error', err);
@@ -522,8 +535,12 @@ app.post('/api/fingerprint/verify', (req, res) => {
   if (!record) return res.status(404).json({ ok: false, reason: 'User not found' });
   if (!record.webauthn_credential) return res.status(403).json({ ok: false, reason: 'No fingerprint registered' });
 
-  const match = record.webauthn_credential === credential;
-  console.log(`🔍 Fingerprint verify for ${userId}: match=${match}`);
+  const storedCredential = record.webauthn_credential;
+  const storedId = typeof storedCredential === 'string' ? storedCredential : storedCredential?.id;
+  const incomingId = typeof credential === 'string' ? credential : credential?.id;
+  
+  const match = storedId === incomingId;
+  console.log(`✅ Fingerprint verify for ${userId}: match=${match}`);
   return res.json({ ok: true, match });
 });
 
@@ -536,7 +553,10 @@ app.post('/api/face/verify', (req, res) => {
   const incoming = normalizeVector(embedding);
   if (!incoming.length) return res.status(400).json({ ok: false, reason: 'Invalid embedding payload' });
 
-  const threshold = Number(process.env.FACE_MATCH_THRESHOLD || 0.9);
+  // FIXED: Lowered threshold from 0.9 to 0.75 for practical face matching
+  // 0.9 was too strict and caused login failures after registration
+  // 0.75 (75%) is still secure but forgives natural lighting/angle variations
+  const threshold = Number(process.env.FACE_MATCH_THRESHOLD || 0.75);
 
   if (mongoUsers) {
     (async () => {

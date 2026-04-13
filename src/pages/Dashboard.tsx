@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { appStorage } from "@/lib/storage";
-import { PINITVaultDashboard } from "@/components/PINITVaultDashboard";
+import PINITDashboard from "@/components/PINITDashboardNew";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -81,13 +81,31 @@ const Dashboard = () => {
     navigate("/login");
   };
 
+  // SAFETY CHECK: If we somehow got here without a userId, redirect back to login, NOT register
+  if (!userId && !isLoadingUser) {
+    console.error('❌ [Dashboard] CRITICAL: No userId found - redirecting to login');
+    console.log('📍 This prevents infinite register loop');
+    // Don't redirect again if already in a navigation state
+    setTimeout(() => {
+      navigate("/login", { replace: true });
+    }, 0);
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-black">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-3 border-red-500/30 border-t-red-500 rounded-full"></div>
+          <p className="text-red-400/70 text-sm font-mono">⚠️ Session expired, redirecting to login...</p>
+        </motion.div>
+      </div>
+    );
+  }
+
   const handleCompleteRegistration = () => {
     navigate("/register", { replace: true });
   };
 
   console.log('🎨 [Dashboard] Rendering with userId:', userId);
   
-  return <PINITVaultDashboard userId={userId || undefined} isRestricted={isRestricted} />;
+  return <PINITDashboard userId={userId || undefined} />;
 };
 
 export default Dashboard;

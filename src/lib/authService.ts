@@ -167,7 +167,9 @@ export async function validateUser(userId: string, deviceToken: string): Promise
 export async function verifyFace(userId: string, embedding: number[]): Promise<{ ok: boolean; match: boolean; score: number; token?: string; refreshToken?: string; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
     const apiUrl = apiBase();
+    // FIXED: Call the correct Python FastAPI backend endpoint
     console.log('🔐 verifyFace: Calling', `${apiUrl}/auth/verify-face`);
+    console.log('📤 Request body:', { userId, faceEmbedding: `[${embedding.length}-dim array]` });
     const resp = await fetch(`${apiUrl}/auth/verify-face`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -183,32 +185,75 @@ export async function verifyFace(userId: string, embedding: number[]): Promise<{
     try {
       data = JSON.parse(responseText) as {
         verified?: boolean;
+        ok?: boolean;
+        match?: boolean;
+        score?: number;
         similarity?: number;
+        threshold?: number;
+        token?: string;
+        refreshToken?: string;
+        reason?: string;
         message?: string;
-        userId?: string;
       };
-      console.log('✅ JSON parsed:', data);
+      console.log('✅ JSON parsed:', { verified: data.verified, ok: data.ok, match: data.match, score: data.score, similarity: data.similarity });
     } catch (parseErr: any) {
       console.error('❌ JSON parse failed:', parseErr.message);
       console.error('❌ Response starts with:', responseText.substring(0, 50));
       return { ok: false, match: false, score: 0, reason: `Server error: ${parseErr.message}`, mode: "remote" };
     }
     
-    if (resp.ok && data.verified) {
+    // Python backend returns { ok: bool, match: bool, score: number, token?, refreshToken?, reason?, message? }
+    // EXPLICIT CHECK: All of these conditions must be true for success:
+    // 1. Backend returned ok: true (not false, not undefined)
+    // 2. Backend returned match: true (not false, not undefined)
+    // 3. Access token is present
+    // 4. Refresh token is present
+    const backendOk = data.ok === true;
+    const backendMatch = data.match === true;
+    const hasAccessToken = !!data.token;
+    const hasRefreshToken = !!data.refreshToken;
+    const score = data.similarity || data.score || 0;
+    
+    console.log('🔍 verifyFace response analysis:', {
+      backendOk,
+      backendMatch,
+      hasAccessToken,
+      hasRefreshToken,
+      tokenLength: data.token ? data.token.length : 0,
+      refreshTokenLength: data.refreshToken ? data.refreshToken.length : 0,
+      score: (score * 100).toFixed(1) + '%'
+    });
+    
+    // SUCCESS: Backend confirmed match AND both tokens are present
+    if (backendOk && backendMatch && hasAccessToken && hasRefreshToken) {
+      console.log('✅✅✅ verifyFace: SUCCESS - Face matched, tokens present');
+      console.log('✅ Similarity score:', (score * 100).toFixed(1) + '%');
+      console.log('✅ Token length:', data.token.length);
+      console.log('✅ RefreshToken length:', data.refreshToken.length);
       return {
         ok: true,
         match: true,
-        score: data.similarity || 0,
-        token: `bearer-${Date.now()}`,
-        refreshToken: `refresh-${Date.now()}`,
+        score,
+        token: data.token,
+        refreshToken: data.refreshToken,
         mode: "remote",
       };
     }
+    
+    // FAILURE: Any of the requirements failed
+    console.log('❌ verifyFace: FAILURE');
+    console.log('   Backend said ok:true?', backendOk, '(needed for success)');
+    console.log('   Backend said match:true?', backendMatch, '(needed for success)');
+    console.log('   Access token present?', hasAccessToken, '(needed for success)');
+    console.log('   Refresh token present?', hasRefreshToken, '(needed for success)');
+    console.log('   Similarity score:', (score * 100).toFixed(1) + '%');
+    console.log('   Reason:', data.reason, 'Message:', data.message);
+    
     return {
       ok: false,
       match: false,
-      score: data.similarity || 0,
-      reason: data.message || "Face authentication failed",
+      score,
+      reason: data.reason || data.message || "Face verification failed - please try again",
       mode: "remote",
     };
   }
@@ -343,8 +388,9 @@ export async function rebindDevice(userId: string, deviceToken: string): Promise
 export async function verifyFingerprint(userId: string, credential: string): Promise<{ ok: boolean; match: boolean; reason?: string; mode: "remote" | "local" }> {
   if (shouldUseRemoteApi()) {
     const apiUrl = apiBase();
-    console.log('🔐 verifyFingerprint: Calling', `${apiUrl}/api/fingerprint/verify`);
-    const resp = await fetch(`${apiUrl}/api/fingerprint/verify`, {
+    // FIXED: Call the correct Python FastAPI backend endpoint
+    console.log('🔐 verifyFingerprint: Calling', `${apiUrl}/auth/verify-fingerprint`);
+    const resp = await fetch(`${apiUrl}/auth/verify-fingerprint`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, credential }),
@@ -357,7 +403,7 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
     
     let data;
     try {
-      data = JSON.parse(responseText) as { ok?: boolean; match?: boolean; reason?: string };
+      data = JSON.parse(responseText) as { verified?: boolean; userId?: string; reason?: string; message?: string };
       console.log('✅ JSON parsed:', data);
     } catch (parseErr: any) {
       console.error('❌ JSON parse failed:', parseErr.message);
@@ -365,10 +411,11 @@ export async function verifyFingerprint(userId: string, credential: string): Pro
       return { ok: false, match: false, reason: `Server error: ${parseErr.message}`, mode: "remote" };
     }
     
-    if (resp.ok && data.ok && data.match) {
+    // Python backend returns { verified: bool, userId: str, ... }
+    if (resp.ok && data.verified) {
       return { ok: true, match: true, mode: "remote" };
     }
-    return { ok: false, match: false, reason: data.reason || "Fingerprint verification failed", mode: "remote" };
+    return { ok: false, match: false, reason: data.reason || data.message || "Fingerprint verification failed", mode: "remote" };
   }
 
   // Fallback to local verification

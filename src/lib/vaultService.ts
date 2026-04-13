@@ -328,6 +328,8 @@ export async function saveImageToGallery(
   userId: string
 ): Promise<{ success: boolean; path?: string; error?: string }> {
   try {
+    console.log("📷 Starting gallery save process...");
+    
     // Remove data:image/jpeg;base64, prefix if present
     const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
     
@@ -336,36 +338,39 @@ export async function saveImageToGallery(
     const folderPath = "PINIT Vault";
 
     try {
-      // Try to create "PINIT Vault" folder in Pictures directory first
+      // Try to create "PINIT Vault" folder in Pictures directory
       try {
         await Filesystem.mkdir({
           path: folderPath,
           directory: Directory.Pictures,
           recursive: true,
         });
-        console.log(`✅ PINIT Vault folder created or already exists`);
+        console.log(`✅ PINIT Vault folder ready`);
       } catch (mkdirErr) {
-        // Folder might already exist, continue anyway
-        console.log("ℹ️ PINIT Vault folder creation info:", mkdirErr);
+        console.log("ℹ️ Folder creation info (may already exist):", mkdirErr);
       }
 
-      // Try to save to device filesystem (Capacitor) in PINIT Vault subfolder
+      // Save with proper base64 encoding (Capacitor's format)
+      const fullPath = `${folderPath}/${uniqueName}`;
+      console.log(`💾 Writing file to: ${fullPath}`);
+      
       const result = await Filesystem.writeFile({
-        path: `${folderPath}/${uniqueName}`,
-        data: cleanBase64,
+        path: fullPath,
+        data: cleanBase64,  // Base64 string directly
         directory: Directory.Pictures,
-        encoding: Encoding.UTF8,
+        encoding: Encoding.UTF8,  // UTF8 handles base64 strings
       });
 
-      console.log(`✅ Image saved to PINIT Vault: ${uniqueName}`);
+      console.log(`✅ Image successfully saved to PINIT Vault: ${uniqueName}`);
+      console.log(`📂 Full path: ${result.uri}`);
       return {
         success: true,
         path: result.uri,
       };
     } catch (e) {
-      console.log("⚠️ File system native save failed, attempting fallback");
+      console.warn("⚠️ PINIT Vault subfolder save failed, trying direct Pictures...", e);
       
-      // Fallback: Try saving directly to Pictures without subfolder
+      // Fallback: Try saving directly to Pictures root
       try {
         const fallbackResult = await Filesystem.writeFile({
           path: uniqueName,
@@ -374,21 +379,40 @@ export async function saveImageToGallery(
           encoding: Encoding.UTF8,
         });
         
-        console.log(`✅ Image saved to Pictures (fallback): ${uniqueName}`);
+        console.log(`✅ Image saved to Pictures root (fallback): ${uniqueName}`);
+        console.log(`📂 Full path: ${fallbackResult.uri}`);
         return {
           success: true,
           path: fallbackResult.uri,
         };
       } catch (fallbackErr) {
-        console.log("ℹ️ Device filesystem not available, image saved to memory");
-        return {
-          success: true,
-          path: `memory://PINIT_Vault/${uniqueName}`,
-        };
+        console.warn("⚠️ Direct Pictures save also failed:", fallbackErr);
+        
+        // Final fallback: Try Documents directory
+        try {
+          const docResult = await Filesystem.writeFile({
+            path: uniqueName,
+            data: cleanBase64,
+            directory: Directory.Documents,
+            encoding: Encoding.UTF8,
+          });
+          
+          console.log(`✅ Image saved to Documents (final fallback): ${uniqueName}`);
+          return {
+            success: true,
+            path: docResult.uri,
+          };
+        } catch (docErr) {
+          console.error("❌ All filesystem save attempts failed:", docErr);
+          return {
+            success: false,
+            error: `Filesystem save failed: ${String(docErr)}`,
+          };
+        }
       }
     }
   } catch (error) {
-    console.error("❌ Failed to save to gallery:", error);
+    console.error("❌ Gallery save error:", error);
     return {
       success: false,
       error: String(error),

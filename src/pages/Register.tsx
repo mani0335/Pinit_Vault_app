@@ -128,7 +128,7 @@ const Register = () => {
 
             {step === "fingerprint" && (
               <div>
-                <FingerprintScanner mode="register" required={true} onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
+                <FingerprintScanner mode="register" required={true} userId={userId} onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
               </div>
             )}
 

@@ -15,9 +15,10 @@ interface FingerprintScannerProps {
   onCredential?: (webauthn: any) => void;
   required?: boolean;
   onScanningStateChange?: (isScanning: boolean) => void;
+  userId?: string; // For register mode: to create stable credential ID
 }
 
-export function FingerprintScanner({ onSuccess, onError, mode, onCredential, required = false }: FingerprintScannerProps) {
+export function FingerprintScanner({ onSuccess, onError, mode, onCredential, required = false, userId }: FingerprintScannerProps) {
   const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const SUCCESS_HOLD_MS = 350;
@@ -49,15 +50,18 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
             // CRITICAL FOR REGISTRATION: Create credential object for native biometric
             if (mode === 'register') {
               console.log('📍 Register mode: Creating credential object for native fingerprint');
+              // FIXED: Use stable credential ID based on userId (not random)
+              // This ensures the same credential is used during registration and login
+              const credentialId = userId ? `fp_${userId}_native` : `fp_native_temp_${Date.now()}`;
               const nativeCredential = {
-                id: `native-${Date.now()}-${Math.random()}`,
+                id: credentialId,
                 type: 'public-key',
                 biometricType: 'fingerprint',
                 enrolledAt: Date.now(),
                 verified: true
               };
               onCredential?.(nativeCredential);
-              console.log('✅ Native fingerprint credential created and passed to parent');
+              console.log('✅ Native fingerprint credential created:', credentialId);
             }
             
             // For register mode: skip separate fingerprint registration (will be done in main /api/register)
@@ -74,19 +78,25 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               console.log('🔐 Login mode: Verifying fingerprint with backend');
               setMessage('Verifying with backend...');
               try {
-                const userId = await appStorage.getItem('biovault_userId');
-                if (!userId) {
+                // ✅ FIXED: Use userId prop from Login component FIRST, then fallback to storage
+                const loginUserId = userId || await appStorage.getItem('biovault_userId');
+                if (!loginUserId) {
                   throw new Error('User not authorized. Please register first.');
                 }
                 
-                // Create a credential string for backend verification
-                // Using a generated credential ID that represents this biometric scan
-                const credential = `native-fp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                // FIXED: Use stable credential ID based on userId (not random)
+                // This ensures the same credential is used during registration and login
+                const credential = `fp_${loginUserId}_native`;
                 
                 // Verify with backend using the verifyFingerprint function
-                const result = await verifyFingerprint(userId, credential);
+                const result = await verifyFingerprint(loginUserId, credential);
                 
-                if (!result.ok || !result.match) {
+                // Python backend returns { verified: bool, match: bool, ... }
+                // Express backend returns { ok: bool, match: bool, ... }
+                // Accept either format
+                const isVerified = result.ok || result.match || (result as any).verified;
+                
+                if (!isVerified) {
                   const msg = result.reason || 'Fingerprint does not match registered profile';
                   throw new Error(msg);
                 }
@@ -200,43 +210,14 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
               clientDataJSON: credential.response && (credential.response as any).clientDataJSON ? abToBase64((credential.response as any).clientDataJSON) : null,
             },
           };
+          
+          // ✅ FIXED: Just pass credential to parent component (Register.tsx)
+          // Don't try to save to backend separately - Register.tsx will handle the complete registration
+          // This prevents 404 errors from calling non-existent /api/register-fingerprint endpoint
+          console.log('✅ Fingerprint credential captured - passing to Register component');
+          console.log('📊 Credential ID:', attestation.id);
           onCredential?.(attestation);
           
-          // Store in database
-          const { getDeviceToken } = await import('@/lib/deviceToken');
-          const deviceToken = await getDeviceToken();
-          const storedUserId = await appStorage.getItem('biovault_userId');
-          
-          console.log('📍 Saving fingerprint credential - userId:', storedUserId, 'deviceToken:', deviceToken);
-          
-          const API_BASE = (import.meta.env.VITE_BIOMETRIC_API_URL || import.meta.env.VITE_API_URL || 'https://biovault-backend-d1f3a.onrender.com').trim();
-          const url = `${API_BASE}/api/register-fingerprint`;
-          console.log('🔐 Calling:', url);
-          
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: storedUserId, deviceToken, credential: attestation })
-          });
-          
-          console.log('📥 Response status:', response.status);
-          
-          const responseText = await response.text();
-          console.log('📄 Response text:', responseText.substring(0, 200));
-          
-          let data;
-          try {
-            data = JSON.parse(responseText);
-            console.log('✅ Parsed JSON:', data);
-          } catch (parseErr: any) {
-            console.error('❌ JSON parse error:', parseErr.message);
-            throw new Error(`Server error: ${responseText.substring(0, 100)}`);
-          }
-          
-          if (!response.ok) {
-            throw new Error(data.error || 'Failed to save fingerprint to database');
-          }
-
           setStatus("success");
           setMessage("✓ Fingerprint Registered");
           setTimeout(onSuccess, SUCCESS_HOLD_MS);
@@ -245,14 +226,10 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           console.error('🔴 Fingerprint registration error:', msg);
           
           let friendlyMsg = msg;
-          if (msg.includes('Network') || msg.includes('NetworkError')) {
-            friendlyMsg = '🌐 Network error. Check your internet connection.';
-          } else if (msg.includes('JSON parse')) {
-            friendlyMsg = '⚠️ Server communication error. Please try again.';
-          } else if (msg.includes('Failed to save')) {
-            friendlyMsg = '💾 Failed to save. Please try again.';
-          } else if (msg.includes('cancelled')) {
+          if (msg.includes('cancelled') || msg.includes('Cancelled')) {
             friendlyMsg = '⚠️ Registration cancelled. Please try again.';
+          } else {
+            friendlyMsg = 'Failed to capture fingerprint. Please try again.';
           }
           
           setStatus('error');

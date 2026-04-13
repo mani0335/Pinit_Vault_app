@@ -62,7 +62,7 @@ interface PINITDashboardProps {
   isRestricted?: boolean;
 }
 
-type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview";
+type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview" | "verify-proof";
 
 export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
@@ -74,6 +74,8 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   const [userId, setUserId] = useState<string | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
+  const [verifyProofImage, setVerifyProofImage] = useState<string | null>(null);
+  const [verifyProofAnalysis, setVerifyProofAnalysis] = useState<any>(null);
   const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
   const [vaultPersistenceStatus, setVaultPersistenceStatus] = useState<{
     isSynced: boolean;
@@ -261,17 +263,21 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
       <AnimatePresence mode="wait">
         {currentPage === "home" && <HomePage key="home" userName={userName} documentCount={vaultDocuments.length} onEncryptClick={async () => {
           try {
+            console.log("📸 Opening camera for encryption...");
             const image = await CameraPlugin.getPhoto({
               quality: 90,
               allowEditing: false,
+              source: "Cameras" as any,  // CAMERA ONLY - no gallery
               resultType: "base64" as any,
             });
             if (image?.base64String) {
+              console.log("✅ Photo captured for encryption");
               setCapturedImage("data:image/jpeg;base64," + image.base64String);
               setCurrentPage("encrypt-preview");
             }
           } catch (error) {
-            console.error("Camera error:", error);
+            console.error("❌ Camera error:", error);
+            alert("Failed to open camera. Please check camera permissions.");
           }
         }} />
         }
@@ -285,6 +291,17 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
         {currentPage === "portfolio" && <PortfolioPage key="portfolio" />}
         {currentPage === "share" && <SharePage key="share" />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
+        {currentPage === "verify-proof" && verifyProofImage && (
+          <VerifyProofPage
+            key="verify-proof"
+            image={verifyProofImage}
+            onBack={() => {
+              setVerifyProofImage(null);
+              setVerifyProofAnalysis(null);
+              setCurrentPage("home");
+            }}
+          />
+        )}
         {currentPage === "encrypt-preview" && capturedImage && (
           <EncryptPreviewPage
             key="encrypt-preview"
@@ -549,7 +566,25 @@ function HomePage({ userName, documentCount, onEncryptClick }: { userName: strin
         <div className="grid grid-cols-2 gap-3">
           {[
             { icon: Lock, label: "Encrypt", gradient: "from-blue-600 to-cyan-600", onClick: onEncryptClick },
-            { icon: CheckCircle, label: "Verify Proof", gradient: "from-purple-600 to-pink-600", onClick: () => {} },
+            { icon: CheckCircle, label: "Verify Proof", gradient: "from-purple-600 to-pink-600", onClick: async () => {
+              try {
+                console.log("📸 Opening gallery for Verify Proof...");
+                const image = await CameraPlugin.getPhoto({
+                  quality: 90,
+                  allowEditing: false,
+                  source: "Photos" as any,
+                  resultType: "base64" as any,
+                });
+                if (image?.base64String) {
+                  console.log("✅ Image selected for verification");
+                  setVerifyProofImage("data:image/jpeg;base64," + image.base64String);
+                  setCurrentPage("verify-proof");
+                }
+              } catch (error) {
+                console.error("❌ Gallery selection error:", error);
+                alert("Failed to select image from gallery");
+              }
+            } },
           ].map((action, idx) => (
             <motion.button
               key={idx}
@@ -1071,10 +1106,12 @@ function EncryptPreviewPage({
   useEffect(() => {
     const encryptImage = async () => {
       try {
+        console.log('🔐 Starting encryption process for user:', userId);
         setIsProcessing(true);
+        setError(null);
         
-        // Use ADVANCED STEGANOGRAPHY from ImageCryptoAnalyzer
-        // Features: CRC16 validation, tile-based LSB, majority voting
+        // Use ADVANCED STEGANOGRAPHY with CRC validation
+        console.log('🔏 Embedding watermark...');
         const watermarkedBase64 = await embedAdvancedWatermark(
           image,
           userId,
@@ -1085,44 +1122,71 @@ function EncryptPreviewPage({
           undefined  // gpsData
         );
         
+        console.log('✅ Watermark embedded successfully');
         setWatermarkedImage(watermarkedBase64);
         
         // Convert to blob for storage
+        console.log('💾 Converting to blob...');
         const response = await fetch(watermarkedBase64);
-        const blob = await response.blob();
+        if (!response.ok) throw new Error(`Failed to fetch watermarked image: ${response.statusText}`);
         
-        // Get base64 from response
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const base64Data = e.target?.result as string;
-          const base64String = base64Data.split(",")[1];
+        const blob = await response.blob();
+        if (!blob.size) throw new Error('Blob is empty');
+        
+        console.log('📊 Blob size:', blob.size);
+        
+        // Get base64 from blob using a Promise-based approach
+        const base64String = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
           
-          // Create metadata
-          const metadata = {
-            timestamp: Date.now(),
-            original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
-            size: blob.size,
-            checksum: Math.random().toString(36).substring(7),
-            watermarked: true,
-            ownerId: userId,
+          reader.onload = () => {
+            try {
+              const result = reader.result as string;
+              const base64 = result.includes(',') ? result.split(',')[1] : result;
+              if (!base64 || base64.length === 0) {
+                throw new Error('Base64 string is empty');
+              }
+              resolve(base64);
+            } catch (err) {
+              reject(err);
+            }
           };
           
-          // Create encrypted package with watermarked image for preview
-          const encryptedPackage = {
-            encrypted_data: base64String,
-            watermarkedImage: watermarkedBase64,  // Include watermarked for preview & gallery
-            metadata: metadata,
-            check_digest: Math.random().toString(36).substring(7),
+          reader.onerror = () => {
+            reject(new Error(`FileReader error: ${reader.error?.message || 'Unknown'}`));
           };
           
-          setEncryptedData(encryptedPackage);
-          setIsProcessing(false);
+          reader.readAsDataURL(blob);
+        });
+        
+        console.log('📝 Base64 generated, length:', base64String.length);
+        
+        // Create metadata
+        const metadata = {
+          timestamp: Date.now(),
+          original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
+          size: blob.size,
+          checksum: Math.random().toString(36).substring(7),
+          watermarked: true,
+          ownerId: userId,
+          imageType: 'encrypted', // encrypted = has PINIT watermark
         };
         
-        reader.readAsDataURL(blob);
-      } catch (err) {
-        console.error("Advanced encryption error:", err);
-        setError("Failed to encrypt image with advanced steganography");
+        // Create encrypted package with watermarked image for preview
+        const encryptedPackage = {
+          encrypted_data: base64String,
+          watermarkedImage: watermarkedBase64,  // Include watermarked for preview & gallery
+          metadata: metadata,
+          check_digest: Math.random().toString(36).substring(7),
+        };
+        
+        console.log('✅ Encryption package created successfully');
+        setEncryptedData(encryptedPackage);
+      } catch (err: any) {
+        console.error('❌ Encryption error:', err);
+        const errorMsg = err?.message || 'Failed to encrypt image';
+        setError(`⚠️ Encryption failed: ${errorMsg}`);
+      } finally {
         setIsProcessing(false);
       }
     };
@@ -1418,6 +1482,274 @@ function IdentityPage({ userName, userId }: { userName: string; userId: string |
           <div className="w-10 h-6 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-lg shadow-purple-500/50"></div>
         </div>
       </motion.div>
+    </motion.div>
+  );
+}
+
+// ============= VERIFY PROOF PAGE =============
+function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void }) {
+  const [isAnalyzing, setIsAnalyzing] = useState(true);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const analyzeImage = async () => {
+      try {
+        setIsAnalyzing(true);
+        setError(null);
+        console.log("🔍 Starting image analysis...");
+
+        // Convert base64 to blob
+        const base64Data = image.includes(",") ? image.split(",")[1] : image;
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: "image/jpeg" });
+
+        // Create canvas to analyze image
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Failed to get canvas context");
+
+        const img = new Image();
+        img.onload = async () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+
+          // Try to extract watermark from image
+          console.log("📊 Extracting watermark data...");
+          let watermarkData: AdvancedWatermarkMetadata | null = null;
+          try {
+            watermarkData = await extractAdvancedWatermark(canvas);
+            console.log("✅ Watermark extracted:", watermarkData);
+          } catch (wmError) {
+            console.warn("⚠️ Could not extract watermark:", wmError);
+          }
+
+          // Analyze image content
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+
+          // Check encryption patterns (LSB analysis)
+          let lsbVariance = 0;
+          let lsbCount = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            lsbVariance += (data[i] & 1) + ((data[i + 1] & 1) << 1) + ((data[i + 2] & 1) << 2);
+            lsbCount++;
+          }
+          const avgLSBVariance = lsbVariance / lsbCount;
+          const isLikelyEncrypted = avgLSBVariance > 2.5; // Threshold for LSB detection
+
+          // Build analysis result
+          const result = {
+            imageResolution: `${canvas.width}x${canvas.height}`,
+            imageSize: `${(blob.size / 1024).toFixed(2)} KB`,
+            pixelCount: canvas.width * canvas.height,
+            isEncrypted: watermarkData ? true : isLikelyEncrypted,
+            encryptionType: watermarkData?.format || (isLikelyEncrypted ? "LSB Steganography" : "None"),
+            ownershipDetails: watermarkData ? {
+              pinItId: watermarkData.userId || "Unknown",
+              timestamp: new Date(watermarkData.timestamp || 0).toLocaleString(),
+              watermarkFormat: watermarkData.format,
+              validationTiles: watermarkData.validationTiles,
+              tilesPassed: watermarkData.tilesPassed,
+            } : {
+              pinItId: "Not encrypted with PINIT",
+              timestamp: "N/A",
+              watermarkFormat: "None",
+            },
+            imageType: watermarkData?.imageType || "Unknown",
+            metadata: watermarkData ? {
+              userId: watermarkData.userId,
+              timestamp: watermarkData.timestamp,
+              imageType: watermarkData.imageType,
+              validationStatus: watermarkData.tilesPassed && watermarkData.validationTiles
+                ? `${watermarkData.tilesPassed}/${watermarkData.validationTiles} validation tiles passed`
+                : "Validation pending",
+            } : null,
+            confidence: watermarkData 
+              ? (watermarkData.tilesPassed && watermarkData.validationTiles 
+                ? Math.round((watermarkData.tilesPassed / watermarkData.validationTiles) * 100)
+                : 0)
+              : (isLikelyEncrypted ? 65 : 0),
+          };
+
+          setAnalysis(result);
+          console.log("✅ Analysis complete:", result);
+          setIsAnalyzing(false);
+        };
+
+        img.onerror = () => {
+          throw new Error("Failed to load image for analysis");
+        };
+
+        img.src = image;
+      } catch (err) {
+        console.error("❌ Analysis error:", err);
+        setError(err instanceof Error ? err.message : "Failed to analyze image");
+        setIsAnalyzing(false);
+      }
+    };
+
+    analyzeImage();
+  }, [image]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="px-4 pt-6 space-y-5 pb-8"
+    >
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Verify Proof</h1>
+        <button
+          onClick={onBack}
+          className="p-2 hover:bg-slate-700/50 rounded-lg transition-all"
+        >
+          <X size={24} className="text-slate-300" />
+        </button>
+      </div>
+
+      {/* Image Preview */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="rounded-2xl overflow-hidden border border-purple-500/30 shadow-2xl"
+      >
+        <img src={image} alt="Verification" className="w-full h-auto" />
+      </motion.div>
+
+      {/* Analysis Loading State */}
+      {isAnalyzing && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-8 flex flex-col items-center gap-4 shadow-xl"
+        >
+          <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin"></div>
+          <p className="text-purple-300 font-semibold">Analyzing image watermarks and encryption...</p>
+        </motion.div>
+      )}
+
+      {/* Error State */}
+      {error && !isAnalyzing && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-red-500/10 border border-red-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl"
+        >
+          <div className="flex gap-3">
+            <AlertCircle className="text-red-400 flex-shrink-0" size={24} />
+            <div>
+              <p className="font-bold text-red-400">Analysis Failed</p>
+              <p className="text-red-300 text-sm mt-1">{error}</p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Analysis Results */}
+      {analysis && !isAnalyzing && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
+          {/* Encryption Status */}
+          <motion.div
+            className={`rounded-2xl p-6 border shadow-xl ${
+              analysis.isEncrypted
+                ? "bg-gradient-to-br from-green-900/40 to-emerald-900/40 border-green-500/30"
+                : "bg-gradient-to-br from-slate-800/40 to-slate-900/40 border-slate-500/30"
+            }`}
+          >
+            <div className="flex items-start gap-4">
+              <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                analysis.isEncrypted ? "bg-green-500/20" : "bg-slate-500/20"
+              }`}>
+                {analysis.isEncrypted ? (
+                  <Shield className="text-green-400" size={24} />
+                ) : (
+                  <AlertCircle className="text-slate-400" size={24} />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-lg">
+                  {analysis.isEncrypted ? "✅ This image is encrypted" : "⚠️ Not PINIT encrypted"}
+                </p>
+                <p className={`text-sm mt-1 ${analysis.isEncrypted ? "text-green-300" : "text-slate-300"}`}>
+                  {analysis.isEncrypted
+                    ? `Protected with ${analysis.encryptionType} (${analysis.confidence}% confidence)`
+                    : "This image doesn't contain PINIT watermarks"}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Ownership Details */}
+          <motion.div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+            <h3 className="font-bold text-lg mb-4 text-white">Ownership Details</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center pb-3 border-b border-purple-500/20">
+                <span className="text-purple-300/70 text-sm">PINIT ID</span>
+                <span className="font-mono font-bold text-white">{analysis.ownershipDetails.pinItId}</span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-purple-500/20">
+                <span className="text-purple-300/70 text-sm">Timestamp</span>
+                <span className="text-sm text-white">{analysis.ownershipDetails.timestamp}</span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-purple-500/20">
+                <span className="text-purple-300/70 text-sm">Image Type</span>
+                <span className="text-sm text-white capitalize">{analysis.imageType}</span>
+              </div>
+              {analysis.ownershipDetails.validationTiles && (
+                <div className="flex justify-between items-center">
+                  <span className="text-purple-300/70 text-sm">Validation</span>
+                  <span className="text-sm text-green-400 font-bold">{analysis.ownershipDetails.tilesPassed}/{analysis.ownershipDetails.validationTiles} tiles</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Image Metadata */}
+          <motion.div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+            <h3 className="font-bold text-lg mb-4 text-white">Image Metadata</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-700/30 rounded-xl p-4">
+                <p className="text-purple-300/70 text-xs font-semibold">Resolution</p>
+                <p className="font-bold mt-2 text-white">{analysis.imageResolution}</p>
+              </div>
+              <div className="bg-slate-700/30 rounded-xl p-4">
+                <p className="text-purple-300/70 text-xs font-semibold">File Size</p>
+                <p className="font-bold mt-2 text-white">{analysis.imageSize}</p>
+              </div>
+              <div className="bg-slate-700/30 rounded-xl p-4">
+                <p className="text-purple-300/70 text-xs font-semibold">Total Pixels</p>
+                <p className="font-bold mt-2 text-white">{(analysis.pixelCount / 1000000).toFixed(2)}M</p>
+              </div>
+              <div className="bg-slate-700/30 rounded-xl p-4">
+                <p className="text-purple-300/70 text-xs font-semibold">Confidence</p>
+                <p className="font-bold mt-2 text-white">{analysis.confidence}%</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Action Button */}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onBack}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all"
+          >
+            Back to Home
+          </motion.button>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

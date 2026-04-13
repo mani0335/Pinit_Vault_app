@@ -12,9 +12,10 @@ interface FaceScannerProps {
   onError?: (error: string) => void;
   mode: "register" | "login" | "temp-access";
   required?: boolean;
+  userId?: string; // ADD: Optional userId prop for login mode
 }
 
-export function FaceScanner({ onSuccess, onError, mode, required = false }: FaceScannerProps) {
+export function FaceScanner({ onSuccess, onError, mode, required = false, userId: propUserId }: FaceScannerProps) {
   const [status, setStatus] = useState<"idle" | "camera" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [cameraReady, setCameraReady] = useState(false);
@@ -24,7 +25,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
   const hasAutoStarted = useRef(false);
 
   const PROCESSING_MS = 900;
-  const SUCCESS_HOLD_MS = 450;
+  const SUCCESS_HOLD_MS = 1200;  // Increased from 450ms to ensure all storage operations complete
 
   const extractEmbedding = useCallback((video: HTMLVideoElement): number[] | null => {
     const canvas = document.createElement("canvas");
@@ -360,43 +361,210 @@ export function FaceScanner({ onSuccess, onError, mode, required = false }: Face
 
     if (mode === "login") {
       try {
-        const userId = await appStorage.getItem("biovault_userId");
+        // Use userId passed as prop first (from Register state), fallback to storage
+        let userId = propUserId;
+        if (!userId) {
+          userId = await appStorage.getItem("biovault_userId");
+        }
         if (!userId) throw new Error("User not registered on this device.");
 
+        console.log('🔐 FaceScanner: Starting face verification for userId:', userId, '(from', propUserId ? 'prop' : 'storage', ')');
         const data = await verifyFace(userId, embedding);
 
-        if (!data.ok || !data.match) {
-          throw new Error(data.reason || "Face does not match registered profile. Please retry.");
+        console.log('📊 FaceScanner: RAW Backend Response:', JSON.stringify({
+          ok: data.ok,
+          match: data.match,
+          verified: data.verified,
+          score: data.score,
+          similarity: data.similarity,
+          hasToken: !!data.token,
+          hasRefreshToken: !!data.refreshToken,
+          tokenLength: data.token ? data.token.length : 0,
+          refreshTokenLength: data.refreshToken ? data.refreshToken.length : 0,
+          reason: data.reason,
+          message: data.message,
+          mode: data.mode
+        }, null, 2));
+
+        // ✅ EXPLICIT SUCCESS CHECK: ALL conditions must be true
+        const isSuccess = data.ok === true && data.match === true && !!data.token && !!data.refreshToken;
+        const isFailed = data.ok === false || data.match === false;
+        
+        console.log('🔍 FaceScanner: RESPONSE VALIDATION:', {
+          dataOk: data.ok,
+          dataMatch: data.match,
+          dataOkIsTrue: data.ok === true,
+          dataMatchIsTrue: data.match === true,
+          hasAccessToken: !!data.token,
+          hasRefreshToken: !!data.refreshToken,
+          RESULT_isSuccess: isSuccess,
+          RESULT_isFailed: isFailed
+        });
+
+        // ❌ FAILURE: If backend explicitly said ok:false or match:false
+        if (isFailed) {
+          const similarity = data.score || data.similarity || 0;
+          // IMPORTANT: When ok/match are false, ONLY use data.reason (most specific failure reason)
+          // Do NOT use data.message because backend may send generic success message
+          const failureMsg = data.reason || `Face verification failed (${(similarity*100).toFixed(1)}% match)`;
+          console.error('❌ FaceScanner: Face verification FAILED', { 
+            ok: data.ok, 
+            match: data.match,
+            failureMsg,
+            ignoredMessage: data.message
+          });
+          throw new Error(failureMsg);
         }
+
+        // ✅ SUCCESS path: Check tokens exist
         if (!data.token) {
-          throw new Error("Session token missing from server");
+          console.error('❌ FaceScanner: CRITICAL - ok:true/match:true but no access token:', { data });
+          throw new Error("Access token missing from server - backend issue");
         }
         if (!data.refreshToken) {
-          throw new Error("Refresh token missing from server");
+          console.error('❌ FaceScanner: CRITICAL - ok:true/match:true but no refresh token:', { data });
+          throw new Error("Refresh token missing from server - backend issue");
         }
 
-        // CRITICAL: Persist userId and tokens for next login
-        await appStorage.setItem("biovault_userId", userId);
-        localStorage.setItem("biovault_userId", userId);
-        localStorage.setItem("biovault_token", data.token);
-        localStorage.setItem("biovault_refresh_token", data.refreshToken);
-        await appStorage.setItem("biovault_token", data.token);
-        await appStorage.setItem("biovault_refresh_token", data.refreshToken);
+        console.log('✅✅✅ FaceScanner: ALL VERIFICATION CHECKS PASSED');
+        console.log('✅ Face verified with confidence:', `${(data.score * 100).toFixed(1)}%`);
+        console.log('✅ Access token length:', data.token.length);
+        console.log('✅ Refresh token length:', data.refreshToken.length);
 
-        console.log('✅ FaceScanner: User credentials persisted for future logins');
+        // ✅ SAVE TOKENS FOR SESSION PERSISTENCE
+        console.log('💾 FaceScanner: Saving authentication tokens...');
+        const expiryTime = Date.now() + 3600000; // 1 hour from now
         
-        setStatus("success");
-        setMessage(`✓ Verified (${Math.round((data.score || 0) * 100)}%)`);
-        stopCamera();
-        setCameraReady(false);
-        setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
+        // CRITICAL: Wrap in try-catch so appStorage errors don't propagate
+        try {
+          // Save to appStorage (Capacitor Preferences - for mobile)
+          await appStorage.setItem("biovault_token", data.token);
+          await appStorage.setItem("biovault_refresh_token", data.refreshToken);
+          await appStorage.setItem("sessionToken", data.token);
+          await appStorage.setItem("refreshToken", data.refreshToken);
+          await appStorage.setItem("sessionExpiryTime", expiryTime.toString());
+          await appStorage.setItem("biovault_userId", userId);
+          console.log('✅ FaceScanner: Tokens saved to appStorage');
+        } catch (appStorageErr) {
+          console.warn('⚠️ FaceScanner: appStorage failed, proceeding with localStorage:', appStorageErr);
+        }
+        
+        // ALWAYS save to localStorage as fallback (browser storage)
+        try {
+          localStorage.setItem("biovault_token", data.token);
+          localStorage.setItem("biovault_refresh_token", data.refreshToken);
+          localStorage.setItem("sessionToken", data.token);
+          localStorage.setItem("sessionExpiryTime", expiryTime.toString());
+          localStorage.setItem("biovault_userId", userId);
+          console.log('✅ FaceScanner: Tokens saved to localStorage');
+        } catch (localStorageErr) {
+          console.error('❌ FaceScanner: Both appStorage AND localStorage failed:', localStorageErr);
+          // Still proceed - we'll see verification fail but at least give user a chance to retry
+        }
+        
+        console.log('✅ FaceScanner: Token persistence completed');
+        
+        // ✅ SET SUCCESS STATUS - BEFORE ANY OTHER ASYNC OPERATIONS
+        // This status will NEVER be changed after this point
+        // WRAP IN TRY-CATCH TO PREVENT ERRORS FROM OVERWRITING SUCCESS STATE
+        try {
+          console.log('🎯🎯🎯 CRITICAL: Setting status to SUCCESS 🎯🎯🎯');
+          setStatus("success");
+          const successScore = Math.round((data.score || 0) * 100);
+          const successMsg = `Face verified successfully (${successScore}%)`;
+          console.log('📝 Setting success message:', successMsg);
+          setMessage(successMsg);
+          console.log('📹 Stopping camera');
+          stopCamera();
+          setCameraReady(false);
+          console.log('✅ SUCCESS STATE COMMITTED - Status and message are now locked');
+        } catch (statusErr) {
+          // Error setting status or stopping camera - but success is already shown to user
+          console.warn('⚠️ Warning: Error after success state set:', statusErr);
+          // DO NOT call setStatus("error") - success is already committed
+          // Continue to onSuccess callback which will navigate to Dashboard
+        }
+        
+        // CRITICAL: Non-blocking token verification (separate from try-catch)
+        // This section CANNOT throw - it has its own error handling
+        const verifyTokensNonBlocking = async () => {
+          try {
+            console.log('🔐 FaceScanner: Verifying token persistence...');
+            let finalToken = null;
+            let finalUserId = null;
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            while (retryCount < maxRetries && (!finalToken || !finalUserId)) {
+              await new Promise(r => setTimeout(r, 100 + (retryCount * 50)));
+              try {
+                finalToken = await appStorage.getItem("biovault_token");
+              } catch (e) {
+                console.warn('⚠️ appStorage.getItem error:', e);
+                finalToken = localStorage.getItem("biovault_token");
+              }
+              try {
+                finalUserId = await appStorage.getItem("biovault_userId");
+              } catch (e) {
+                console.warn('⚠️ appStorage.getItem userId error:', e);
+                finalUserId = localStorage.getItem("biovault_userId");
+              }
+              retryCount++;
+              
+              if (finalToken && finalUserId) {
+                console.log(`✅ Tokens verified on attempt ${retryCount}`);
+                break;
+              } else {
+                console.warn(`⚠️ Tokens not found on attempt ${retryCount}/${maxRetries}`);
+              }
+            }
+            
+            if (!finalToken || !finalUserId) {
+              console.warn('⚠️ Warning: Could not verify token persistence, but success status already displayed');
+            } else {
+              console.log('✅✅✅ ALL TOKENS VERIFIED AND READY');
+            }
+          } catch (verifyErr) {
+            // Swallow error - success is already shown, don't change status
+            console.warn('⚠️ Token verification error (non-critical):', verifyErr);
+          }
+        };
+        
+        // Fire token verification in background (doesn't block navigation)
+        console.log('🔄 Starting background token verification (non-blocking)...');
+        verifyTokensNonBlocking();
+        
+        // Fire onSuccess callback - navigation happens via status=success
+        // CRITICAL: Wait longer to ensure all token saves are complete
+        setTimeout(() => {
+          console.log('🎉 FaceScanner: onSuccess callback firing NOW');
+          console.log('✅ Status is success - Login.tsx will navigate to Dashboard');
+          console.log('⏰ onSuccess fired at:', new Date().toISOString());
+          console.log('✅ Waiting for final token persistence before calling onSuccess');
+          onSuccess({ embedding } as any);
+        }, 1200); // Increased from 600ms to 1200ms for better token persistence
+        console.log('✅ SUCCESS PATH COMPLETE - returning from try block');
         return;
       } catch (err: any) {
         const msg = (err?.message || "").toString();
-        const friendly = msg || "Face authentication failed. Please retry.";
+        // Clean error message - don't add more ❌ if already there
+        let displayMessage = msg || "Face authentication failed. Please try again.";
+        
+        console.error('🔴🔴🔴 CATCH BLOCK TRIGGERED IN LOGIN MODE 🔴🔴🔴');
+        console.error('❌ FaceScanner: EXCEPTION in login mode:', {
+          message: msg,
+          stack: err?.stack,
+          displayMessage
+        });
+        console.error('⏰ Error at:', new Date().toISOString());
+        
         setStatus("error");
-        setMessage('❌ ' + friendly);
-        onError?.(friendly || "Face authentication failed");
+        // Only set message without ❌ prefix - the red X icon is already the indicator
+        setMessage(displayMessage);
+        console.log('🔔 FaceScanner: Error state set, showing retry button');
+        onError?.(displayMessage || "Face authentication failed");
+        
+        // Auto-reset to camera mode after showing error for user to retry
         setTimeout(() => {
           setStatus("camera");
           setMessage("Align your face inside the frame");

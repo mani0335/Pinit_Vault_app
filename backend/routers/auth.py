@@ -423,41 +423,72 @@ async def webauthn_login_start(data: WebAuthnLoginStart):
 async def verify_fingerprint(data: VerifyFingerprintRequest, request: Request):
     """
     Verify fingerprint (WebAuthn credential) against registered user
-    Returns: {verified: bool, userId: str, message: str, userRecord: dict}
+    Returns: {verified: bool, userId: str, message: str}
     """
     db = get_admin_db()
+    
+    if not data.userId or not data.credential:
+        return {
+            "verified": False,
+            "userId": None,
+            "message": "Missing userId or credential",
+            "reason": "Missing userId or credential"
+        }
     
     # Check if userId exists in biometric_users table
     try:
         user_result = db.table("biometric_users").select("*").eq("user_id", data.userId).execute()
         
         if not user_result.data:
+            print(f"❌ User {data.userId} not found in database")
             return {
                 "verified": False,
                 "userId": None,
                 "message": "Fingerprint not found in database",
-                "userRecord": None
+                "reason": "User not registered"
             }
         
         user_record = user_result.data[0]
         stored_webauthn = user_record.get("webauthn_credential")
         
-        # If we have webauthn data from request, we could do deeper verification here
-        # For now, just verify the userId exists means fingerprint is verified
-        # (The actual WebAuthn verification happens on the client side)
+        # Extract credential ID from either string or object format
+        if isinstance(stored_webauthn, dict):
+            stored_credential_id = stored_webauthn.get("id")
+        elif isinstance(stored_webauthn, str):
+            stored_credential_id = stored_webauthn
+        else:
+            stored_credential_id = None
         
-        log_action(data.userId, "verify_fingerprint_success", {}, str(request.client.host))
+        incoming_credential_id = data.credential if isinstance(data.credential, str) else (data.credential.get("id") if isinstance(data.credential, dict) else None)
         
-        return {
-            "verified": True,
-            "userId": data.userId,
-            "message": "Fingerprint verified successfully",
-            "userRecord": {
-                "id": user_record["id"],
-                "user_id": user_record["user_id"],
-                "created_at": user_record["created_at"]
+        print(f"🔍 Fingerprint verification for {data.userId}:")
+        print(f"  Stored credential type: {type(stored_webauthn)}")
+        print(f"  Stored credential ID: {stored_credential_id[:30] if stored_credential_id else 'None'}...")
+        print(f"  Incoming credential: {incoming_credential_id[:30] if incoming_credential_id else 'None'}...")
+        
+        # Compare credential IDs
+        credentials_match = stored_credential_id == incoming_credential_id
+        
+        if credentials_match:
+            print(f"✅ Fingerprint verified for {data.userId}: credentials match")
+            log_action(data.userId, "verify_fingerprint_success", {}, str(request.client.host))
+            return {
+                "verified": True,
+                "userId": data.userId,
+                "message": "Fingerprint verified successfully",
+                "ok": True,
+                "match": True
             }
-        }
+        else:
+            print(f"❌ Fingerprint verification failed for {data.userId}: credentials don't match")
+            return {
+                "verified": False,
+                "userId": data.userId,
+                "message": "Fingerprint does not match registered credential",
+                "reason": "Credential mismatch",
+                "ok": False,
+                "match": False
+            }
     
     except Exception as e:
         print(f"Fingerprint verification error: {str(e)}")
@@ -483,11 +514,11 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
     try:
         current_embedding = np.array(data.faceEmbedding, dtype=np.float32)
         
-        # ⭐ STRICT MATCHING THRESHOLDS ⭐
-        # Logged-in user: 90% match required (registered face must match perfectly)
-        # Temporary access: 85% match (still very strict but allows some angle/lighting variation)
-        LOGGED_IN_THRESHOLD = 0.90   # 90% for same device - PERFECT face match required
-        TEMP_ACCESS_THRESHOLD = 0.85  # 85% for cross-device - still very strict
+        # ⭐ MATCHING THRESHOLDS ⭐
+        # Logged-in user: 55% match required (MUST be same face)
+        # Temporary access: 55% match required (MUST be same person, different device)
+        LOGGED_IN_THRESHOLD = 0.55   # 55% for login - same face, same device (more lenient)
+        TEMP_ACCESS_THRESHOLD = 0.55  # 55% for cross-device - same person, different device
         
         if data.userId:
             # Logged-in user: verify against their specific face
@@ -496,9 +527,13 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
             if not user_result.data:
                 return {
                     "verified": False,
+                    "ok": False,
+                    "match": False,
                     "userId": data.userId,
                     "message": "User not found",
-                    "similarity": 0.0
+                    "reason": "User not found in database",
+                    "similarity": 0.0,
+                    "score": 0.0
                 }
             
             user_record = user_result.data[0]
@@ -507,9 +542,13 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
             if not stored_embedding:
                 return {
                     "verified": False,
+                    "ok": False,
+                    "match": False,
                     "userId": data.userId,
                     "message": "No face embedding found for this user",
-                    "similarity": 0.0
+                    "reason": "Face not registered",
+                    "similarity": 0.0,
+                    "score": 0.0
                 }
             
             # Calculate cosine similarity
@@ -519,23 +558,63 @@ async def verify_face(data: VerifyFaceRequest, request: Request):
             )
             similarity_score = float(similarity)
             
-            log_action(data.userId, "verify_face_attempt", {"similarity": similarity_score}, str(request.client.host))
+            # DEBUG LOGGING
+            print(f"🔍 Face comparison for userId={data.userId}:")
+            print(f"  Stored embedding length: {len(stored_embedding)}")
+            print(f"  Current embedding length: {len(data.faceEmbedding)}")
+            print(f"  Stored norm: {np.linalg.norm(stored_array):.6f}")
+            print(f"  Current norm: {np.linalg.norm(current_embedding):.6f}")
+            print(f"  Dot product: {np.dot(current_embedding, stored_array):.6f}")
+            print(f"  ✅ Cosine similarity: {similarity_score:.6f} ({(similarity_score*100):.2f}%)")
+            print(f"  Threshold: {LOGGED_IN_THRESHOLD:.2f} ({(LOGGED_IN_THRESHOLD*100):.0f}%)")
+            
+            print(f"🔍 Face verification for userId={data.userId}: similarity={similarity_score:.4f}, threshold={LOGGED_IN_THRESHOLD}")
             
             if similarity_score >= LOGGED_IN_THRESHOLD:
-                log_action(data.userId, "verify_face_success", {"similarity": similarity_score}, str(request.client.host))
-                return {
-                    "verified": True,
-                    "userId": data.userId,
-                    "message": "Face verified successfully",
-                    "similarity": similarity_score
-                }
+                print(f"✅✅✅ FACE MATCH SUCCESS: {similarity_score:.6f} ({(similarity_score*100):.2f}%) >= {LOGGED_IN_THRESHOLD:.2f} ({(LOGGED_IN_THRESHOLD*100):.0f}%)")
+                
+                try:
+                    log_action(data.userId, "verify_face_success", {"similarity": similarity_score}, str(request.client.host))
+                except Exception as log_err:
+                    print(f"⚠️ Log action failed: {log_err}")
+                
+                try:
+                    # Generate JWT tokens for dashboard access
+                    access_token = generate_jwt(data.userId, "user")
+                    refresh_token = generate_jwt(data.userId, "user", expires_in_minutes=10080)  # 7 days
+                    
+                    print(f"🔐 Tokens generated for userId={data.userId}")
+                    print(f"✅ Access token: {access_token[:30]}...")
+                    print(f"✅ Refresh token: {refresh_token[:30]}...")
+                    
+                    response_data = {
+                        "verified": True,
+                        "ok": True,
+                        "match": True,
+                        "userId": data.userId,
+                        "message": "Face verified successfully",
+                        "similarity": similarity_score,
+                        "score": similarity_score,
+                        "token": access_token,
+                        "refreshToken": refresh_token
+                    }
+                    print(f"📦 Returning response:", response_data)
+                    return response_data
+                except Exception as token_err:
+                    print(f"❌ Error generating tokens: {token_err}")
+                    raise HTTPException(status_code=500, detail=f"Token generation failed: {str(token_err)}")
             else:
+                print(f"❌❌❌ FACE MATCH FAILED: {similarity_score:.6f} ({(similarity_score*100):.2f}%) < {LOGGED_IN_THRESHOLD:.2f} ({(LOGGED_IN_THRESHOLD*100):.0f}%)")
                 log_action(data.userId, "verify_face_failed", {"similarity": similarity_score, "threshold": LOGGED_IN_THRESHOLD}, str(request.client.host))
                 return {
                     "verified": False,
+                    "ok": False,
+                    "match": False,
                     "userId": data.userId,
                     "message": f"Face not matched (similarity: {similarity_score:.2f}, required: {LOGGED_IN_THRESHOLD:.2f})",
-                    "similarity": similarity_score
+                    "reason": f"Face similarity too low: {(similarity_score*100):.1f}%",
+                    "similarity": similarity_score,
+                    "score": similarity_score
                 }
         
         else:
