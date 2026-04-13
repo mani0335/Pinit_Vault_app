@@ -21,7 +21,7 @@ class BiometricRegister(BaseModel):
 class VerifyFingerprintRequest(BaseModel):
     """Verify fingerprint against registered credentials"""
     userId: str
-    webauthn: Optional[dict] = None
+    credential: Optional[str] = None
 
 
 class VerifyFaceRequest(BaseModel):
