@@ -334,7 +334,9 @@ export async function saveImageToGallery(
     const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
     
     const timestamp = Date.now();
-    const uniqueName = `PINIT_${userId.substring(0, 8)}_${timestamp}.jpg`;
+    // Extract file extension from original filename or default to jpg
+    const fileExt = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+    const uniqueName = `PINIT_${userId.substring(0, 8)}_${timestamp}.${fileExt}`;
     const folderPath = "PINIT Vault";
 
     try {
@@ -345,20 +347,21 @@ export async function saveImageToGallery(
           directory: Directory.Pictures,
           recursive: true,
         });
-        console.log(`✅ PINIT Vault folder ready`);
+        console.log(`✅ PINIT Vault folder ready at Pictures`);
       } catch (mkdirErr) {
         console.log("ℹ️ Folder creation info (may already exist):", mkdirErr);
       }
 
-      // Save with proper base64 encoding (Capacitor's format)
+      // Save with base64 data - use correct encoding for base64
       const fullPath = `${folderPath}/${uniqueName}`;
-      console.log(`💾 Writing file to: ${fullPath}`);
+      console.log(`💾 Writing file to: ${fullPath} (size: ${cleanBase64.length} bytes)`);
       
+      // For base64 data, pass it as-is without UTF8 encoding
       const result = await Filesystem.writeFile({
         path: fullPath,
-        data: cleanBase64,  // Base64 string directly
+        data: cleanBase64,  // Raw base64 string
         directory: Directory.Pictures,
-        encoding: Encoding.UTF8,  // UTF8 handles base64 strings
+        // Don't specify encoding for base64 - Capacitor should handle it automatically
       });
 
       console.log(`✅ Image successfully saved to PINIT Vault: ${uniqueName}`);
@@ -376,7 +379,6 @@ export async function saveImageToGallery(
           path: uniqueName,
           data: cleanBase64,
           directory: Directory.Pictures,
-          encoding: Encoding.UTF8,
         });
         
         console.log(`✅ Image saved to Pictures root (fallback): ${uniqueName}`);
@@ -394,7 +396,6 @@ export async function saveImageToGallery(
             path: uniqueName,
             data: cleanBase64,
             directory: Directory.Documents,
-            encoding: Encoding.UTF8,
           });
           
           console.log(`✅ Image saved to Documents (final fallback): ${uniqueName}`);

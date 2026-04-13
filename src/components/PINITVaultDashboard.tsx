@@ -282,7 +282,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             console.error("❌ Camera error:", error);
             alert("Failed to open camera. Please check camera permissions.");
           }
-        }} />
+        }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} />
         }
         {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} onDeleteDocument={async (docId) => {
           const updated = vaultDocuments.filter((doc) => doc.id !== docId);
@@ -515,7 +515,7 @@ function NavButton({
 }
 
 // ============= HOME PAGE =============
-function HomePage({ userName, documentCount, onEncryptClick }: { userName: string; documentCount: number; onEncryptClick: () => void }) {
+function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage, setCurrentPage }: { userName: string; documentCount: number; onEncryptClick: () => void; setVerifyProofImage: (value: string | null) => void; setCurrentPage: (page: PageType) => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
