@@ -1145,64 +1145,118 @@ function EncryptPreviewPage({
 
   // Encrypt image and embed user ID when component mounts
   useEffect(() => {
+    let isMounted = true; // Track if component is still mounted
+    
     const encryptImage = async () => {
       try {
         console.log('🔐 Starting encryption process for user:', userId);
+        if (!isMounted) return;
         setIsProcessing(true);
         setError(null);
         
-        // Use ADVANCED STEGANOGRAPHY with CRC validation
-        console.log('🔏 Embedding watermark...');
-        const watermarkedBase64 = await embedAdvancedWatermark(
-          image,
-          userId,
-          new Date().toISOString(),
-          undefined, // deviceId
-          undefined, // deviceName
-          undefined, // ipAddress
-          undefined  // gpsData
-        );
+        // Step 1: Embed watermark
+        console.log('🔏 Step 1/4: Embedding watermark with user ID...');
+        let watermarkedBase64 = null;
+        try {
+          watermarkedBase64 = await embedAdvancedWatermark(
+            image,
+            userId,
+            new Date().toISOString(),
+            undefined,
+            undefined,
+            undefined,
+            undefined
+          );
+          console.log('✅ Watermark embedded successfully');
+        } catch (watermarkErr) {
+          throw new Error(`Watermark embedding failed: ${watermarkErr instanceof Error ? watermarkErr.message : String(watermarkErr)}`);
+        }
         
-        console.log('✅ Watermark embedded successfully');
+        if (!watermarkedBase64) {
+          throw new Error('Watermark returned empty result');
+        }
+        
+        if (!isMounted) return;
         setWatermarkedImage(watermarkedBase64);
         
-        // Convert to blob for storage
-        console.log('💾 Converting to blob...');
-        const response = await fetch(watermarkedBase64);
-        if (!response.ok) throw new Error(`Failed to fetch watermarked image: ${response.statusText}`);
+        // Step 2: Convert base64 to Blob without using fetch (avoids size issues)
+        console.log('💾 Step 2/4: Converting to blob...');
+        let blob: Blob;
+        try {
+          // Remove data URL prefix if present
+          const base64Data = watermarkedBase64.includes(',') 
+            ? watermarkedBase64.split(',')[1] 
+            : watermarkedBase64;
+          
+          // Convert base64 to binary
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          blob = new Blob([bytes], { type: 'image/jpeg' });
+          console.log('📊 Blob created, size:', blob.size, 'bytes');
+          
+          if (!blob.size) {
+            throw new Error('Blob is empty');
+          }
+        } catch (blobErr) {
+          throw new Error(`Blob conversion failed: ${blobErr instanceof Error ? blobErr.message : String(blobErr)}`);
+        }
         
-        const blob = await response.blob();
-        if (!blob.size) throw new Error('Blob is empty');
+        if (!isMounted) return;
         
-        console.log('📊 Blob size:', blob.size);
-        
-        // Get base64 from blob using a Promise-based approach
+        // Step 3: Convert blob to base64 using FileReader
+        console.log('📝 Step 3/4: Encoding to base64...');
         const base64String = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          
-          reader.onload = () => {
-            try {
-              const result = reader.result as string;
-              const base64 = result.includes(',') ? result.split(',')[1] : result;
-              if (!base64 || base64.length === 0) {
-                throw new Error('Base64 string is empty');
+          try {
+            const reader = new FileReader();
+            
+            // Set timeout to prevent hanging
+            const timeout = setTimeout(() => {
+              reader.abort();
+              reject(new Error('FileReader timeout after 30 seconds'));
+            }, 30000);
+            
+            reader.onload = () => {
+              clearTimeout(timeout);
+              try {
+                const result = reader.result as string;
+                if (!result) {
+                  throw new Error('FileReader returned empty result');
+                }
+                const base64 = result.includes(',') ? result.split(',')[1] : result;
+                if (!base64 || base64.length === 0) {
+                  throw new Error('Base64 string is empty after split');
+                }
+                console.log('✅ Base64 encoded, length:', base64.length);
+                resolve(base64);
+              } catch (err) {
+                reject(new Error(`Base64 processing error: ${err instanceof Error ? err.message : String(err)}`));
               }
-              resolve(base64);
-            } catch (err) {
-              reject(err);
-            }
-          };
-          
-          reader.onerror = () => {
-            reject(new Error(`FileReader error: ${reader.error?.message || 'Unknown'}`));
-          };
-          
-          reader.readAsDataURL(blob);
+            };
+            
+            reader.onerror = () => {
+              clearTimeout(timeout);
+              reject(new Error(`FileReader error: ${reader.error?.message || 'Unknown error'}`));
+            };
+            
+            reader.onabort = () => {
+              clearTimeout(timeout);
+              reject(new Error('FileReader was aborted'));
+            };
+            
+            reader.readAsDataURL(blob);
+          } catch (err) {
+            reject(new Error(`FileReader setup error: ${err instanceof Error ? err.message : String(err)}`));
+          }
         });
         
-        console.log('📝 Base64 generated, length:', base64String.length);
+        if (!isMounted) return;
         
-        // Create metadata
+        // Step 4: Create encryption package
+        console.log('🔐 Step 4/4: Creating encryption package...');
         const metadata = {
           timestamp: Date.now(),
           original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
@@ -1210,29 +1264,43 @@ function EncryptPreviewPage({
           checksum: Math.random().toString(36).substring(7),
           watermarked: true,
           ownerId: userId,
-          imageType: 'encrypted', // encrypted = has PINIT watermark
+          imageType: 'encrypted',
         };
         
-        // Create encrypted package with watermarked image for preview
         const encryptedPackage = {
           encrypted_data: base64String,
-          watermarkedImage: watermarkedBase64,  // Include watermarked for preview & gallery
+          watermarkedImage: watermarkedBase64,
           metadata: metadata,
           check_digest: Math.random().toString(36).substring(7),
         };
         
-        console.log('✅ Encryption package created successfully');
-        setEncryptedData(encryptedPackage);
+        console.log('✅ All encryption steps completed successfully');
+        if (isMounted) {
+          setEncryptedData(encryptedPackage);
+        }
       } catch (err: any) {
         console.error('❌ Encryption error:', err);
-        const errorMsg = err?.message || 'Failed to encrypt image';
-        setError(`⚠️ Encryption failed: ${errorMsg}`);
+        const errorMsg = err?.message || String(err) || 'Unknown encryption error';
+        if (isMounted) {
+          setError(`⚠️ Encryption failed: ${errorMsg}`);
+          // Show alert so user knows what happened
+          setTimeout(() => {
+            alert(`❌ Encryption Error:\n\n${errorMsg}\n\nPlease retake the photo and try again.`);
+          }, 100);
+        }
       } finally {
-        setIsProcessing(false);
+        if (isMounted) {
+          setIsProcessing(false);
+        }
       }
     };
     
     encryptImage();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false; // Mark component as unmounted to prevent state updates
+    };
   }, [image, userId]);
 
   const handleSave = async () => {
