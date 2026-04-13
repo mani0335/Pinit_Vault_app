@@ -342,26 +342,39 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                 const ownerIdUsed = encryptedPackage.metadata.ownerId || userId;
                 console.log(`🔐 Image encrypted with PINIT ID: ${ownerIdUsed}`);
                 
-                // Upload to Cloudinary (optional cloud backup)
-                const uploadResult = await uploadImageToCloudinary(
-                  encryptedPackage.encrypted_data,
-                  encryptedPackage.metadata.original_name,
-                  userId || "unknown",
-                  encryptedPackage.metadata.size,
-                  encryptedPackage.metadata.checksum
-                );
+                // Upload to Cloudinary (optional cloud backup) - wrap in try-catch
+                let uploadResult = { cloudinaryUrl: null };
+                try {
+                  console.log("☁️ Uploading to Cloudinary...");
+                  uploadResult = await uploadImageToCloudinary(
+                    encryptedPackage.encrypted_data,
+                    encryptedPackage.metadata.original_name,
+                    userId || "unknown",
+                    encryptedPackage.metadata.size,
+                    encryptedPackage.metadata.checksum
+                  );
+                  console.log("✅ Cloudinary upload successful");
+                } catch (uploadErr) {
+                  console.warn("⚠️ Cloudinary upload failed (non-critical):", uploadErr);
+                  // Continue with local save even if cloud upload fails
+                }
 
                 // Save watermarked image to device gallery in PINIT Vault folder
-                const galleryResult = await saveImageToGallery(
-                  encryptedPackage.watermarkedImage || encryptedPackage.encrypted_data,
-                  encryptedPackage.metadata.original_name,
-                  userId || "unknown"
-                );
-
-                if (galleryResult.success) {
-                  console.log(`✅ Image saved to PINIT Vault: ${galleryResult.path}`);
-                } else {
-                  console.warn(`⚠️ Gallery save failed: ${galleryResult.error}`);
+                console.log("💾 Saving to device gallery...");
+                let galleryResult = { success: false, error: "Not attempted" };
+                try {
+                  galleryResult = await saveImageToGallery(
+                    encryptedPackage.watermarkedImage || encryptedPackage.encrypted_data,
+                    encryptedPackage.metadata.original_name,
+                    userId || "unknown"
+                  );
+                  console.log(`✅ Image saved to gallery: ${galleryResult.path}`);
+                } catch (galleryErr) {
+                  console.warn("⚠️ Gallery save error:", galleryErr);
+                  galleryResult = {
+                    success: false,
+                    error: galleryErr instanceof Error ? galleryErr.message : String(galleryErr)
+                  };
                 }
 
                 // Create document with watermarked preview for display
@@ -1223,12 +1236,20 @@ function EncryptPreviewPage({
   }, [image, userId]);
 
   const handleSave = async () => {
-    if (!encryptedData) return;
+    if (!encryptedData) {
+      setError("No encrypted data available");
+      return;
+    }
     try {
+      console.log("💾 Starting save process...");
       setIsProcessing(true);
       await onSaveToVault(encryptedData);
+      console.log("✅ Save completed successfully");
     } catch (err) {
-      setError("Failed to save to vault");
+      console.error("❌ Save error:", err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setError(`Save failed: ${errorMsg}`);
+      alert(`❌ Save Error:\n\n${errorMsg}`);
     } finally {
       setIsProcessing(false);
     }
