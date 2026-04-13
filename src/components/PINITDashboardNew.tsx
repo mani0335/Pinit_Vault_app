@@ -29,6 +29,7 @@ interface PINITDashboardProps {
 }
 
 export function PINITDashboard({ userId }: PINITDashboardProps) {
+  // PINIT Vault must open on Home page by default - not Profile
   const [currentPage, setCurrentPage] = useState<"home" | "vault" | "portfolios" | "activity" | "security">("home");
   const [copied, setCopied] = useState(false);
 
