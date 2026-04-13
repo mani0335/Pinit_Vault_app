@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera as CameraPlugin } from "@capacitor/camera";
+import { Filesystem, Directory } from "@capacitor/filesystem";
 import {
   loadVaultDocuments,
   saveVaultDocuments,
@@ -13,7 +14,9 @@ import {
   saveImageToGallery,
   syncVaultMetadata,
 } from "@/lib/vaultService";
+import { ensurePINITVaultFolder, saveImageToPINITVault } from "@/lib/folderUtils";
 import { embedAdvancedWatermark, extractAdvancedWatermark, type AdvancedWatermarkMetadata } from "@/lib/advancedSteganography";
+import { analyzeImage, formatAnalysisResult, type ImageAnalysisResult } from "@/lib/imageAnalysis";
 import {
   Home,
   Briefcase,
@@ -569,20 +572,45 @@ function HomePage({ userName, documentCount, onEncryptClick }: { userName: strin
             { icon: CheckCircle, label: "Verify Proof", gradient: "from-purple-600 to-pink-600", onClick: async () => {
               try {
                 console.log("📸 Opening gallery for Verify Proof...");
+                console.log("🔐 Requesting camera/gallery permissions...");
+                
+                // Try requesting camera permissions first
+                try {
+                  const perms = await CameraPlugin.requestPermissions();
+                  console.log("✅ Camera permissions:", perms);
+                } catch (permErr) {
+                  console.warn("⚠️ Permission request failed (may already be granted):", permErr);
+                }
+                
                 const image = await CameraPlugin.getPhoto({
                   quality: 90,
                   allowEditing: false,
-                  source: "Photos" as any,
+                  source: "Photos" as any,  // Gallery/Photos
                   resultType: "base64" as any,
                 });
+                
                 if (image?.base64String) {
                   console.log("✅ Image selected for verification");
                   setVerifyProofImage("data:image/jpeg;base64," + image.base64String);
                   setCurrentPage("verify-proof");
+                } else {
+                  throw new Error("No image data received");
                 }
               } catch (error) {
                 console.error("❌ Gallery selection error:", error);
-                alert("Failed to select image from gallery");
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                
+                // Provide specific error messages
+                let userMessage = "Failed to open gallery";
+                if (errorMessage.includes("permission") || errorMessage.includes("Permission")) {
+                  userMessage = "📱 Gallery permission denied.\n\nPlease enable photo access in app settings and try again.";
+                } else if (errorMessage.includes("cancelled") || errorMessage.includes("Cancelled")) {
+                  userMessage = "📸 No image selected.\n\nPlease select a photo from your gallery.";
+                } else {
+                  userMessage = `📸 Gallery Error:\n\n${errorMessage.substring(0, 100)}...`;
+                }
+                
+                alert(userMessage);
               }
             } },
           ].map((action, idx) => (
@@ -1493,11 +1521,11 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const analyzeImage = async () => {
+    const analyzeImageFull = async () => {
       try {
         setIsAnalyzing(true);
         setError(null);
-        console.log("🔍 Starting image analysis...");
+        console.log("🔍 Starting comprehensive image analysis...");
 
         // Convert base64 to blob
         const base64Data = image.includes(",") ? image.split(",")[1] : image;
@@ -1530,6 +1558,11 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
             console.warn("⚠️ Could not extract watermark:", wmError);
           }
 
+          // Run ML-based image type detection (AI vs Phone vs WhatsApp, etc.)
+          console.log("🤖 Running image type detection...");
+          const imageTypeAnalysis = await analyzeImage(image);
+          console.log("✅ Image type detected:", imageTypeAnalysis);
+
           // Analyze image content
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
@@ -1544,7 +1577,7 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
           const avgLSBVariance = lsbVariance / lsbCount;
           const isLikelyEncrypted = avgLSBVariance > 2.5; // Threshold for LSB detection
 
-          // Build analysis result
+          // Build comprehensive analysis result
           const result = {
             imageResolution: `${canvas.width}x${canvas.height}`,
             imageSize: `${(blob.size / 1024).toFixed(2)} KB`,
@@ -1562,7 +1595,11 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
               timestamp: "N/A",
               watermarkFormat: "None",
             },
-            imageType: watermarkData?.imageType || "Unknown",
+            // Enhanced image type detection with ML analysis
+            imageType: watermarkData?.imageType || imageTypeAnalysis.imageType || "Unknown",
+            imageTypeAnalysis: imageTypeAnalysis, // Full analysis with confidence
+            imageTypeDetails: `${imageTypeAnalysis.imageType.toUpperCase()} (${imageTypeAnalysis.confidence}% confidence)`,
+            imageTypeIndicators: imageTypeAnalysis.indicators,
             metadata: watermarkData ? {
               userId: watermarkData.userId,
               timestamp: watermarkData.timestamp,
@@ -1579,7 +1616,7 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
           };
 
           setAnalysis(result);
-          console.log("✅ Analysis complete:", result);
+          console.log("✅ Comprehensive analysis complete:", result);
           setIsAnalyzing(false);
         };
 
@@ -1595,7 +1632,7 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
       }
     };
 
-    analyzeImage();
+    analyzeImageFull();
   }, [image]);
 
   return (
@@ -1705,8 +1742,26 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-purple-500/20">
                 <span className="text-purple-300/70 text-sm">Image Type</span>
-                <span className="text-sm text-white capitalize">{analysis.imageType}</span>
+                <span className={`text-sm font-bold capitalize ${
+                  analysis.imageTypeAnalysis?.imageType === "ai" ? "text-yellow-400" :
+                  analysis.imageTypeAnalysis?.imageType === "whatsapp" ? "text-blue-400" :
+                  analysis.imageTypeAnalysis?.imageType === "screenshot" ? "text-orange-400" :
+                  analysis.imageTypeAnalysis?.imageType === "phone" ? "text-green-400" :
+                  "text-purple-400"
+                }`}>
+                  {analysis.imageTypeDetails}
+                </span>
               </div>
+              {analysis.imageTypeIndicators && analysis.imageTypeIndicators.length > 0 && (
+                <div className="pb-3 border-b border-purple-500/20">
+                  <span className="text-purple-300/70 text-sm block mb-2">Detection Indicators</span>
+                  <div className="flex flex-col gap-1">
+                    {analysis.imageTypeIndicators.map((indicator: string, idx: number) => (
+                      <span key={idx} className="text-xs text-purple-200">{indicator}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {analysis.ownershipDetails.validationTiles && (
                 <div className="flex justify-between items-center">
                   <span className="text-purple-300/70 text-sm">Validation</span>
