@@ -28,6 +28,10 @@ class ShareUpdateRequest(BaseModel):
     download_limit: Optional[int] = None
     downloads_used: Optional[int] = None
 
+class PasswordVerifyRequest(BaseModel):
+    share_id: str
+    password: str
+
 # ============================================================================
 # CREATE SHARE LINK
 # ============================================================================
