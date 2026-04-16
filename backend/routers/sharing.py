@@ -9,7 +9,7 @@ import uuid
 router = APIRouter(tags=["Sharing"])
 
 # ============================================================================
-# PYDANTIC MODELS
+# PYDANTIC MODELS - All request/response models defined below
 # ============================================================================
 
 class ShareCreateRequest(BaseModel):
