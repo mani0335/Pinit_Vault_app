@@ -1689,6 +1689,15 @@ function SharePage({
       console.log("Backend URL:", backendUrl);
       console.log("Public URL:", publicUrl);
 
+      // Helper function to validate UUID format
+      const isValidUUID = (uuid: string): boolean => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(uuid);
+      };
+
+      // Only send vault_image_id if it's a valid UUID, otherwise send null
+      const vaultImageId = selectedShareImage.id && isValidUUID(selectedShareImage.id) ? selectedShareImage.id : null;
+
       // Call backend API to create share
       const response = await fetch(`${backendUrl}/share/create`, {
         method: "POST",
@@ -1697,7 +1706,7 @@ function SharePage({
         },
         body: JSON.stringify({
           user_id: userId,
-          vault_image_id: selectedShareImage.id || null,
+          vault_image_id: vaultImageId,
           expiry_date: shareExpiryDate || null,
           expiry_time: shareExpiryTime || null,
           download_limit: shareDownloadLimit,
