@@ -47,7 +47,7 @@ services:
     startCommand: node server.js
     envVars:
       - key: PORT
-        scope: build
+        scope: runtime
         value: "3000"
       - key: VITE_BACKEND_URL
         scope: build
