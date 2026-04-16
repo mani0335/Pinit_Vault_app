@@ -43,6 +43,7 @@ services:
     runtime: node
     region: oregon
     plan: free
+    rootDir: .
     buildCommand: npm install && npm run build
     startCommand: node server.js
     envVars:
