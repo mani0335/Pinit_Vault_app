@@ -6,6 +6,9 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const DIST_DIR = path.resolve(__dirname, 'dist');
 
+// REDEPLOY MARKER: 2026-04-17 05:10:00 UTC
+// Force Render to detect changes and redeploy
+
 // Simple MIME type map
 const mimeTypes = {
   '.html': 'text/html',
