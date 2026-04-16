@@ -13,6 +13,7 @@ import TempAccess from "./pages/TempAccess.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import ProtectedRoute from "./components/ProtectedRoute.tsx";
+import { SharedImageViewer } from "./components/SharedImageViewer.tsx";
 
 // ===================== GLOBAL ERROR BOUNDARY =====================
 // This catches ANY error in the entire app and displays it on screen
@@ -186,6 +187,7 @@ const App = () => (
             <Route path="/register" element={<Register />} />
             <Route path="/temp-access-face" element={<TempAccessFace />} />
             <Route path="/temp-access" element={<TempAccess />} />
+            <Route path="/share/:token" element={<SharedImageViewer />} />
             <Route
               path="/dashboard"
               element={
