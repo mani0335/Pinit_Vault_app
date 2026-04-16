@@ -7,9 +7,13 @@ const PORT = process.env.PORT || 3000;
 const DIST_DIR = path.join(__dirname, 'dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
 
-console.log('='.repeat(60));
-console.log('🚀 BIOVAULT EXPRESS SERVER STARTING');
-console.log('='.repeat(60));
+// ============================================
+// DEPLOYMENT: 2026-04-17 FORCE REDEPLOY FIX
+// ============================================
+
+console.log('='.repeat(65));
+console.log('🚀 BIOVAULT EXPRESS SERVER v2 - COMMONJS FIXED');
+console.log('='.repeat(65));
 console.log(`📂 __dirname: ${__dirname}`);
 console.log(`📂 DIST_DIR: ${DIST_DIR}`);
 console.log(`📄 INDEX_HTML: ${INDEX_HTML}`);
