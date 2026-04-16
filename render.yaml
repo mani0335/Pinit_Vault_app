@@ -45,7 +45,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: npm install && npm run build
-    startCommand: node server.js
+    startCommand: node server.cjs
     envVars:
       - key: PORT
         scope: runtime
