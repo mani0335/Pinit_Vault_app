@@ -64,7 +64,7 @@ services:
 
   # Frontend Static Site (React SPA)
   - type: static_site
-    name: pinit-vault
+    name: biovault-app
     runtime: static
     region: oregon
     plan: free
