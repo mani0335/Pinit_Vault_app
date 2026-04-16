@@ -3,6 +3,13 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// CRITICAL: Log immediately to see if server starts at all
+console.error('');
+console.error('█████████████████████████████████████████████████████████');
+console.error('🚀 SERVER.CJS IS STARTING - THIS LINE MUST APPEAR IN LOGS');
+console.error('█████████████████████████████████████████████████████████');
+console.error('');
+
 const PORT = process.env.PORT || 3000;
 const DIST_DIR = path.resolve(__dirname, 'dist');
 
@@ -40,6 +47,13 @@ console.log('');
 
 // Create server
 const server = http.createServer((req, res) => {
+  // Test endpoint to verify server is running
+  if (req.url === '/test') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('✅ SERVER IS RUNNING - server.cjs is working!\n');
+    return;
+  }
+
   // Normalize URL
   let urlPath = decodeURIComponent(req.url);
   if (urlPath === '/') {
