@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera as CameraPlugin } from "@capacitor/camera";
@@ -38,11 +38,18 @@ import {
   Settings,
   Search as FileSearch,
   Camera,
+  Upload,
   X,
   CheckCircle,
+  Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appStorage } from "@/lib/storage";
+import { ImageCryptoFull } from "@/components/ImageCryptoFull";
+import { VaultManager } from "@/components/VaultManager";
+import { ActivityLogger } from "@/components/ActivityLogger";
+import { UserProfile } from "@/components/UserProfile";
+import { ImageAnalyzer } from "@/components/ImageAnalyzer";
 
 interface VaultDocument {
   id: string;
@@ -54,7 +61,7 @@ interface VaultDocument {
     original_name: string;
     size: number;
     checksum: string;
-    watermarked?: boolean;
+    encrypted?: boolean;
     ownerId?: string;
   };
   createdAt: string;
@@ -65,7 +72,7 @@ interface PINITDashboardProps {
   isRestricted?: boolean;
 }
 
-type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview" | "verify-proof";
+type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview" | "verify-proof" | "crypto" | "vault-advanced" | "activity" | "profile" | "analysis";
 
 export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
@@ -86,6 +93,52 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
     documentCount: number;
     storageType: string;
   }>({ isSynced: false, lastSyncTime: 0, documentCount: 0, storageType: "none" });
+
+  // Share Management State
+  interface ShareConfig {
+    id: string;
+    shareLink: string;
+    expiryDate: string | null;
+    expiryTime: string | null;
+    downloadLimit: number | null;
+    downloadsUsed: number;
+    passwordProtected: boolean;
+    sharePassword?: string;
+    includeCertificate: boolean;
+    certificateId?: string;
+    qrCodeData: string;
+    createdAt: string;
+    createdBy: string;
+  }
+
+  const [shareConfigs, setShareConfigs] = useState<ShareConfig[]>([]);
+  const [shareHistory, setShareHistory] = useState<any[]>([]);
+  const [selectedShareImage, setSelectedShareImage] = useState<VaultDocument | null>(null);
+  const [shareExpiryDate, setShareExpiryDate] = useState<string>("");
+  const [shareExpiryTime, setShareExpiryTime] = useState<string>("00:00");
+  const [shareDownloadLimit, setShareDownloadLimit] = useState<number | null>(null);
+  const [sharePassword, setSharePassword] = useState<string>("");
+  const [includeCertificate, setIncludeCertificate] = useState<boolean>(false);
+  const [generatedShareLink, setGeneratedShareLink] = useState<string>("");
+  const [generatedQRCode, setGeneratedQRCode] = useState<string>("");
+  const [shareStep, setShareStep] = useState<"select" | "configure" | "preview">("select");
+
+  // Quick Action refs for camera and file upload
+  const quickActionCameraRef = useRef<HTMLInputElement>(null);
+  const quickActionFileRef = useRef<HTMLInputElement>(null);
+
+  // Handler for quick action image selection (works like Analyze button)
+  const handleQuickActionImageSelected = (imageData: string) => {
+    console.log("✅ Quick Action image selected for encryption");
+    setCapturedImage(imageData);
+    setCurrentPage("encrypt-preview");
+  };
+
+  const handleVerifyProofImageSelected = (imageData: string) => {
+    console.log("✅ Image selected for verification");
+    setVerifyProofImage(imageData);
+    setCurrentPage("verify-proof");
+  };
 
   // Load and sync vault documents when userId is available
   useEffect(() => {
@@ -282,7 +335,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             console.error("❌ Camera error:", error);
             alert("Failed to open camera. Please check camera permissions.");
           }
-        }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} />
+        }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} quickActionCameraRef={quickActionCameraRef} quickActionFileRef={quickActionFileRef} onQuickActionImageSelected={handleQuickActionImageSelected} onVerifyProofImageSelected={handleVerifyProofImageSelected} />
         }
         {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} onDeleteDocument={async (docId) => {
           const updated = vaultDocuments.filter((doc) => doc.id !== docId);
@@ -292,8 +345,13 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           }
         }} />}
         {currentPage === "portfolio" && <PortfolioPage key="portfolio" />}
-        {currentPage === "share" && <SharePage key="share" />}
+        {currentPage === "share" && <SharePage key="share" shareConfigs={shareConfigs} setShareConfigs={setShareConfigs} shareHistory={shareHistory} setShareHistory={setShareHistory} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} shareExpiryDate={shareExpiryDate} setShareExpiryDate={setShareExpiryDate} shareExpiryTime={shareExpiryTime} setShareExpiryTime={setShareExpiryTime} shareDownloadLimit={shareDownloadLimit} setShareDownloadLimit={setShareDownloadLimit} sharePassword={sharePassword} setSharePassword={setSharePassword} includeCertificate={includeCertificate} setIncludeCertificate={setIncludeCertificate} generatedShareLink={generatedShareLink} setGeneratedShareLink={setGeneratedShareLink} generatedQRCode={generatedQRCode} setGeneratedQRCode={setGeneratedQRCode} shareStep={shareStep} setShareStep={setShareStep} userId={userId} vaultDocuments={vaultDocuments} />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
+        {currentPage === "crypto" && <ImageCryptoFull key="crypto" userId={userId || undefined} />}
+        {currentPage === "vault-advanced" && <VaultManager key="vault-advanced" userId={userId || undefined} />}
+        {currentPage === "activity" && <ActivityLogger key="activity" userId={userId || undefined} />}
+        {currentPage === "profile" && <UserProfile key="profile" userId={userId || undefined} userEmail={"user@biovault.io"} onBack={() => setCurrentPage("home")} onLogout={handleLogout} />}
+        {currentPage === "analysis" && <ImageAnalyzer key="analysis" userId={userId || "user"} onBack={() => setCurrentPage("home")} />}
         {currentPage === "verify-proof" && verifyProofImage && (
           <VerifyProofPage
             key="verify-proof"
@@ -359,12 +417,12 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                   // Continue with local save even if cloud upload fails
                 }
 
-                // Save watermarked image to device gallery in PINIT Vault folder
+                // Save encrypted image to device gallery in PINIT Vault folder
                 console.log("💾 Saving to device gallery...");
                 let galleryResult = { success: false, error: "Not attempted" };
                 try {
                   galleryResult = await saveImageToGallery(
-                    encryptedPackage.watermarkedImage || encryptedPackage.encrypted_data,
+                    encryptedPackage.encryptedImage || encryptedPackage.encrypted_data,
                     encryptedPackage.metadata.original_name,
                     userId || "unknown"
                   );
@@ -377,12 +435,12 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                   };
                 }
 
-                // Create document with watermarked preview for display
+                // Create document with encrypted preview for display
                 const newDoc: VaultDocument = {
                   id: Date.now().toString(),
                   name: encryptedPackage.metadata.original_name,
                   encryptedData: encryptedPackage.encrypted_data,
-                  watermarkedImage: encryptedPackage.watermarkedImage, // Store for preview
+                  encryptedImage: encryptedPackage.encryptedImage, // Store for preview
                   cloudinaryUrl: uploadResult.cloudinaryUrl,
                   metadata: encryptedPackage.metadata,
                   createdAt: new Date().toLocaleDateString(),
@@ -408,15 +466,18 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                 console.log("✅ Document saved to vault");
                 // Show success message with encryption confirmation
                 const successMsg = galleryResult.success 
-                  ? `✅ Image Encrypted Successfully!\n\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n📁 Saved to: PINIT Vault` 
-                  : `✅ Image Encrypted Successfully!\n\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n⚠️ (Gallery save failed)`;
-                alert(successMsg);
+                  ? `✅ Image Encrypted Successfully!\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n📁 Saved to: PINIT Vault` 
+                  : `✅ Image Encrypted Successfully!\n🔐 Encrypted with PINIT ID: ${ownerIdUsed.substring(0, 8)}...\n⚠️ (Gallery save failed)`;
+                console.log("✅ " + successMsg);
+                
+                // Clear state and navigate home
                 setCapturedImage(null);
+                setIsEncrypting(false);
                 setCurrentPage("home");
               } catch (error) {
-                console.error("Error saving to vault:", error);
+                console.error("❌ Error saving to vault:", error);
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                alert(`❌ Failed to encrypt image:\n\n${errorMessage}`);
+                console.error(`Failed to encrypt image: ${errorMessage}`);
               } finally {
                 setIsEncrypting(false);
               }
@@ -454,7 +515,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           />
           <NavButton
             icon={Plus}
-            label="Create"
+            label="Portfolio"
             active={currentPage === "portfolio"}
             onClick={() => {
               try {
@@ -466,26 +527,26 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             highlight
           />
           <NavButton
-            icon={Share2}
-            label="Share"
-            active={currentPage === "share"}
+            icon={Clock}
+            label="Activity"
+            active={currentPage === "activity"}
             onClick={() => {
               try {
-                setCurrentPage("share");
+                setCurrentPage("activity");
               } catch (e) {
-                console.error("Error navigating to share:", e);
+                console.error("Error navigating to activity:", e);
               }
             }}
           />
           <NavButton
-            icon={User}
-            label="Profile"
-            active={currentPage === "identity"}
+            icon={Settings}
+            label="Settings"
+            active={currentPage === "profile"}
             onClick={() => {
               try {
-                setCurrentPage("identity");
+                setCurrentPage("profile");
               } catch (e) {
-                console.error("Error navigating to identity:", e);
+                console.error("Error navigating to profile:", e);
               }
             }}
           />
@@ -528,7 +589,7 @@ function NavButton({
 }
 
 // ============= HOME PAGE =============
-function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage, setCurrentPage }: { userName: string; documentCount: number; onEncryptClick: () => void; setVerifyProofImage: (value: string | null) => void; setCurrentPage: (page: PageType) => void }) {
+function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage, setCurrentPage, quickActionCameraRef, quickActionFileRef, onQuickActionImageSelected, onVerifyProofImageSelected }: { userName: string; documentCount: number; onEncryptClick: () => void; setVerifyProofImage: (value: string | null) => void; setCurrentPage: (page: PageType) => void; quickActionCameraRef?: React.RefObject<HTMLInputElement>; quickActionFileRef?: React.RefObject<HTMLInputElement>; onQuickActionImageSelected?: (imageData: string) => void; onVerifyProofImageSelected?: (imageData: string) => void }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -576,69 +637,104 @@ function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage
         ))}
       </div>
 
-      {/* Quick Actions - Modern Buttons */}
+      {/* Quick Actions - Camera & Upload like Analyze */}
       <div>
         <h3 className="text-lg font-bold mb-3">Quick Actions</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-4 gap-2">
           {[
-            { icon: Lock, label: "Encrypt", gradient: "from-blue-600 to-cyan-600", onClick: onEncryptClick },
-            { icon: CheckCircle, label: "Verify Proof", gradient: "from-purple-600 to-pink-600", onClick: async () => {
-              try {
-                console.log("📸 Opening gallery for Verify Proof...");
-                console.log("🔐 Requesting camera/gallery permissions...");
-                
-                // Try requesting camera permissions first
+            { 
+              icon: Camera, 
+              label: "Encrypt", 
+              gradient: "from-blue-600 to-cyan-600", 
+              onClick: () => quickActionCameraRef?.current?.click(),
+              subtext: "📸 Camera" 
+            },
+            { 
+              icon: Camera, 
+              label: "Verify Proof", 
+              gradient: "from-purple-600 to-pink-600", 
+              onClick: () => quickActionFileRef?.current?.click(),
+              subtext: "📤 Upload" 
+            },
+            { 
+              icon: Upload, 
+              label: "Document Upload", 
+              gradient: "from-orange-600 to-red-600", 
+              onClick: async () => {
                 try {
-                  const perms = await CameraPlugin.requestPermissions();
-                  console.log("✅ Camera permissions:", perms);
-                } catch (permErr) {
-                  console.warn("⚠️ Permission request failed (may already be granted):", permErr);
+                  console.log("📄 Opening document upload...");
+                  const doc = await CameraPlugin.pickImages({
+                    quality: 90,
+                  });
+                  if (doc?.photos && doc.photos.length > 0) {
+                    console.log("✅ Document uploaded successfully");
+                    console.log("📄 Document ID: " + Date.now().toString().slice(-8));
+                  }
+                } catch (error) {
+                  console.error("❌ Document upload error:", error);
+                  console.error("Failed to upload document. Check file permissions.");
                 }
-                
-                const image = await CameraPlugin.getPhoto({
-                  quality: 90,
-                  allowEditing: false,
-                  source: "Photos" as any,  // Gallery/Photos
-                  resultType: "base64" as any,
-                });
-                
-                if (image?.base64String) {
-                  console.log("✅ Image selected for verification");
-                  setVerifyProofImage("data:image/jpeg;base64," + image.base64String);
-                  setCurrentPage("verify-proof");
-                } else {
-                  throw new Error("No image data received");
-                }
-              } catch (error) {
-                console.error("❌ Gallery selection error:", error);
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                
-                // Provide specific error messages
-                let userMessage = "Failed to open gallery";
-                if (errorMessage.includes("permission") || errorMessage.includes("Permission")) {
-                  userMessage = "📱 Gallery permission denied.\n\nPlease enable photo access in app settings and try again.";
-                } else if (errorMessage.includes("cancelled") || errorMessage.includes("Cancelled")) {
-                  userMessage = "📸 No image selected.\n\nPlease select a photo from your gallery.";
-                } else {
-                  userMessage = `📸 Gallery Error:\n\n${errorMessage.substring(0, 100)}...`;
-                }
-                
-                alert(userMessage);
-              }
-            } },
+              },
+              subtext: "📄 Docs"
+            },
+            { 
+              icon: Share2, 
+              label: "Share", 
+              gradient: "from-green-600 to-emerald-600", 
+              onClick: () => setCurrentPage("share"),
+              subtext: "🔗 Links" 
+            },
           ].map((action, idx) => (
             <motion.button
               key={idx}
               onClick={action.onClick}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
-              className={`bg-gradient-to-br ${action.gradient} rounded-xl p-4 flex flex-col items-center gap-2 shadow-lg hover:shadow-xl transition-all`}
+              className={`bg-gradient-to-br ${action.gradient} rounded-xl p-3 flex flex-col items-center gap-1 shadow-lg hover:shadow-xl transition-all`}
             >
-              <action.icon size={24} />
-              <span className="text-sm font-bold">{action.label}</span>
+              <action.icon size={20} />
+              <span className="text-xs font-bold text-center">{action.label}</span>
+              <span className="text-xs text-white/70 text-center">{action.subtext}</span>
             </motion.button>
           ))}
         </div>
+
+        {/* Hidden file inputs - matching ImageAnalyzer approach */}
+        <input
+          ref={quickActionCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && onQuickActionImageSelected) {
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const imageData = event.target?.result as string;
+                onQuickActionImageSelected(imageData);
+              };
+              reader.readAsDataURL(file);
+            }
+          }}
+          className="hidden"
+        />
+        <input
+          ref={quickActionFileRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && onVerifyProofImageSelected) {
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const imageData = event.target?.result as string;
+                onVerifyProofImageSelected(imageData);
+              };
+              reader.readAsDataURL(file);
+            }
+          }}
+          className="hidden"
+        />
       </div>
 
       {/* Recent Activity - Modern Cards */}
@@ -668,7 +764,7 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
   const [vaultDocs, setVaultDocs] = useState(documents);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
-  const [watermarkMetadata, setWatermarkMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
+  const [embeddedMetadata, setEmbeddedMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
 
   // Sync documents when prop changes
   useEffect(() => {
@@ -756,7 +852,7 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
       }
       setSelectedDoc(null);
       setPreviewImage(null);
-      setWatermarkMetadata(null);
+      setEmbeddedMetadata(null);
       setShowDeleteConfirm(false);
       setDocToDelete(null);
       console.log("✅ Document deleted:", docToDelete);
@@ -764,20 +860,20 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
   };
 
   const handleDocumentClick = async (doc: VaultDocument) => {
-    // Display watermarked image (preview) or encrypted data if not available
+    // Display encrypted image (preview) or encrypted data if not available
     try {
-      // Use watermarked image if available, otherwise fall back to encrypted data
-      const imageUrl = doc.watermarkedImage || ("data:image/jpeg;base64," + doc.encryptedData);
+      // Use encrypted image if available, otherwise fall back to encrypted data
+      const imageUrl = doc.encryptedImage || ("data:image/jpeg;base64," + doc.encryptedData);
       setPreviewImage(imageUrl);
       setSelectedDoc(doc);
 
-      // Only try to extract watermark if we have the watermarked image
-      if (doc.watermarkedImage) {
-        // VERIFY WATERMARK using advanced steganography extraction
+      // Only try to extract metadata if we have the encrypted image
+      if (doc.encryptedImage) {
+        // VERIFY EMBEDDED METADATA using advanced steganography extraction
         const extracted = await extractAdvancedWatermark(imageUrl);
         if (extracted && extracted.found) {
-          setWatermarkMetadata(extracted);
-          console.log("✅ WATERMARK VERIFIED:", extracted);
+          setEmbeddedMetadata(extracted);
+          console.log("✅ EMBEDDED METADATA VERIFIED:", extracted);
           console.log(`  Owner: ${extracted.userId}`);
           console.log(`  Confidence: ${extracted.confidence}`);
           console.log(`  Timestamp: ${extracted.timestamp}`);
@@ -785,19 +881,19 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
           console.log(`  IP Address: ${extracted.ipAddress || "Unknown"}`);
           console.log(`  GPS: ${extracted.gps.available ? extracted.gps.coordinates : "Not captured"}`);
         } else {
-          setWatermarkMetadata(null);
-          console.warn("⚠️ No valid watermark found in image");
+          setEmbeddedMetadata(null);
+          console.warn("⚠️ No valid metadata found in image");
         }
       } else {
-        // For old documents without watermarkedImage, extract from metadata
+        // For old documents without encryptedImage, extract from metadata
         if (doc.metadata.ownerId) {
           console.log(`📋 Document owner: ${doc.metadata.ownerId}`);
         }
-        setWatermarkMetadata(null);
+        setEmbeddedMetadata(null);
       }
     } catch (err) {
       console.error("Error loading preview:", err);
-      setWatermarkMetadata(null);
+      setEmbeddedMetadata(null);
     }
   };
 
@@ -888,7 +984,7 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
             animate={{ opacity: 1, y: 0 }}
             className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur rounded-2xl p-6 border border-purple-500/20 space-y-6"
           >
-            <h3 className="text-lg font-bold text-white mb-4">🔒 ENCRYPTION DETAILS & WATERMARK VERIFICATION</h3>
+            <h3 className="text-lg font-bold text-white mb-4">🔒 ENCRYPTION DETAILS & METADATA VERIFICATION</h3>
 
             {/* File Info */}
             <div className="space-y-3">
@@ -913,54 +1009,54 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
               </div>
             </div>
 
-            {/* Security & Watermark */}
+            {/* Security & Metadata */}
             <div className="space-y-3">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">SECURITY & WATERMARK</p>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">SECURITY & METADATA</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 rounded-lg p-3 border border-green-500/20">
                   <p className="text-xs text-slate-400 mb-1">ENCRYPTION</p>
                   <p className="text-sm text-green-300 font-semibold">AES-256 + LSB</p>
                 </div>
                 <div className="bg-gradient-to-br from-cyan-900/30 to-teal-900/30 rounded-lg p-3 border border-cyan-500/20">
-                  <p className="text-xs text-slate-400 mb-1">WATERMARK METHOD</p>
+                  <p className="text-xs text-slate-400 mb-1">METADATA METHOD</p>
                   <p className="text-sm text-cyan-300 font-semibold">Tile-Based (12x12)</p>
                 </div>
               </div>
             </div>
 
-            {/* Watermark Metadata (extracted from image) */}
-            {watermarkMetadata && watermarkMetadata.found && (
+            {/* Embedded Metadata (extracted from image) */}
+            {embeddedMetadata && embeddedMetadata.found && (
               <>
                 <div className="border-t border-slate-700 pt-4 space-y-3">
-                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide text-emerald-400">✅ WATERMARK VERIFIED</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide text-emerald-400">✅ METADATA VERIFIED</p>
                   
                   {/* Primary Info */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gradient-to-br from-purple-900/30 to-blue-900/30 rounded-lg p-3 border border-purple-500/20">
                       <p className="text-xs text-slate-400 mb-1">OWNER (VERIFIED)</p>
-                      <p className="text-sm font-mono text-purple-300 font-semibold">{watermarkMetadata.userId}</p>
+                      <p className="text-sm font-mono text-purple-300 font-semibold">{embeddedMetadata.userId}</p>
                     </div>
                     <div className="bg-gradient-to-br from-amber-900/30 to-yellow-900/30 rounded-lg p-3 border border-amber-500/20">
                       <p className="text-xs text-slate-400 mb-1">CONFIDENCE</p>
-                      <p className="text-sm font-mono text-amber-300 font-semibold">{watermarkMetadata.confidence}</p>
+                      <p className="text-sm font-mono text-amber-300 font-semibold">{embeddedMetadata.confidence}</p>
                     </div>
                   </div>
 
                   {/* Device Information */}
-                  {(watermarkMetadata.deviceName || watermarkMetadata.deviceId) && (
+                  {(embeddedMetadata.deviceName || embeddedMetadata.deviceId) && (
                     <div className="pt-3 space-y-2">
                       <p className="text-xs text-slate-400 font-semibold">DEVICE INFORMATION</p>
                       <div className="grid grid-cols-2 gap-3">
-                        {watermarkMetadata.deviceName && (
+                        {embeddedMetadata.deviceName && (
                           <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                             <p className="text-xs text-slate-400 mb-1">DEVICE NAME</p>
-                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.deviceName}</p>
+                            <p className="text-sm text-slate-200 font-mono">{embeddedMetadata.deviceName}</p>
                           </div>
                         )}
-                        {watermarkMetadata.deviceId && (
+                        {embeddedMetadata.deviceId && (
                           <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                             <p className="text-xs text-slate-400 mb-1">DEVICE ID</p>
-                            <p className="text-sm text-slate-200 font-mono break-all">{watermarkMetadata.deviceId}</p>
+                            <p className="text-sm text-slate-200 font-mono break-all">{embeddedMetadata.deviceId}</p>
                           </div>
                         )}
                       </div>
@@ -968,22 +1064,22 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
                   )}
 
                   {/* Network & Location */}
-                  {(watermarkMetadata.ipAddress || watermarkMetadata.gps.available) && (
+                  {(embeddedMetadata.ipAddress || embeddedMetadata.gps.available) && (
                     <div className="pt-3 space-y-2">
                       <p className="text-xs text-slate-400 font-semibold">NETWORK & LOCATION</p>
                       <div className="grid grid-cols-2 gap-3">
-                        {watermarkMetadata.ipAddress && (
+                        {embeddedMetadata.ipAddress && (
                           <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                             <p className="text-xs text-slate-400 mb-1">IP ADDRESS</p>
-                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.ipAddress}</p>
+                            <p className="text-sm text-slate-200 font-mono">{embeddedMetadata.ipAddress}</p>
                           </div>
                         )}
-                        {watermarkMetadata.gps.available && (
+                        {embeddedMetadata.gps.available && (
                           <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                             <p className="text-xs text-slate-400 mb-1">GPS COORDINATES</p>
-                            <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.gps.coordinates}</p>
-                            {watermarkMetadata.gps.mapsUrl && (
-                              <a href={watermarkMetadata.gps.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-1">
+                            <p className="text-sm text-slate-200 font-mono">{embeddedMetadata.gps.coordinates}</p>
+                            {embeddedMetadata.gps.mapsUrl && (
+                              <a href={embeddedMetadata.gps.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline mt-1">
                                 View on Maps →
                               </a>
                             )}
@@ -994,11 +1090,11 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
                   )}
 
                   {/* Image Resolution */}
-                  {watermarkMetadata.originalResolution && (
+                  {embeddedMetadata.originalResolution && (
                     <div className="pt-3">
                       <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                         <p className="text-xs text-slate-400 mb-1">ORIGINAL RESOLUTION</p>
-                        <p className="text-sm text-slate-200 font-mono">{watermarkMetadata.originalResolution}</p>
+                        <p className="text-sm text-slate-200 font-mono">{embeddedMetadata.originalResolution}</p>
                       </div>
                     </div>
                   )}
@@ -1006,11 +1102,11 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
               </>
             )}
 
-            {!watermarkMetadata || !watermarkMetadata.found && (
+            {!embeddedMetadata || !embeddedMetadata.found && (
               <div className="border-t border-slate-700 pt-4">
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
-                  <p className="text-xs text-slate-400 mb-1">WATERMARK STATUS</p>
-                  <p className="text-sm text-slate-300">⚠️ Watermark extraction in progress...</p>
+                  <p className="text-xs text-slate-400 mb-1">METADATA STATUS</p>
+                  <p className="text-sm text-slate-300">⚠️ Metadata extraction in progress...</p>
                 </div>
               </div>
             )}
@@ -1048,7 +1144,7 @@ function VaultPage({ documents, onDeleteDocument, userId }: { documents: VaultDo
             onClick={() => {
               setSelectedDoc(null);
               setPreviewImage(null);
-              setWatermarkMetadata(null);
+              setEmbeddedMetadata(null);
             }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -1140,7 +1236,7 @@ function EncryptPreviewPage({
 }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [encryptedData, setEncryptedData] = useState<any>(null);
-  const [watermarkedImage, setWatermarkedImage] = useState<string | null>(null);
+  const [encryptedImage, setEncryptedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Encrypt image and embed user ID when component mounts
@@ -1154,12 +1250,57 @@ function EncryptPreviewPage({
         setIsProcessing(true);
         setError(null);
         
-        // Step 1: Embed watermark
-        console.log('🔏 Step 1/4: Embedding watermark with user ID...');
-        let watermarkedBase64 = null;
+        // Step 0: Resize image if needed to prevent memory overflow
+        console.log('📦 Step 0/4: Checking image dimensions...');
+        let processedImage = image;
         try {
-          watermarkedBase64 = await embedAdvancedWatermark(
-            image,
+          const img = new Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load image for resizing'));
+            img.src = image;
+          });
+          
+          let width = img.width;
+          let height = img.height;
+          const maxWidth = 1920;
+          const maxHeight = 1080;
+          
+          // Check if resize needed
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.floor(width * ratio);
+            height = Math.floor(height * ratio);
+            console.log(`📦 Resizing image from ${img.width}x${img.height} to ${width}x${height}`);
+            
+            // Resize using canvas
+            const resizeCanvas = document.createElement('canvas');
+            resizeCanvas.width = width;
+            resizeCanvas.height = height;
+            const resizeCtx = resizeCanvas.getContext('2d');
+            
+            if (!resizeCtx) {
+              throw new Error('Failed to get canvas context for resizing');
+            }
+            
+            resizeCtx.drawImage(img, 0, 0, width, height);
+            processedImage = resizeCanvas.toDataURL('image/jpeg', 0.9); // JPEG compression for efficiency
+            console.log('✅ Image resized and compressed successfully');
+          } else {
+            console.log(`✅ Image dimensions OK (${width}x${height})`);
+          }
+        } catch (resizeErr) {
+          throw new Error(`Image resizing failed: ${resizeErr instanceof Error ? resizeErr.message : String(resizeErr)}`);
+        }
+        
+        if (!isMounted) return;
+        
+        // Step 1: Embed metadata
+        console.log('🔏 Step 1/4: Embedding metadata with user ID...');
+        let embeddedImageBase64 = null;
+        try {
+          embeddedImageBase64 = await embedAdvancedWatermark(
+            processedImage,
             userId,
             new Date().toISOString(),
             undefined,
@@ -1167,26 +1308,26 @@ function EncryptPreviewPage({
             undefined,
             undefined
           );
-          console.log('✅ Watermark embedded successfully');
-        } catch (watermarkErr) {
-          throw new Error(`Watermark embedding failed: ${watermarkErr instanceof Error ? watermarkErr.message : String(watermarkErr)}`);
+          console.log('✅ Metadata embedded successfully');
+        } catch (embedErr) {
+          throw new Error(`Metadata embedding failed: ${embedErr instanceof Error ? embedErr.message : String(embedErr)}`);
         }
         
-        if (!watermarkedBase64) {
-          throw new Error('Watermark returned empty result');
+        if (!embeddedImageBase64) {
+          throw new Error('Metadata embedding returned empty result');
         }
         
         if (!isMounted) return;
-        setWatermarkedImage(watermarkedBase64);
+        setEncryptedImage(embeddedImageBase64);
         
         // Step 2: Convert base64 to Blob without using fetch (avoids size issues)
-        console.log('💾 Step 2/4: Converting to blob...');
+        console.log('💾 Step 2/5: Converting to blob...');
         let blob: Blob;
         try {
           // Remove data URL prefix if present
-          const base64Data = watermarkedBase64.includes(',') 
-            ? watermarkedBase64.split(',')[1] 
-            : watermarkedBase64;
+          const base64Data = embeddedImageBase64.includes(',') 
+            ? embeddedImageBase64.split(',')[1] 
+            : embeddedImageBase64;
           
           // Convert base64 to binary
           const binaryString = atob(base64Data);
@@ -1208,7 +1349,7 @@ function EncryptPreviewPage({
         if (!isMounted) return;
         
         // Step 3: Convert blob to base64 using FileReader
-        console.log('📝 Step 3/4: Encoding to base64...');
+        console.log('📝 Step 3/5: Encoding to base64...');
         const base64String = await new Promise<string>((resolve, reject) => {
           try {
             const reader = new FileReader();
@@ -1256,20 +1397,20 @@ function EncryptPreviewPage({
         if (!isMounted) return;
         
         // Step 4: Create encryption package
-        console.log('🔐 Step 4/4: Creating encryption package...');
+        console.log('🔐 Step 4/5: Creating encryption package...');
         const metadata = {
           timestamp: Date.now(),
           original_name: `encrypted_vault_${userId}_${Date.now()}.jpg`,
           size: blob.size,
           checksum: Math.random().toString(36).substring(7),
-          watermarked: true,
+          encrypted: true,
           ownerId: userId,
           imageType: 'encrypted',
         };
         
         const encryptedPackage = {
           encrypted_data: base64String,
-          watermarkedImage: watermarkedBase64,
+          encryptedImage: embeddedImageBase64,
           metadata: metadata,
           check_digest: Math.random().toString(36).substring(7),
         };
@@ -1283,11 +1424,9 @@ function EncryptPreviewPage({
         const errorMsg = err?.message || String(err) || 'Unknown encryption error';
         if (isMounted) {
           setError(`⚠️ Encryption failed: ${errorMsg}`);
-          // Show alert so user knows what happened
-          setTimeout(() => {
-            alert(`❌ Encryption Error:\n\n${errorMsg}\n\nPlease retake the photo and try again.`);
-          }, 100);
+          console.error(`Encryption Error: ${errorMsg}. Please retake the photo and try again.`);
         }
+
       } finally {
         if (isMounted) {
           setIsProcessing(false);
@@ -1316,8 +1455,8 @@ function EncryptPreviewPage({
     } catch (err) {
       console.error("❌ Save error:", err);
       const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`Save failed: ${errorMsg}`);
       setError(`Save failed: ${errorMsg}`);
-      alert(`❌ Save Error:\n\n${errorMsg}`);
     } finally {
       setIsProcessing(false);
     }
@@ -1330,17 +1469,17 @@ function EncryptPreviewPage({
       exit={{ opacity: 0, y: -20 }}
       className="px-4 pt-6 space-y-4 pb-24"
     >
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Encrypt & Watermark</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">🔐 Encrypt Image</h1>
 
-      {/* Watermarked Image Preview */}
+      {/* Encrypted Image Preview */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="relative rounded-2xl overflow-hidden border-2 border-purple-500/30 shadow-2xl"
       >
         <img
-          src={watermarkedImage || image}
-          alt="Watermarked"
+          src={encryptedImage || image}
+          alt="Encrypted"
           className="w-full h-auto object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent flex items-end p-4">
@@ -1363,7 +1502,7 @@ function EncryptPreviewPage({
             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             className="w-12 h-12 border-3 border-purple-500/30 border-t-purple-500 rounded-full"
           />
-          <p className="text-purple-300 font-semibold">Watermarking & Encrypting...</p>
+          <p className="text-purple-300 font-semibold">🔐 Encrypting...</p>
           <p className="text-xs text-slate-400">Embedding ownership ID in image pixels</p>
         </motion.div>
       ) : encryptedData ? (
@@ -1377,7 +1516,7 @@ function EncryptPreviewPage({
               <Shield size={20} className="text-green-400" />
             </div>
             <div>
-              <p className="font-semibold text-green-400">✓ Watermarked & Encrypted</p>
+              <p className="font-semibold text-green-400">✓ Encrypted</p>
               <p className="text-sm text-slate-300 mt-1">Owner ID embedded in pixel data for authenticity</p>
             </div>
           </div>
@@ -1393,7 +1532,7 @@ function EncryptPreviewPage({
               <span className="font-mono">{Math.round(encryptedData.metadata.size / 1024)} KB</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Watermark:</span>
+              <span className="text-slate-400">Encryption Type:</span>
               <span className="font-mono text-cyan-400">LSB Embedded</span>
             </div>
             <div className="flex justify-between">
@@ -1436,7 +1575,7 @@ function EncryptPreviewPage({
           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 rounded-xl p-4 font-semibold text-white flex items-center justify-center gap-2 shadow-lg transition-all"
         >
           <Lock size={18} />
-          Save to Vault
+          Encrypt
         </motion.button>
       </div>
     </motion.div>
@@ -1486,41 +1625,484 @@ function PortfolioPage() {
 }
 
 // ============= SHARE PAGE =============
-function SharePage() {
+function SharePage({ 
+  shareConfigs, setShareConfigs, 
+  shareHistory, setShareHistory, 
+  selectedShareImage, setSelectedShareImage,
+  shareExpiryDate, setShareExpiryDate,
+  shareExpiryTime, setShareExpiryTime,
+  shareDownloadLimit, setShareDownloadLimit,
+  sharePassword, setSharePassword,
+  includeCertificate, setIncludeCertificate,
+  generatedShareLink, setGeneratedShareLink,
+  generatedQRCode, setGeneratedQRCode,
+  shareStep, setShareStep,
+  userId,
+  vaultDocuments
+}: {
+  shareConfigs: ShareConfig[];
+  setShareConfigs: React.Dispatch<React.SetStateAction<ShareConfig[]>>;
+  shareHistory: any[];
+  setShareHistory: React.Dispatch<React.SetStateAction<any[]>>;
+  selectedShareImage: VaultDocument | null;
+  setSelectedShareImage: React.Dispatch<React.SetStateAction<VaultDocument | null>>;
+  shareExpiryDate: string;
+  setShareExpiryDate: React.Dispatch<React.SetStateAction<string>>;
+  shareExpiryTime: string;
+  setShareExpiryTime: React.Dispatch<React.SetStateAction<string>>;
+  shareDownloadLimit: number | null;
+  setShareDownloadLimit: React.Dispatch<React.SetStateAction<number | null>>;
+  sharePassword: string;
+  setSharePassword: React.Dispatch<React.SetStateAction<string>>;
+  includeCertificate: boolean;
+  setIncludeCertificate: React.Dispatch<React.SetStateAction<boolean>>;
+  generatedShareLink: string;
+  setGeneratedShareLink: React.Dispatch<React.SetStateAction<string>>;
+  generatedQRCode: string;
+  setGeneratedQRCode: React.Dispatch<React.SetStateAction<string>>;
+  shareStep: "select" | "configure" | "preview";
+  setShareStep: React.Dispatch<React.SetStateAction<"select" | "configure" | "preview">>;
+  userId: string | null;
+  vaultDocuments: VaultDocument[];
+}) {
+  const generateShareLink = () => {
+    // Generate unique share ID
+    const shareId = `share_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const baseUrl = window.location.origin;
+    const link = `${baseUrl}/share/${shareId}`;
+    return link;
+  };
+
+  const handleGenerateShare = async () => {
+    try {
+      // Validate selected document
+      if (!selectedShareImage) {
+        alert("❌ Please select a document to share.");
+        return;
+      }
+
+      // Get backend URL from environment or use current origin
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
+      const publicUrl = import.meta.env.VITE_PUBLIC_URL || window.location.origin;
+
+      console.log("📤 SharePage: Calling backend API to create share...");
+      console.log("Backend URL:", backendUrl);
+      console.log("Public URL:", publicUrl);
+
+      // Call backend API to create share
+      const response = await fetch(`${backendUrl}/share/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          vault_image_id: selectedShareImage.id || null,
+          expiry_date: shareExpiryDate || null,
+          expiry_time: shareExpiryTime || null,
+          download_limit: shareDownloadLimit,
+          password: sharePassword || null,
+          include_cert: includeCertificate,
+          base_url: publicUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to create share");
+      }
+
+      const responseData = await response.json();
+      const shareLink = responseData.share_link;
+      const shareId = responseData.share_id;
+
+      setGeneratedShareLink(shareLink);
+
+      // Create local share config for UI
+      const config: ShareConfig = {
+        id: shareId,
+        shareLink: shareLink,
+        expiryDate: shareExpiryDate || null,
+        expiryTime: shareExpiryTime || null,
+        downloadLimit: shareDownloadLimit,
+        downloadsUsed: 0,
+        passwordProtected: sharePassword.length > 0,
+        sharePassword: sharePassword,
+        includeCertificate: includeCertificate,
+        qrCodeData: shareLink,
+        createdAt: new Date().toLocaleString(),
+        createdBy: userId || "Unknown",
+      };
+
+      // Add to configs
+      setShareConfigs([...shareConfigs, config]);
+
+      // Add to history
+      setShareHistory([...shareHistory, {
+        id: config.id,
+        action: "Share Created",
+        document: selectedShareImage.name || "Unknown",
+        config: config,
+        timestamp: new Date().toLocaleString(),
+      }]);
+
+      console.log("✅ Share link generated successfully:", shareLink);
+      alert("✅ Share link created! Your friend can scan the QR code or use the link to access it.");
+      setShareStep("preview");
+    } catch (error) {
+      console.error("❌ Error generating share link:", error);
+      alert(`❌ Failed to generate share link: ${(error as any)?.message || String(error)}`);
+    }
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(generatedShareLink);
+    alert("✅ Share link copied to clipboard!");
+  };
+
+  const downloadQRCode = () => {
+    // Generate QR code using external API
+    const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(generatedShareLink)}`;
+    const link = document.createElement("a");
+    link.href = qrApiUrl;
+    link.download = `share-qr-${Date.now()}.png`;
+    link.click();
+  };
+
+  const handleResetShare = () => {
+    setShareStep("select");
+    setSelectedShareImage(null);
+    setShareExpiryDate("");
+    setShareExpiryTime("00:00");
+    setShareDownloadLimit(null);
+    setSharePassword("");
+    setIncludeCertificate(false);
+    setGeneratedShareLink("");
+    setGeneratedQRCode("");
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-6 space-y-4"
+      className="px-4 pt-6 space-y-4 pb-8"
     >
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Secure Share</h1>
+      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+        🔗 Secure Share Center
+      </h1>
 
-      <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
-        <p className="text-purple-300/80 text-sm">Configure sharing permissions and security</p>
+      {/* STEP 1: SELECT DOCUMENT */}
+      {shareStep === "select" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
+          <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
+            <h2 className="text-xl font-bold text-white">📦 Select Document to Share</h2>
+            <p className="text-purple-300/80 text-sm">Choose a document from your vault</p>
 
-        <div className="space-y-3">
-          {[
-            { icon: Eye, title: "View Only", enabled: true },
-            { icon: Download, title: "Allow Download", enabled: false },
-            { icon: Lock, title: "Password Protection", enabled: true },
-          ].map((perm, idx) => (
-            <div key={idx} className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl hover:border-purple-500/50 transition-all">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${perm.enabled ? "bg-purple-600/30" : "bg-slate-700/30"}`}>
-                  <perm.icon size={18} className={perm.enabled ? "text-purple-400" : "text-slate-500"} />
-                </div>
-                <span className="text-sm font-semibold">{perm.title}</span>
+            {vaultDocuments.length === 0 ? (
+              <div className="text-center py-8">
+                <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-2" />
+                <p className="text-gray-400">No documents available. Create or upload documents first.</p>
               </div>
-              <div className={`w-10 h-6 rounded-full transition-all ${perm.enabled ? "bg-gradient-to-r from-purple-600 to-blue-600 shadow-lg shadow-purple-500/50" : "bg-slate-600"}`}></div>
-            </div>
-          ))}
-        </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {vaultDocuments.map((doc) => (
+                  <motion.button
+                    key={doc.id}
+                    whileHover={{ scale: 1.02 }}
+                    onClick={() => {
+                      setSelectedShareImage(doc);
+                      setShareStep("configure");
+                    }}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                      selectedShareImage?.id === doc.id
+                        ? "border-purple-500 bg-purple-900/30"
+                        : "border-purple-500/30 bg-purple-900/10 hover:border-purple-500/70"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5 text-purple-400" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-white">{doc.name}</p>
+                        <p className="text-xs text-purple-300/60">Uploaded: {doc.createdAt}</p>
+                      </div>
+                      <CheckCircle className={`w-5 h-5 ${selectedShareImage?.id === doc.id ? "text-green-500" : "text-gray-600"}`} />
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
 
-        <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all">
-          Generate Link
-        </Button>
-      </div>
+      {/* STEP 2: CONFIGURE SHARING */}
+      {shareStep === "configure" && selectedShareImage && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
+          <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-bold text-white">⚙️ Configure Share Settings</h2>
+              <button
+                onClick={() => setShareStep("select")}
+                className="text-purple-400 hover:text-purple-300 text-sm"
+              >
+                ← Back
+              </button>
+            </div>
+            <p className="text-purple-300/80 text-sm">Sharing: <span className="font-bold text-purple-200">{selectedShareImage.name}</span></p>
+
+            <div className="space-y-4 mt-4">
+              {/* EXPIRY DATE & TIME */}
+              <motion.div className="p-4 bg-purple-900/20 border border-purple-500/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <Clock className="w-5 h-5 text-blue-400" />
+                  <label className="font-semibold text-white">Share Expiry</label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="date"
+                    value={shareExpiryDate}
+                    onChange={(e) => setShareExpiryDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white text-sm focus:border-purple-500/70 outline-none"
+                    placeholder="Select date"
+                  />
+                  <input
+                    type="time"
+                    value={shareExpiryTime}
+                    onChange={(e) => setShareExpiryTime(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white text-sm focus:border-purple-500/70 outline-none"
+                  />
+                </div>
+                <p className="text-xs text-purple-300/60 mt-2">Leave blank for no expiry</p>
+              </motion.div>
+
+              {/* DOWNLOAD LIMIT */}
+              <motion.div className="p-4 bg-purple-900/20 border border-purple-500/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <Download className="w-5 h-5 text-green-400" />
+                  <label className="font-semibold text-white">Download Limit</label>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={shareDownloadLimit || ""}
+                  onChange={(e) => setShareDownloadLimit(e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-full px-3 py-2 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white text-sm focus:border-purple-500/70 outline-none"
+                  placeholder="Unlimited downloads (leave blank)"
+                />
+                <p className="text-xs text-purple-300/60 mt-2">Number of times this link can be downloaded</p>
+              </motion.div>
+
+              {/* PASSWORD PROTECTION */}
+              <motion.div className="p-4 bg-purple-900/20 border border-purple-500/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <Lock className="w-5 h-5 text-orange-400" />
+                  <label className="font-semibold text-white">Password Protection</label>
+                </div>
+                <input
+                  type="password"
+                  value={sharePassword}
+                  onChange={(e) => setSharePassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white text-sm focus:border-purple-500/70 outline-none"
+                  placeholder="Leave blank for no password"
+                />
+                {sharePassword && (
+                  <p className="text-xs text-green-400 mt-2">✓ Password protected</p>
+                )}
+              </motion.div>
+
+              {/* CERTIFICATE SHARING */}
+              <motion.div className="p-4 bg-purple-900/20 border border-purple-500/20 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Award className="w-5 h-5 text-yellow-400" />
+                    <label className="font-semibold text-white">Include Certificate</label>
+                  </div>
+                  <button
+                    onClick={() => setIncludeCertificate(!includeCertificate)}
+                    className={`w-10 h-6 rounded-full transition-all ${
+                      includeCertificate
+                        ? "bg-gradient-to-r from-purple-600 to-blue-600"
+                        : "bg-slate-600"
+                    }`}
+                  />
+                </div>
+                <p className="text-xs text-purple-300/60 mt-2">Share authorship certificate with recipient</p>
+              </motion.div>
+            </div>
+
+            <Button
+              onClick={async () => {
+                try {
+                  await handleGenerateShare();
+                } catch (err) {
+                  console.error("❌ Share button error:", err);
+                  alert(`❌ Share error: ${(err as any)?.message || String(err)}`);
+                }
+              }}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all mt-4"
+            >
+              ✨ Generate Share Link
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* STEP 3: PREVIEW & SHARE */}
+      {shareStep === "preview" && generatedShareLink && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
+          {/* QR CODE SECTION */}
+          <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-bold text-white mb-4">📲 QR Code</h2>
+            <div className="bg-white rounded-xl p-4 flex justify-center">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generatedShareLink)}`}
+                alt="QR Code"
+                className="w-64 h-64"
+              />
+            </div>
+            <p className="text-xs text-center text-purple-300/60 mt-3">Scan with phone camera to share</p>
+            <Button
+              onClick={downloadQRCode}
+              className="w-full mt-4 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 font-semibold shadow-lg"
+            >
+              📥 Download QR Code
+            </Button>
+          </div>
+
+          {/* SHARE LINK SECTION */}
+          <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-bold text-white mb-4">🔗 Share Link</h2>
+            <div className="bg-slate-700/50 border border-purple-500/30 rounded-xl p-4 mb-4">
+              <p className="text-xs text-purple-300/60 mb-2">Copy this link to share:</p>
+              <p className="text-white font-mono text-xs break-all">{generatedShareLink}</p>
+            </div>
+            <Button
+              onClick={handleCopyLink}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg"
+            >
+              📋 Copy Link to Clipboard
+            </Button>
+          </div>
+
+          {/* SHARE CONFIGURATION SUMMARY */}
+          <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-white mb-4">📊 Share Configuration</h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                <span className="text-purple-300">Document</span>
+                <span className="font-semibold text-white">{selectedShareImage?.name}</span>
+              </div>
+              {shareExpiryDate && (
+                <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                  <span className="text-purple-300">⏰ Expires</span>
+                  <span className="font-semibold text-orange-400">
+                    {shareExpiryDate} {shareExpiryTime}
+                  </span>
+                </div>
+              )}
+              {shareDownloadLimit && (
+                <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                  <span className="text-purple-300">📥 Downloads Allowed</span>
+                  <span className="font-semibold text-blue-400">{shareDownloadLimit}x</span>
+                </div>
+              )}
+              {sharePassword && (
+                <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                  <span className="text-purple-300">🔐 Password Protected</span>
+                  <span className="font-semibold text-green-400">✓ Yes</span>
+                </div>
+              )}
+              {includeCertificate && (
+                <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                  <span className="text-purple-300">📜 Certificate Included</span>
+                  <span className="font-semibold text-yellow-400">✓ Yes</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between p-3 bg-purple-900/20 rounded-lg">
+                <span className="text-purple-300">🕐 Created</span>
+                <span className="font-semibold text-gray-300">{new Date().toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* SHARE HISTORY */}
+          {shareHistory.length > 0 && (
+            <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 shadow-xl">
+              <h2 className="text-lg font-bold text-white mb-4">📜 Share History</h2>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {shareHistory.map((entry, idx) => (
+                  <div key={idx} className="p-3 bg-purple-900/20 rounded-lg border border-purple-500/20">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="font-semibold text-white text-sm">{entry.action}</p>
+                        <p className="text-xs text-purple-300/60">{entry.document}</p>
+                      </div>
+                      <p className="text-xs text-gray-400">{entry.timestamp}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ACTION BUTTONS */}
+          <div className="flex gap-3">
+            <Button
+              onClick={handleResetShare}
+              className="flex-1 bg-gradient-to-r from-slate-600 to-gray-700 hover:from-slate-700 hover:to-gray-800 font-semibold shadow-lg"
+            >
+              ← Create Another
+            </Button>
+            <Button
+              onClick={() => alert("✅ Share links created! Recipients can now access your document using the link or QR code.")}
+              className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg"
+            >
+              ✅ Done
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ACTIVE SHARES LIST */}
+      {shareConfigs.length > 0 && shareStep === "select" && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-3 shadow-xl"
+        >
+          <h2 className="text-lg font-bold text-white">📤 Active Shares</h2>
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {shareConfigs.map((config) => (
+              <div key={config.id} className="p-3 bg-purple-900/20 border border-purple-500/20 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-white text-sm">{config.shareLink.substring(0, 40)}...</span>
+                  <span className="text-xs px-2 py-1 bg-green-500/30 text-green-400 rounded-full">Active</span>
+                </div>
+                <div className="text-xs text-purple-300/60 space-y-1">
+                  <p>Created: {config.createdAt}</p>
+                  {config.expiryDate && <p>Expires: {config.expiryDate} {config.expiryTime}</p>}
+                  {config.downloadLimit && <p>Downloads: {config.downloadsUsed}/{config.downloadLimit}</p>}
+                  {config.passwordProtected && <p>🔐 Password Protected</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -1637,14 +2219,14 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
           canvas.height = img.height;
           ctx.drawImage(img, 0, 0);
 
-          // Try to extract watermark from image
-          console.log("📊 Extracting watermark data...");
-          let watermarkData: AdvancedWatermarkMetadata | null = null;
+          // Try to extract embedded metadata from image
+          console.log("📊 Extracting embedded metadata...");
+          let embeddedData: AdvancedWatermarkMetadata | null = null;
           try {
-            watermarkData = await extractAdvancedWatermark(canvas);
-            console.log("✅ Watermark extracted:", watermarkData);
+            embeddedData = await extractAdvancedWatermark(canvas);
+            console.log("✅ Metadata extracted:", embeddedData);
           } catch (wmError) {
-            console.warn("⚠️ Could not extract watermark:", wmError);
+            console.warn("⚠️ Could not extract metadata:", wmError);
           }
 
           // Run ML-based image type detection (AI vs Phone vs WhatsApp, etc.)
@@ -1671,35 +2253,35 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
             imageResolution: `${canvas.width}x${canvas.height}`,
             imageSize: `${(blob.size / 1024).toFixed(2)} KB`,
             pixelCount: canvas.width * canvas.height,
-            isEncrypted: watermarkData ? true : isLikelyEncrypted,
-            encryptionType: watermarkData?.format || (isLikelyEncrypted ? "LSB Steganography" : "None"),
-            ownershipDetails: watermarkData ? {
-              pinItId: watermarkData.userId || "Unknown",
-              timestamp: new Date(watermarkData.timestamp || 0).toLocaleString(),
-              watermarkFormat: watermarkData.format,
-              validationTiles: watermarkData.validationTiles,
-              tilesPassed: watermarkData.tilesPassed,
+            isEncrypted: embeddedData ? true : isLikelyEncrypted,
+            encryptionType: embeddedData?.format || (isLikelyEncrypted ? "LSB Steganography" : "None"),
+            ownershipDetails: embeddedData ? {
+              pinItId: embeddedData.userId || "Unknown",
+              timestamp: new Date(embeddedData.timestamp || 0).toLocaleString(),
+              encryptionFormat: embeddedData.format,
+              validationTiles: embeddedData.validationTiles,
+              tilesPassed: embeddedData.tilesPassed,
             } : {
               pinItId: "Not encrypted with PINIT",
               timestamp: "N/A",
-              watermarkFormat: "None",
+              encryptionFormat: "None",
             },
             // Enhanced image type detection with ML analysis
-            imageType: watermarkData?.imageType || imageTypeAnalysis.imageType || "Unknown",
+            imageType: embeddedData?.imageType || imageTypeAnalysis.imageType || "Unknown",
             imageTypeAnalysis: imageTypeAnalysis, // Full analysis with confidence
             imageTypeDetails: `${imageTypeAnalysis.imageType.toUpperCase()} (${imageTypeAnalysis.confidence}% confidence)`,
             imageTypeIndicators: imageTypeAnalysis.indicators,
-            metadata: watermarkData ? {
-              userId: watermarkData.userId,
-              timestamp: watermarkData.timestamp,
-              imageType: watermarkData.imageType,
-              validationStatus: watermarkData.tilesPassed && watermarkData.validationTiles
-                ? `${watermarkData.tilesPassed}/${watermarkData.validationTiles} validation tiles passed`
+            metadata: embeddedData ? {
+              userId: embeddedData.userId,
+              timestamp: embeddedData.timestamp,
+              imageType: embeddedData.imageType,
+              validationStatus: embeddedData.tilesPassed && embeddedData.validationTiles
+                ? `${embeddedData.tilesPassed}/${embeddedData.validationTiles} validation tiles passed`
                 : "Validation pending",
             } : null,
-            confidence: watermarkData 
-              ? (watermarkData.tilesPassed && watermarkData.validationTiles 
-                ? Math.round((watermarkData.tilesPassed / watermarkData.validationTiles) * 100)
+            confidence: embeddedData 
+              ? (embeddedData.tilesPassed && embeddedData.validationTiles 
+                ? Math.round((embeddedData.tilesPassed / embeddedData.validationTiles) * 100)
                 : 0)
               : (isLikelyEncrypted ? 65 : 0),
           };
@@ -1758,7 +2340,7 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
           className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-8 flex flex-col items-center gap-4 shadow-xl"
         >
           <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin"></div>
-          <p className="text-purple-300 font-semibold">Analyzing image watermarks and encryption...</p>
+          <p className="text-purple-300 font-semibold">🔐 Analyzing image encryption...</p>
         </motion.div>
       )}
 
@@ -1811,7 +2393,7 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
                 <p className={`text-sm mt-1 ${analysis.isEncrypted ? "text-green-300" : "text-slate-300"}`}>
                   {analysis.isEncrypted
                     ? `Protected with ${analysis.encryptionType} (${analysis.confidence}% confidence)`
-                    : "This image doesn't contain PINIT watermarks"}
+                    : "This image doesn't contain PINIT encryption"}
                 </p>
               </div>
             </div>

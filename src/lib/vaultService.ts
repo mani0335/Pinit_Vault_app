@@ -6,14 +6,14 @@ interface VaultDocument {
   id: string;
   name: string;
   encryptedData: string;
-  watermarkedImage?: string;        // Store watermarked version for preview
+  encryptedImage?: string;          // Store encrypted version with embedded metadata for preview
   cloudinaryUrl?: string;
   metadata: {
     timestamp: number;
     original_name: string;
     size: number;
     checksum: string;
-    watermarked?: boolean;
+    encrypted?: boolean;
     ownerId?: string;
   };
   createdAt: string;
@@ -319,7 +319,7 @@ export async function getVaultMetadata(
 }
 
 /**
- * Save watermarked image to device gallery in "PINIT Vault" folder
+ * Save encrypted image to device gallery in "PINIT Vault" folder
  * Works on Android, iOS, and web
  */
 export async function saveImageToGallery(

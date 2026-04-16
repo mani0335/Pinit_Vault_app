@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
-import { isBiometricAvailable, showBiometricPrompt } from "@/lib/biometric";
+import { isBiometricAvailable, showBiometricPrompt, waitForFingerprintPlugin, waitForCordova } from "@/lib/biometric";
 import { validateUser, verifyFingerprint } from "@/lib/authService";
 import { appStorage } from "@/lib/storage";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +22,7 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
   const [status, setStatus] = useState<"idle" | "scanning" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const SUCCESS_HOLD_MS = 350;
+  const [hasStarted, setHasStarted] = useState(false);
   
   const cancelScan = useCallback(() => {
     setStatus("idle");
@@ -34,98 +35,103 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
 
     try {
       const win: any = window as any;
+      
+      // ✅ CRITICAL FIX: Wait for Cordova deviceready and plugin initialization
+      console.log('⏳ FingerprintScanner: Waiting for Cordova deviceready event...');
+      const cordovaReady = await waitForCordova(10000);
+      
+      if (!cordovaReady) {
+        console.error('❌ Cordova failed to initialize');
+        // Fall through to check if plugin is available anyway
+      }
+      
+      console.log('⏳ FingerprintScanner: Waiting for FingerprintAIO plugin...');
+      const pluginReady = await waitForFingerprintPlugin(10000);
+      
+      if (!pluginReady) {
+        console.warn('⚠️ FingerprintAIO plugin not available after 10s wait');
+        console.log('  - win.FingerprintAIO:', typeof win.FingerprintAIO);
+        console.log('  - win.Fingerprint:', typeof win.Fingerprint);
+        console.log('  - window.cordova:', typeof win.cordova);
+      }
+      
       const hasNativePlugin = !!(win.FingerprintAIO || win.Fingerprint);
 
       // Prefer native biometric plugin when available
       if (hasNativePlugin) {
         try {
-          const avail = await isBiometricAvailable();
-          if (avail.available) {
-            console.log('FingerprintScanner: using native biometric plugin');
-            // IMPORTANT: This will throw an error if user cancels
-            await showBiometricPrompt({ clientId: 'SecureSweet' });
-            
-            setMessage('Fingerprint verified. Registering...');
-            
-            // CRITICAL FOR REGISTRATION: Create credential object for native biometric
-            if (mode === 'register') {
-              console.log('📍 Register mode: Creating credential object for native fingerprint');
-              // FIXED: Use stable credential ID based on userId (not random)
-              // This ensures the same credential is used during registration and login
-              const credentialId = userId ? `fp_${userId}_native` : `fp_native_temp_${Date.now()}`;
-              const nativeCredential = {
-                id: credentialId,
-                type: 'public-key',
-                biometricType: 'fingerprint',
-                enrolledAt: Date.now(),
-                verified: true
-              };
-              onCredential?.(nativeCredential);
-              console.log('✅ Native fingerprint credential created:', credentialId);
-            }
-            
-            // For register mode: skip separate fingerprint registration (will be done in main /api/register)
-            if (mode === 'register') {
-              console.log('✅ Fingerprint registered locally for registration flow');
+          console.log('🔍 FingerprintScanner: Native biometric plugin found - attempting scan');
+          // IMPORTANT: This will throw an error if user cancels
+          await showBiometricPrompt({ clientId: 'SecureSweet' });
+          
+          setMessage('Fingerprint verified. Registering...');
+          
+          // CRITICAL FOR REGISTRATION: Create credential object for native biometric
+          if (mode === 'register') {
+            console.log('📍 Register mode: Creating credential object for native fingerprint');
+            const credentialId = userId ? `fp_${userId}_native` : `fp_native_temp_${Date.now()}`;
+            const nativeCredential = {
+              id: credentialId,
+              type: 'public-key',
+              biometricType: 'fingerprint',
+              enrolledAt: Date.now(),
+              verified: true
+            };
+            onCredential?.(nativeCredential);
+            console.log('✅ Native fingerprint credential created:', credentialId);
+          }
+          
+          // For register mode: skip separate fingerprint registration
+          if (mode === 'register') {
+            console.log('✅ Fingerprint registered locally for registration flow');
+            setStatus('success');
+            setMessage('✓ Fingerprint Registered');
+            setTimeout(onSuccess, SUCCESS_HOLD_MS);
+            return;
+          }
+          
+          // For login mode: verify fingerprint with backend
+          if (mode === 'login') {
+            console.log('🔐 Login mode: Verifying fingerprint with backend');
+            setMessage('Verifying with backend...');
+            try {
+              const loginUserId = userId || await appStorage.getItem('biovault_userId');
+              if (!loginUserId) {
+                throw new Error('User not authorized. Please register first.');
+              }
+              
+              const credential = `fp_${loginUserId}_native`;
+              const result = await verifyFingerprint(loginUserId, credential);
+              const isVerified = result.ok || result.match || (result as any).verified;
+              
+              if (!isVerified) {
+                const msg = result.reason || 'Fingerprint does not match registered profile';
+                throw new Error(msg);
+              }
+              
+              console.log('✅ Fingerprint verified with backend - proceeding to face authentication');
               setStatus('success');
-              setMessage('✓ Fingerprint Registered');
+              setMessage('✓ Fingerprint Verified');
               setTimeout(onSuccess, SUCCESS_HOLD_MS);
               return;
-            }
-            
-            // For login mode: verify fingerprint with backend
-            if (mode === 'login') {
-              console.log('🔐 Login mode: Verifying fingerprint with backend');
-              setMessage('Verifying with backend...');
-              try {
-                // ✅ FIXED: Use userId prop from Login component FIRST, then fallback to storage
-                const loginUserId = userId || await appStorage.getItem('biovault_userId');
-                if (!loginUserId) {
-                  throw new Error('User not authorized. Please register first.');
-                }
-                
-                // FIXED: Use stable credential ID based on userId (not random)
-                // This ensures the same credential is used during registration and login
-                const credential = `fp_${loginUserId}_native`;
-                
-                // Verify with backend using the verifyFingerprint function
-                const result = await verifyFingerprint(loginUserId, credential);
-                
-                // Python backend returns { verified: bool, match: bool, ... }
-                // Express backend returns { ok: bool, match: bool, ... }
-                // Accept either format
-                const isVerified = result.ok || result.match || (result as any).verified;
-                
-                if (!isVerified) {
-                  const msg = result.reason || 'Fingerprint does not match registered profile';
-                  throw new Error(msg);
-                }
-                
-                console.log('✅ Fingerprint verified with backend - proceeding to face authentication');
-                setStatus('success');
-                setMessage('✓ Fingerprint Verified');
-                setTimeout(onSuccess, SUCCESS_HOLD_MS);
-                return;
-              } catch (err: any) {
-                const msg = err?.message || 'Fingerprint verification failed';
-                console.error('❌ Backend fingerprint verification error:', msg);
-                
-                // Provide user-friendly error message
-                let friendlyMsg = msg;
-                if (msg.includes('User not') || msg.includes('not registered')) {
-                  friendlyMsg = 'User not recognized. Please register your fingerprint.';
-                } else if (msg.includes('does not match')) {
-                  friendlyMsg = 'Fingerprint does not match. Please try again or register.';
-                } else if (msg.includes('Network') || msg.includes('NetworkError')) {
-                  friendlyMsg = 'Network error. Check your internet connection.';
-                }
-                
-                setStatus('error');
-                setMessage('❌ ' + friendlyMsg);
-                onError?.(friendlyMsg);
-                setTimeout(() => setStatus('idle'), 2500);
-                return;
+            } catch (err: any) {
+              const msg = err?.message || 'Fingerprint verification failed';
+              console.error('❌ Backend fingerprint verification error:', msg);
+              
+              let friendlyMsg = msg;
+              if (msg.includes('User not') || msg.includes('not registered')) {
+                friendlyMsg = 'User not recognized. Please register your fingerprint.';
+              } else if (msg.includes('does not match')) {
+                friendlyMsg = 'Fingerprint does not match. Please try again or register.';
+              } else if (msg.includes('Network') || msg.includes('NetworkError')) {
+                friendlyMsg = 'Network error. Check your internet connection.';
               }
+              
+              setStatus('error');
+              setMessage('❌ ' + friendlyMsg);
+              onError?.(friendlyMsg);
+              setTimeout(() => setStatus('idle'), 2500);
+              return;
             }
           }
         } catch (nativeErr: any) {
@@ -157,16 +163,27 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
           setTimeout(() => setStatus('idle'), 2500);
           return;
         }
+      } else {
+        // ✅ NO NATIVE PLUGIN - For login mode, skip to face auth immediately
+        if (mode === 'login') {
+          console.log('📵 No native fingerprint plugin available - skipping to face authentication');
+          console.log('   This is normal - the app will use face recognition instead');
+          onError?.('Fingerprint not available - using face authentication');
+          return;
+        }
+        
+        // For register mode, fall back to WebAuthn
+        console.log('📵 No native fingerprint plugin - falling back to WebAuthn');
       }
 
       // Fallback to WebAuthn if available
       if (!window.PublicKeyCredential || typeof navigator.credentials === 'undefined') {
-        const supportMsg = 'Biometric authentication not available on this device. Please use password login.';
+        const supportMsg = 'Fingerprint not found. Proceeding to face authentication.';
         setStatus('error');
-        setMessage('⚠️ Biometric unavailable');
+        setMessage('⚠️ Fingerprint not available');
         onError?.(supportMsg);
         setTimeout(() => setStatus('idle'), 3000);
-        console.warn('🔴 WebAuthn not supported');
+        console.warn('🔴 Fingerprint unavailable - fallback to face auth');
         return;
       }
 
@@ -309,6 +326,17 @@ export function FingerprintScanner({ onSuccess, onError, mode, onCredential, req
       setTimeout(() => setStatus("idle"), 3000);
     }
   }, [mode, onSuccess, onError, SUCCESS_HOLD_MS]);
+
+  // AUTO-TRIGGER biometric scan when required=true (for login/critical scans)
+  useEffect(() => {
+    if (required && !hasStarted && status === "idle") {
+      console.log('🔄 Auto-triggering fingerprint scan (required mode)');
+      setHasStarted(true);
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => startScan(), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [required, hasStarted, status, startScan]);
 
   return (
     <div className="w-full max-w-sm mx-auto flex flex-col items-center gap-4">

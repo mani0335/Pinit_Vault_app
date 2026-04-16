@@ -1,20 +1,20 @@
 /**
  * Steganography Module (Enhanced)
- * Embeds user metadata into image pixels using multi-region watermarking.
+ * Embeds user metadata into image pixels using multi-region encoding.
  * 
  * Features:
- * - Multi-region watermarking: 4 corners + center (survives cropping)
+ * - Multi-region encoding: 4 corners + center (survives cropping)
  * - Metadata embedding: User ID | Timestamp | File Size | File Type
  * - LSB steganography in alpha channel (invisible, robust to compression)
- * - Confidence scoring: Returns how many regions contained valid watermark
+ * - Confidence scoring: Returns how many regions contained valid metadata
  */
 
-export interface WatermarkMetadata {
+export interface EmbeddedMetadata {
   userId: string;
   timestamp: string;
   fileSize: string;
   fileType: string;
-  confidence: number; // 0-5: how many regions had valid watermark
+  confidence: number; // 0-5: how many regions had valid metadata
 }
 
 /**
@@ -42,13 +42,13 @@ function binaryToString(binary: string): string {
 }
 
 /**
- * Embed metadata into image pixels using multi-region watermarking
+ * Embed metadata into image pixels using multi-region encoding
  * @param imageBase64 - Base64 encoded image
  * @param userId - User ID to embed
  * @param timestamp - Timestamp when image was encrypted
  * @param fileSize - File size string (e.g., "512 KB")
  * @param fileType - File type string (e.g., "PNG")
- * @returns Promise<string> - Base64 encoded watermarked image
+ * @returns Promise<string> - Base64 encoded image with embedded metadata
  */
 export async function embedUserIdInImage(
   imageBase64: string,
@@ -80,7 +80,7 @@ export async function embedUserIdInImage(
         // Ensure all pixels have alpha = 255 (fully opaque) for embedding space
         for (let i = 3; i < data.length; i += 4) {
           if (data[i] === 0) {
-            data[i] = 255; // Make transparent pixels opaque for watermarking
+            data[i] = 255; // Make transparent pixels opaque for metadata embedding
           }
         }
 
@@ -95,14 +95,14 @@ export async function embedUserIdInImage(
         const totalData = lengthBinary + metadataBinary;
 
         console.log(
-          `🔐 Steganography: Embedding metadata "${metadata}" (${totalData.length} bits) with multi-region watermarking`
+          `🔐 Steganography: Embedding metadata "${metadata}" (${totalData.length} bits) with multi-region encoding`
         );
         console.log(
           `📊 Canvas: ${canvas.width}x${canvas.height}, Data length: ${data.length / 4} pixels`
         );
 
-        // Define regions for multi-region watermarking
-        // Each region gets a copy of the same watermark (for robustness)
+        // Define regions for multi-region encoding
+        // Each region gets a copy of the same metadata (for robustness)
         const width = canvas.width;
         const height = canvas.height;
         const quarterWidth = Math.floor(width / 2);
@@ -133,22 +133,22 @@ export async function embedUserIdInImage(
               bitIndex++;
             }
           }
-          console.log(`  ✓ Region "${region.name}" watermarked with ${Math.min(bitIndex, totalData.length - (bitIndex > totalData.length ? bitIndex - totalData.length : 0))} bits`);
+          console.log(`  ✓ Region "${region.name}" encoded with ${Math.min(bitIndex, totalData.length - (bitIndex > totalData.length ? bitIndex - totalData.length : 0))} bits`);
         }
 
         // Put modified image data back
         ctx.putImageData(imageData, 0, 0);
 
         // Convert back to base64 - PNG preserves alpha channel perfectly
-        const watermarkedBase64 = canvas.toDataURL("image/png");
-        console.log(`✅ Steganography: Multi-region watermarking complete (output size: ${watermarkedBase64.length} bytes)`);
+        const encryptedImageData = canvas.toDataURL("image/png");
+        console.log(`✅ Steganography: Multi-region encoding complete (output size: ${encryptedImageData.length} bytes)`);
         
-        // Verify by re-extracting to confirm watermark is present
-        if (watermarkedBase64) {
-          console.log("✅ Watermarked image generated successfully");
+        // Verify by re-extracting to confirm metadata is present
+        if (encryptedImageData) {
+          console.log("✅ Encrypted image with embedded metadata generated successfully");
         }
         
-        resolve(watermarkedBase64);
+        resolve(encryptedImageData);
       } catch (err) {
         console.error("❌ Steganography embedding failed:", err);
         reject(err);

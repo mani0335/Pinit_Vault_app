@@ -39,7 +39,7 @@ import { appStorage } from "@/lib/storage";
 import {
   embedUserIdInImage,
   extractUserIdFromImage,
-  type WatermarkMetadata,
+  type EmbeddedMetadata,
 } from "@/lib/steganography";
 import { saveImageToGallery } from "@/lib/vaultService";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
@@ -86,7 +86,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [verifyPreview, setVerifyPreview] = useState<string>("");
   const [verifyBase64, setVerifyBase64] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(false);
-  const [proofResult, setProofResult] = useState<WatermarkMetadata | null>(null);
+  const [proofResult, setProofResult] = useState<EmbeddedMetadata | null>(null);
 
   // VAULT IMAGE VIEWER & SHARING
   const [selectedVaultImage, setSelectedVaultImage] = useState<any>(null);
@@ -119,7 +119,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       }));
       setVaultImages(images);
       
-      // Auto-detect ownership from watermarked images
+      // Auto-detect ownership from encrypted images
       const ownersMap: { [key: string]: string } = {};
       for (const image of images) {
         if (image.image_base64 || image.thumbnail_base64) {
@@ -305,25 +305,25 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         }
       }
       
-      // Step 4.5: Embed user ID watermark with metadata into image for ownership verification
-      let watermarkedImage = thumbnailBase64;
+      // Step 4.5: Embed user ID with metadata into image for ownership verification
+      let encryptedImageData = thumbnailBase64;
       try {
         if (thumbnailBase64 && currentUserId) {
-          watermarkedImage = await embedUserIdInImage(
+          encryptedImageData = await embedUserIdInImage(
             thumbnailBase64,
             currentUserId,
             timestamp,
             fileSize,
             fileType
           );
-          console.log('🔐 Watermarking: User ID + metadata embedded into image via multi-region watermarking');
+          console.log('🔐 Encryption: User ID + metadata embedded into image via multi-region encoding');
         }
-      } catch (watermarkErr) {
-        console.warn('⚠️ Watermarking: Could not embed metadata:', watermarkErr);
-        watermarkedImage = thumbnailBase64;
+      } catch (embeddingErr) {
+        console.warn('⚠️ Encryption: Could not embed metadata:', embeddingErr);
+        encryptedImageData = thumbnailBase64;
       }
       
-      // Step 5: Prepare vault data (store FULL encrypted image + thumbnail with watermark)
+      // Step 5: Prepare vault data (store FULL encrypted image + thumbnail with embedded metadata)
       const vaultData = {
         asset_id: assetId,
         user_id: currentUserId,
@@ -333,8 +333,8 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         visual_fingerprint: `fingerprint-${assetId}`,
         resolution: "encrypted",
         capture_timestamp: timestamp,
-        thumbnail_base64: watermarkedImage,
-        image_base64: watermarkedImage,
+        thumbnail_base64: encryptedImageData,
+        image_base64: encryptedImageData,
         certificate_id: null,
         owner_name: "BioVault User",
         owner_email: "user@biovault.app",
@@ -372,11 +372,11 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
       await loadVaultImages();
       
       // Step 8.5: Auto-detect ownership of newly encrypted image
-      if (watermarkedImage) {
+      if (encryptedImageData) {
         try {
-          const detectedOwner = await extractUserIdFromImage(watermarkedImage);
+          const detectedOwner = await extractUserIdFromImage(encryptedImageData);
           if (detectedOwner) {
-            // Extract userId string from WatermarkMetadata object
+            // Extract userId string from EmbeddedMetadata object
             const ownerUserId = typeof detectedOwner === 'string' ? detectedOwner : (detectedOwner as any).userId || '';
             if (ownerUserId) {
               setDetectedOwners(prev => ({ ...prev, [assetId]: ownerUserId }));
@@ -433,7 +433,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
     if (!verifyFile) return;
     setIsVerifying(true);
     try {
-      console.log('📤 Verify Proof: Starting watermark extraction...');
+      console.log('📤 Verify Proof: Starting metadata extraction...');
       
       // Read file as base64
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -446,15 +446,15 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
         reader.readAsDataURL(verifyFile);
       });
 
-      // Extract metadata from watermarked image
+      // Extract metadata from encrypted image
       const metadata = await extractUserIdFromImage(base64);
       
       if (metadata) {
-        console.log('✅ Verify Proof: Watermark extracted successfully!', metadata);
+        console.log('✅ Verify Proof: Metadata extracted successfully!', metadata);
         setProofResult(metadata);
       } else {
-        console.warn('⚠️ Verify Proof: No watermark found in image');
-        alert('⚠️ No watermark found. This image may not be encrypted or watermark was removed.');
+        console.warn('⚠️ Verify Proof: No metadata found in image');
+        alert('⚠️ No metadata found. This image may not be encrypted or metadata was removed.');
         setProofResult(null);
       }
     } catch (err) {
@@ -912,7 +912,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-emerald-900">Encrypt & Verify</p>
-                      <p className="text-xs text-emerald-700">Watermark & Proof</p>
+                      <p className="text-xs text-emerald-700">Encryption & Proof</p>
                     </div>
                   </div>
                   <Zap className="w-5 h-5 text-emerald-600 group-hover:translate-x-1 transition" />
@@ -1343,12 +1343,12 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
           onClick={handleEncryptImage}
           disabled={!cryptoFile || isEncrypting || isRestricted}
           className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition"
-          title={isRestricted ? "Disabled: Temporary access only" : "Encrypt and watermark the image with your ID"}
+          title={isRestricted ? "Disabled: Temporary access only" : "Encrypt the image with your ID"}
         >
           {isEncrypting ? (
             <>
               <Loader className="w-4 h-4 mr-2 animate-spin" />
-              <span>🔐 Encrypting & Watermarking...</span>
+              <span>🔐 Encrypting...</span>
             </>
           ) : isRestricted ? (
             <>
@@ -1356,11 +1356,11 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
               <span>🔒 Locked (Temporary Access)</span>
             </>
           ) : (
-            <span>🔐 Encrypt & Watermark Image</span>
+            <span>🔐 Encrypt Image</span>
           )}
         </Button>
         <p className="text-xs text-gray-500 text-center mt-2">
-          {!cryptoFile ? "Capture or select an image first" : "Click to encrypt and embed your watermark"}
+          {!cryptoFile ? "Capture or select an image first" : "Click to encrypt and embed your metadata"}
         </p>
       </motion.div>
 
@@ -1441,14 +1441,14 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
           {isVerifying ? (
             <>
               <Loader className="w-4 h-4 mr-2 animate-spin" />
-              <span>📤 Extracting Watermark...</span>
+              <span>📤 Extracting Metadata...</span>
             </>
           ) : (
             <span>✅ Verify Ownership & Extract Data</span>
           )}
         </Button>
         <p className="text-xs text-gray-500 text-center mt-2">
-          {!verifyFile ? "Upload an encrypted image to verify" : "Click to extract watermark and owner info"}
+          {!verifyFile ? "Upload an encrypted image to verify" : "Click to extract metadata and owner info"}
         </p>
 
         {/* Proof Card Result */}
@@ -1458,7 +1458,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
               <CardContent className="p-3 space-y-2">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">✓</div>
-                  <p className="text-xs font-bold text-emerald-700">Watermark Verified</p>
+                  <p className="text-xs font-bold text-emerald-700">Metadata Verified</p>
                 </div>
                 
                 <div className="space-y-1.5 text-xs">
@@ -1497,10 +1497,10 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
             <Card className="bg-red-50 border border-red-300">
               <CardContent className="p-3">
                 <p className="text-xs font-bold text-red-700">
-                  ❌ No Watermark Found
+                  ❌ No Metadata Found
                 </p>
                 <p className="text-xs text-red-600 mt-1">
-                  This image may not contain a valid watermark or the watermark was removed.
+                  This image may not contain valid metadata or the metadata was removed.
                 </p>
               </CardContent>
             </Card>

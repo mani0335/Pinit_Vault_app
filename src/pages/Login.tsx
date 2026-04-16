@@ -182,30 +182,12 @@ const Login = () => {
                     console.log('❌ Fingerprint authentication error:', err);
                     const msg = (err || '').toString().toLowerCase();
                     
-                    // ✅ CRITICAL: Check if user is actually registered and has fingerprint in database
-                    
-                    if (!userId) {
-                      // User not registered - show biometric options page
-                      console.log('📝 User not registered (no userId) - redirecting to biometric options');
-                      navigate('/biometric-options', { replace: true });
-                      return;
-                    }
-                    
-                    // IMPORTANT: Only redirect to biometric-options if explicitly told fingerprint not found
-                    // Most other errors (cancelled, network, etc.) should allow retry
-                    if (msg.includes('fingerprint not found') || msg.includes('user not found')) {
-                      console.log('🔓 Fingerprint not found - redirecting to biometric options');
-                      navigate('/biometric-options', { replace: true });
-                      return;
-                    }
-                    
-                    // ✅ User IS registered but fingerprint verification failed temporarily
-                    // This could be: wrong finger, dirty sensor, network timeout, cancelled, etc.
-                    // → Allow RETRY instead of full re-registration
-                    console.log('⚠️ User registered but fingerprint auth failed (temporary) - allowing retry');
-                    console.log('   Error details:', msg);
-                    console.log('   (User can click Retry button to try again)');
-                    // Stay on fingerprint page - let user retry without re-registering
+                    // ✅ FLOW FIX: Fingerprint not in backend or not registered
+                    // Route to BiometricOptions with Register + Temp Access buttons
+                    // User can choose to register or use temporary access
+                    console.log('⚠️ Fingerprint not found in backend - showing registration options');
+                    console.log('   Error was:', msg);
+                    navigate('/biometric-options');
                   }}
                 />
               </div>
