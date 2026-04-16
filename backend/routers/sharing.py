@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Request, Query, Body
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+from typing import Optional
 from datetime import datetime
 from ..db.database import get_admin_db
 import uuid
@@ -6,30 +9,47 @@ import uuid
 router = APIRouter(tags=["Sharing"])
 
 # ============================================================================
+# PYDANTIC MODELS
+# ============================================================================
+
+class ShareCreateRequest(BaseModel):
+    user_id: str
+    vault_image_id: Optional[str] = None
+    expiry_date: Optional[str] = None
+    expiry_time: Optional[str] = None
+    download_limit: Optional[int] = None
+    password: Optional[str] = None
+    include_cert: bool = False
+    base_url: str = "https://pinit-vault.onrender.com"
+
+class ShareUpdateRequest(BaseModel):
+    user_id: str
+    is_active: Optional[bool] = None
+    download_limit: Optional[int] = None
+    downloads_used: Optional[int] = None
+
+# ============================================================================
 # CREATE SHARE LINK
 # ============================================================================
 
 @router.post("/create")
-async def create_share(data: dict, request: Request):
+async def create_share(data: ShareCreateRequest):
     """
     Create a new share link for a document.
     
-    Request body:
-    {
-        "user_id": "USR-123456",
-        "vault_image_id": "uuid-here",
-        "expiry_date": "2026-05-15",  # optional
-        "expiry_time": "23:59",        # optional
-        "download_limit": 5,           # optional
-        "password": "secret123",       # optional
-        "include_cert": true,
-        "base_url": "https://your-app.com"
-    }
+    Accepts ShareCreateRequest with:
+    - user_id: owner of the share
+    - vault_image_id: the image to share
+    - expiry_date/time: when share expires
+    - download_limit: max downloads
+    - password: optional password protection
+    - include_cert: include authorship certificate
+    - base_url: public URL for share link
     """
     db = get_admin_db()
     
     try:
-        user_id = data.get("user_id")
+        user_id = data.user_id
         if not user_id:
             raise HTTPException(status_code=400, detail="user_id required")
         
@@ -37,21 +57,21 @@ async def create_share(data: dict, request: Request):
         share_id = f"share_{int(datetime.now().timestamp() * 1000)}_{uuid.uuid4().hex[:8]}"
         
         # Build share link using provided base URL
-        base_url = data.get("base_url", "https://pinit-vault.onrender.com")
+        base_url = data.base_url or "https://pinit-vault.onrender.com"
         share_link = f"{base_url}/share/{share_id}"
         
         # Prepare share config
         share_config = {
             "share_id": share_id,
             "user_id": user_id,
-            "vault_image_id": data.get("vault_image_id"),
+            "vault_image_id": data.vault_image_id,
             "share_link": share_link,
-            "expiry_date": data.get("expiry_date"),
-            "expiry_time": data.get("expiry_time"),
-            "download_limit": data.get("download_limit"),
+            "expiry_date": data.expiry_date,
+            "expiry_time": data.expiry_time,
+            "download_limit": data.download_limit,
             "downloads_used": 0,
-            "password": data.get("password"),
-            "include_cert": data.get("include_cert", False),
+            "password": data.password,
+            "include_cert": data.include_cert or False,
             "created_by": user_id,
             "is_active": True,
             "access_count": 0
@@ -152,21 +172,15 @@ async def get_share_public(share_id: str):
 # ============================================================================
 
 @router.post("/verify-password")
-async def verify_share_password(data: dict):
+async def verify_share_password(data: PasswordVerifyRequest):
     """
     Verify password for password-protected share.
-    
-    Request body:
-    {
-        "share_id": "share_1234_abc",
-        "password": "user-entered-password"
-    }
     """
     db = get_admin_db()
     
     try:
-        share_id = data.get("share_id")
-        entered_password = data.get("password")
+        share_id = data.share_id
+        entered_password = data.password
         
         if not share_id or not entered_password:
             raise HTTPException(status_code=400, detail="share_id and password required")
@@ -229,14 +243,14 @@ async def get_user_shares(user_id: str):
 # ============================================================================
 
 @router.put("/{share_id}")
-async def update_share(share_id: str, data: dict):
+async def update_share(share_id: str, data: ShareUpdateRequest):
     """
     Update a share (toggle active, update download limit, etc).
     """
     db = get_admin_db()
     
     try:
-        user_id = data.get("user_id")
+        user_id = data.user_id
         if not user_id:
             raise HTTPException(status_code=400, detail="user_id required")
         
@@ -252,19 +266,15 @@ async def update_share(share_id: str, data: dict):
         if response.data[0]["user_id"] != user_id:
             raise HTTPException(status_code=403, detail="Unauthorized")
         
-        # Update share
-        update_data = {}
-        if "is_active" in data:
-            update_data["is_active"] = data["is_active"]
-        if "download_limit" in data:
-            update_data["download_limit"] = data["download_limit"]
-        if "downloads_used" in data:
-            update_data["downloads_used"] = data["downloads_used"]
+        # Prepare update data (only fields that were provided)
+        update_data = data.dict(exclude_unset=True)
+        update_data.pop("user_id", None)  # Don't update user_id
         
-        db.table("share_configs") \
-            .update(update_data) \
-            .eq("share_id", share_id) \
-            .execute()
+        if update_data:
+            db.table("share_configs") \
+                .update(update_data) \
+                .eq("share_id", share_id) \
+                .execute()
         
         print(f"✅ Share Updated: {share_id}")
         return {"ok": True, "message": "Share updated"}
