@@ -62,9 +62,9 @@ services:
         scope: build
         value: "3333"
 
-  # Frontend Static Site
+  # Frontend Static Site (React SPA)
   - type: static_site
-    name: biovault-web
+    name: pinit-vault
     runtime: static
     region: oregon
     plan: free
@@ -72,8 +72,12 @@ services:
     staticPublishPath: dist
     routes:
       - path: /api/*
-        destination: https://biovault-app.onrender.com/api/:path
+        destination: https://biovault-backend-d13a.onrender.com/api/:path
+    redirects:
+      - source: "/*"
+        destination: "/index.html"
+        type: "rewrite"
     headers:
       - path: "/*"
         name: "Cache-Control"
-        value: "no-cache"
+        value: "no-cache, no-store, must-revalidate"
