@@ -73,10 +73,6 @@ services:
     routes:
       - path: /api/*
         destination: https://biovault-backend-d13a.onrender.com/api/:path
-    redirects:
-      - source: "/*"
-        destination: "/index.html"
-        type: "rewrite"
     headers:
       - path: "/*"
         name: "Cache-Control"
