@@ -61,6 +61,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
     "es6-promise-plugin": "^4.2.2",
+    "express": "^4.22.1",
     "firebase-admin": "^11.11.0",
     "framer-motion": "^12.35.2",
     "input-otp": "^1.4.2",

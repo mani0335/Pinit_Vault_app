@@ -37,43 +37,21 @@ services:
         scope: env
         value: pinit-thumbnails
 
-  # Backend API Service (Old Node)
+  # Frontend Web Service (React SPA with proper SPA routing)
   - type: web
     name: biovault-app
     runtime: node
     region: oregon
     plan: free
     buildCommand: npm install && npm run build
-    startCommand: cd server && node index.js
+    startCommand: node server.js
     envVars:
-      - key: MONGODB_URI
+      - key: PORT
         scope: build
-        value: mongodb+srv://manish:Manish%401614@cluster0.jwchpax.mongodb.net/biovault?appName=Cluster0&retryWrites=true&w=majority
-      - key: MONGODB_DB
+        value: "3000"
+      - key: VITE_BACKEND_URL
         scope: build
-        value: biovault
-      - key: JWT_SECRET
-        scope: build
-        value: biovault-secret-key-production
+        value: https://biovault-backend-d13a.onrender.com
       - key: NODE_ENV
         scope: build
         value: production
-      - key: PORT
-        scope: build
-        value: "3333"
-
-  # Frontend Static Site (React SPA)
-  - type: static_site
-    name: biovault-app
-    runtime: static
-    region: oregon
-    plan: free
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    routes:
-      - path: /api/*
-        destination: https://biovault-backend-d13a.onrender.com/api/:path
-    headers:
-      - path: "/*"
-        name: "Cache-Control"
-        value: "no-cache, no-store, must-revalidate"
