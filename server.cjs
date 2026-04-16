@@ -1,60 +1,89 @@
-const express = require('express');
-const path = require('path');
+// ✅ ZERO DEPENDENCIES - BUILT-IN NODE ONLY
+const http = require('http');
 const fs = require('fs');
+const path = require('path');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
-const DIST_DIR = path.join(__dirname, 'dist');
-const INDEX_HTML = path.join(DIST_DIR, 'index.html');
+const DIST_DIR = path.resolve(__dirname, 'dist');
 
-// ============================================
-// DEPLOYMENT: 2026-04-17 FORCE REDEPLOY FIX
-// ============================================
+// Simple MIME type map
+const mimeTypes = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
+};
 
-console.log('='.repeat(65));
-console.log('🚀 BIOVAULT EXPRESS SERVER v2 - COMMONJS FIXED');
-console.log('='.repeat(65));
-console.log(`📂 __dirname: ${__dirname}`);
-console.log(`📂 DIST_DIR: ${DIST_DIR}`);
-console.log(`📄 INDEX_HTML: ${INDEX_HTML}`);
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+console.log('');
+console.log('═'.repeat(70));
+console.log('🚀 BIOVAULT SPA SERVER - NATIVE NODE (NO DEPENDENCIES)');
+console.log('═'.repeat(70));
+console.log(`📂 Serving from: ${DIST_DIR}`);
+console.log(`🔌 Port: ${PORT}`);
 console.log(`✅ Dist exists: ${fs.existsSync(DIST_DIR)}`);
-console.log(`✅ Index exists: ${fs.existsSync(INDEX_HTML)}`);
-console.log('='.repeat(60));
+console.log('═'.repeat(70));
+console.log('');
 
-// Serve static files
-app.use(express.static(DIST_DIR, {
-  maxAge: '1h',
-  etag: false
-}));
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
-// SPA fallback - MUST BE LAST
-app.get('*', (req, res) => {
-  console.log(`↗️  Route: ${req.path}`);
-  
-  if (!fs.existsSync(INDEX_HTML)) {
-    console.error(`❌ index.html missing at: ${INDEX_HTML}`);
-    console.error(`📁 Dist contents:`, fs.readdirSync(DIST_DIR));
-    return res.status(500).send('Build failed - index.html not found');
+// Create server
+const server = http.createServer((req, res) => {
+  // Normalize URL
+  let urlPath = decodeURIComponent(req.url);
+  if (urlPath === '/') {
+    urlPath = '/index.html';
   }
-  
-  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(INDEX_HTML);
+
+  const filePath = path.join(DIST_DIR, urlPath.startsWith('/') ? urlPath.slice(1) : urlPath);
+  const dirPath = path.dirname(filePath);
+
+  // Security check - prevent directory traversal
+  if (!dirPath.startsWith(DIST_DIR)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+
+  // Try to serve the exact file
+  fs.stat(filePath, (err, stats) => {
+    if (!err && stats.isFile()) {
+      // File exists - serve it
+      const mimeType = getMimeType(filePath);
+      const content = fs.readFileSync(filePath);
+      res.writeHead(200, { 'Content-Type': mimeType });
+      res.end(content);
+      return;
+    }
+
+    // File not found - serve index.html for SPA routing
+    const indexPath = path.join(DIST_DIR, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      const content = fs.readFileSync(indexPath);
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(content);
+    } else {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Server Error: index.html not found');
+    }
+  });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).send('Not Found');
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('✅ SERVER READY');
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('✅ SERVER ONLINE AND READY');
   console.log(`🌍 https://biovault-app.onrender.com`);
-  console.log(`🏥 Health: /health`);
   console.log('');
+});
+
+server.on('error', (err) => {
+  console.error('❌ Server Error:', err.message);
+  process.exit(1);
 });
