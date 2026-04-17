@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, Request, Query, Body
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
+from pathlib import Path
 from ..db.database import get_admin_db
 import uuid
 
@@ -31,6 +33,59 @@ class ShareUpdateRequest(BaseModel):
 class PasswordVerifyRequest(BaseModel):
     share_id: str
     password: str
+
+# ============================================================================
+# SERVE REACT APP FOR SHARE PAGES
+# ============================================================================
+
+@router.get("/{share_id}")
+async def serve_share_page_react(share_id: str):
+    """
+    Serve React app for share links when accessing /share/{share_id} directly.
+    React Router will handle the route on the client side.
+    """
+    # Try to find and serve dist/index.html
+    dist_paths = [
+        Path(__file__).parent.parent / "dist" / "index.html",  # backend/dist
+        Path(__file__).parent.parent.parent / "dist" / "index.html",  # ../dist
+    ]
+    
+    for dist_path in dist_paths:
+        if dist_path.exists():
+            try:
+                return FileResponse(path=str(dist_path), media_type="text/html")
+            except Exception as e:
+                print(f"Error serving {dist_path}: {e}")
+                continue
+    
+    # Fallback: Show loading screen
+    return HTMLResponse(
+        content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiVault Share</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { max-width: 500px; background: white; border-radius: 12px; padding: 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { color: #1a202c; margin-bottom: 16px; }
+        p { color: #4a5568; margin-bottom: 12px; line-height: 1.6; }
+        .spinner { display: inline-block; width: 40px; height: 40px; margin: 20px auto; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏳ Loading Shared Content...</h1>
+        <div class="spinner"></div>
+        <p>Please wait while we fetch your encrypted image</p>
+    </div>
+</body>
+</html>""",
+        status_code=200
+    )
 
 # ============================================================================
 # CREATE SHARE LINK
