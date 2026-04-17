@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -60,6 +62,52 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ── Share Page - Serve React app for /share routes ────────────────────────────
+
+@app.get("/share/{share_id}")
+async def serve_share_page(share_id: str):
+    """
+    Serve the React app for share links.
+    React router will handle the /share/:token route on the client side.
+    """
+    from pathlib import Path
+    import os
+    
+    # Try to serve dist/index.html
+    dist_path = Path(__file__).parent.parent / "dist" / "index.html"
+    
+    if dist_path.exists():
+        with open(dist_path, 'r') as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content)
+    
+    # Fallback: Serve a minimal HTML page
+    return HTMLResponse(content=f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiVault - Share View</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); text-align: center; }}
+        h1 {{ color: #333; margin-bottom: 20px; }}
+        p {{ color: #666; line-height: 1.6; }}
+        .loading {{ color: #999; animation: pulse 1.5s ease-in-out infinite; }}
+        @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.5; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BiVault</h1>
+        <p class="loading">Loading shared content...</p>
+        <p><small>Share ID: {share_id}</small></p>
+    </div>
+</body>
+</html>""")
+
 
 
 # ── Adapter endpoints for frontend biometric auth ────────────────────────────
