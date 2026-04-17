@@ -163,7 +163,7 @@ async def create_share(data: ShareCreateRequest):
 @router.get("/public/{share_id}")
 async def get_share_public(share_id: str):
     """
-    Get share details by share ID (public endpoint).
+    Get share details AND encrypted image data by share ID (public endpoint).
     Used by anyone with the share link.
     Requires correct password if password-protected.
     """
@@ -196,6 +196,20 @@ async def get_share_public(share_id: str):
             if share.get("downloads_used", 0) >= share["download_limit"]:
                 raise HTTPException(status_code=410, detail="Download limit exceeded")
         
+        # Fetch the actual vault image data if vault_image_id is provided
+        image_data = None
+        if share.get("vault_image_id"):
+            try:
+                image_response = db.table("vault_images") \
+                    .select("*") \
+                    .eq("id", share["vault_image_id"]) \
+                    .execute()
+                
+                if image_response.data:
+                    image_data = image_response.data[0]
+            except Exception as e:
+                print(f"⚠️ Could not fetch vault image: {e}")
+        
         # Update access count and last accessed time
         db.table("share_configs") \
             .update({
@@ -205,7 +219,7 @@ async def get_share_public(share_id: str):
             .eq("share_id", share_id) \
             .execute()
         
-        # Return share details (hide password)
+        # Return share details + image data
         return {
             "ok": True,
             "share_id": share_id,
@@ -216,7 +230,8 @@ async def get_share_public(share_id: str):
             "created_by": share.get("created_by"),
             "download_limit": share.get("download_limit"),
             "downloads_used": share.get("downloads_used", 0),
-            "access_count": share.get("access_count", 0)
+            "access_count": share.get("access_count", 0),
+            "image_data": image_data  # ← Add encrypted image data
         }
     
     except HTTPException:
