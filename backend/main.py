@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 
+# Setup frontend assets before anything else
+try:
+    from .setup_frontend import setup_frontend_assets
+    setup_frontend_assets()
+except Exception as e:
+    print(f"Warning: Could not setup frontend assets: {e}")
+
 # Load .env from the backend directory
 env_path = Path(__file__).parent / ".env"
 load_dotenv(env_path)
@@ -50,10 +57,17 @@ app.include_router(certificates.router, prefix="/certificates")
 app.include_router(sharing.router, prefix="/share")
 
 # Mount static files for React app assets (CSS, JS, images, etc.)
-dist_path = Path(__file__).parent / "dist"
-if dist_path.exists():
-    app.mount("/assets", StaticFiles(directory=str(dist_path / "assets")), name="assets")
-    app.mount("/images", StaticFiles(directory=str(dist_path / "images")), name="images") if (dist_path / "images").exists() else None
+# Try both locations: backend/dist (after copy) and parent/dist (in development)
+dist_paths = [
+    Path(__file__).parent / "dist",  # backend/dist (on Render  after build)
+    Path(__file__).parent.parent / "dist",  # ../dist (in development)
+]
+
+for dist_path in dist_paths:
+    if dist_path.exists() and (dist_path / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(dist_path / "assets")), name="assets")
+        print(f"✅ Mounted static assets from: {dist_path}")
+        break
 
 
 @app.get("/")
@@ -80,16 +94,21 @@ async def serve_share_page(share_id: str):
     """
     from pathlib import Path
     
-    # Try to serve dist/index.html from backend/dist directory
-    dist_path = Path(__file__).parent / "dist" / "index.html"
+    # Try both locations: backend/dist and parent/dist
+    dist_paths = [
+        Path(__file__).parent / "dist" / "index.html",  # backend/dist
+        Path(__file__).parent.parent / "dist" / "index.html",  # parent/dist (dev)
+    ]
     
-    if dist_path.exists():
-        try:
-            with open(dist_path, 'r', encoding='utf-8') as f:
-                html_content = f.read()
-            return HTMLResponse(content=html_content, media_type="text/html")
-        except Exception as e:
-            print(f"Error reading dist/index.html: {e}")
+    for dist_path in dist_paths:
+        if dist_path.exists():
+            try:
+                with open(dist_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                return HTMLResponse(content=html_content, media_type="text/html")
+            except Exception as e:
+                print(f"Error reading {dist_path}: {e}")
+                continue
     
     # Fallback: Return error with debugging info  
     return HTMLResponse(
