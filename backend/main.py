@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -47,6 +48,76 @@ app.include_router(compare.router, prefix="/compare")
 app.include_router(admin.router,   prefix="/admin")
 app.include_router(certificates.router, prefix="/certificates")
 app.include_router(sharing.router, prefix="/share")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FRONTEND - Serve React app for share pages
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Try to mount static assets from dist folder
+dist_paths = [
+    Path(__file__).parent / "dist" / "assets",  # backend/dist/assets
+    Path(__file__).parent.parent / "dist" / "assets",  # ../dist/assets (dev)
+]
+
+for assets_path in dist_paths:
+    if assets_path.exists():
+        try:
+            app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+            print(f"✅ Mounted static assets from: {assets_path}")
+            break
+        except Exception as e:
+            print(f"⚠️ Could not mount assets from {assets_path}: {e}")
+
+
+@app.get("/share/{share_id}")
+async def serve_share_page(share_id: str):
+    """
+    Serve React app for share links.
+    React Router will handle the /share/:token route on the client side.
+    """
+    dist_paths = [
+        Path(__file__).parent / "dist" / "index.html",  # backend/dist/index.html
+        Path(__file__).parent.parent / "dist" / "index.html",  # ../dist/index.html (dev)
+    ]
+    
+    for dist_path in dist_paths:
+        if dist_path.exists():
+            try:
+                return FileResponse(path=str(dist_path), media_type="text/html")
+            except Exception as e:
+                print(f"Error serving {dist_path}: {e}")
+                continue
+    
+    # If no dist found, return helpful error
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiVault Share</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { max-width: 500px; background: white; border-radius: 12px; padding: 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { color: #1a202c; margin-bottom: 16px; }
+        p { color: #4a5568; margin-bottom: 12px; line-height: 1.6; }
+        .spinner { display: inline-block; width: 40px; height: 40px; margin: 20px auto; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Loading Shared Content...</h1>
+        <div class="spinner"></div>
+        <p>Please wait while we fetch your image</p>
+    </div>
+</body>
+</html>""",
+        status_code=200
+    )
 
 
 @app.get("/")

@@ -20,7 +20,7 @@ class ShareCreateRequest(BaseModel):
     download_limit: Optional[int] = None
     password: Optional[str] = None
     include_cert: bool = False
-    base_url: str = "https://biovault-app.onrender.com"
+    base_url: str = "https://biovault-backend-d13a.onrender.com"
 
 class ShareUpdateRequest(BaseModel):
     user_id: str
@@ -60,8 +60,8 @@ async def create_share(data: ShareCreateRequest):
         # Generate unique share ID
         share_id = f"share_{int(datetime.now().timestamp() * 1000)}_{uuid.uuid4().hex[:8]}"
         
-        # Build share link using provided base URL
-        base_url = data.base_url or "https://biovault-app.onrender.com"
+        # Build share link using provided base URL or default to backend
+        base_url = data.base_url or "https://biovault-backend-d13a.onrender.com"
         share_link = f"{base_url}/share/{share_id}"
         
         # Prepare share config
