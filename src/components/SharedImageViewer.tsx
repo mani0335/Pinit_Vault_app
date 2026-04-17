@@ -230,6 +230,52 @@ export const SharedImageViewer: React.FC = () => {
             </div>
           </div>
 
+          {/* Image Display */}
+          {shareData.cloudinary_url && shareData.image_data && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mb-6"
+            >
+              <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-600">
+                <img
+                  src={shareData.cloudinary_url}
+                  alt={shareData.image_data.file_name || 'Shared image'}
+                  className="w-full h-auto object-cover max-h-96"
+                  onError={(e) => {
+                    console.error('❌ Image failed to load:', shareData.cloudinary_url);
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              
+              {/* Image Metadata */}
+              {shareData.image_data && (
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600">
+                    <p className="text-slate-500 text-xs uppercase tracking-wide mb-1">📸 File Name</p>
+                    <p className="text-slate-200 text-sm font-medium truncate">{shareData.image_data.file_name || 'Unknown'}</p>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600">
+                    <p className="text-slate-500 text-xs uppercase tracking-wide mb-1">📦 File Size</p>
+                    <p className="text-slate-200 text-sm font-medium">{shareData.image_data.file_size || 'Unknown'}</p>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600">
+                    <p className="text-slate-500 text-xs uppercase tracking-wide mb-1">🎯 Resolution</p>
+                    <p className="text-slate-200 text-sm font-medium">{shareData.image_data.resolution || 'Unknown'}</p>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 border border-slate-600">
+                    <p className="text-slate-500 text-xs uppercase tracking-wide mb-1">⏰ Captured</p>
+                    <p className="text-slate-200 text-sm font-medium">
+                      {shareData.image_data.capture_timestamp ? new Date(shareData.image_data.capture_timestamp).toLocaleDateString() : 'Unknown'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {/* Features */}
           {shareData.include_cert && (
             <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-3 mb-6">
@@ -247,7 +293,7 @@ export const SharedImageViewer: React.FC = () => {
             className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold py-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
           >
             <Download className="w-5 h-5" />
-            Access Shared Content
+            Download Image
           </motion.button>
         </motion.div>
 
