@@ -1,17 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from pathlib import Path
 import os
-
-# Setup frontend assets before anything else
-try:
-    from .setup_frontend import setup_frontend_assets
-    setup_frontend_assets()
-except Exception as e:
-    print(f"Warning: Could not setup frontend assets: {e}")
 
 # Load .env from the backend directory
 env_path = Path(__file__).parent / ".env"
@@ -56,19 +48,6 @@ app.include_router(admin.router,   prefix="/admin")
 app.include_router(certificates.router, prefix="/certificates")
 app.include_router(sharing.router, prefix="/share")
 
-# Mount static files for React app assets (CSS, JS, images, etc.)
-# Try both locations: backend/dist (after copy) and parent/dist (in development)
-dist_paths = [
-    Path(__file__).parent / "dist",  # backend/dist (on Render  after build)
-    Path(__file__).parent.parent / "dist",  # ../dist (in development)
-]
-
-for dist_path in dist_paths:
-    if dist_path.exists() and (dist_path / "assets").exists():
-        app.mount("/assets", StaticFiles(directory=str(dist_path / "assets")), name="assets")
-        print(f"✅ Mounted static assets from: {dist_path}")
-        break
-
 
 @app.get("/")
 def root():
@@ -82,66 +61,6 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-# ── Share Page - Serve React app for /share routes ────────────────────────────
-
-@app.get("/share/{share_id}")
-async def serve_share_page(share_id: str):
-    """
-    Serve the React app for share links.
-    React router will handle the /share/:token route on the client side.
-    """
-    from pathlib import Path
-    
-    # Try both locations: backend/dist and parent/dist
-    dist_paths = [
-        Path(__file__).parent / "dist" / "index.html",  # backend/dist
-        Path(__file__).parent.parent / "dist" / "index.html",  # parent/dist (dev)
-    ]
-    
-    for dist_path in dist_paths:
-        if dist_path.exists():
-            try:
-                with open(dist_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                return HTMLResponse(content=html_content, media_type="text/html")
-            except Exception as e:
-                print(f"Error reading {dist_path}: {e}")
-                continue
-    
-    # Fallback: Return error with debugging info  
-    return HTMLResponse(
-        content=f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BiVault Share - Error</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }}
-        .container {{ max-width: 500px; background: white; border-radius: 12px; padding: 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }}
-        h1 {{ color: #1a202c; margin-bottom: 16px; font-size: 24px; }}
-        p {{ color: #4a5568; margin-bottom: 12px; line-height: 1.6; }}
-        .error {{ background: #fed7d7; color: #742a2a; padding: 12px; border-radius: 8px; margin-top: 20px; font-size: 13px; font-family: monospace; }}
-        .share-id {{ background: #edf2f7; padding: 12px; border-radius: 8px; margin-top: 20px; font-family: monospace; word-break: break-all; color: #2d3748; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>⚠️ Build Not Found</h1>
-        <p>The React app build files are missing. This is a temporary deployment issue.</p>
-        <div class="error">dist/index.html not found at server initialization</div>
-        <div class="share-id">Share ID: <strong>{share_id}</strong></div>
-        <p style="margin-top: 24px; color: #718096; font-size: 13px;">Please try again in a few moments.</p>
-    </div>
-</body>
-</html>""",
-        status_code=503,
-        media_type="text/html"
-    )
-
 
 
 # ── Adapter endpoints for frontend biometric auth ────────────────────────────
