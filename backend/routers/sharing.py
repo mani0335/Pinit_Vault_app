@@ -196,8 +196,9 @@ async def get_share_public(share_id: str):
             if share.get("downloads_used", 0) >= share["download_limit"]:
                 raise HTTPException(status_code=410, detail="Download limit exceeded")
         
-        # Fetch the actual vault image data if vault_image_id is provided
+        # Fetch the actual vault image metadata if vault_image_id is provided
         image_data = None
+        cloudinary_url = None
         if share.get("vault_image_id"):
             try:
                 image_response = db.table("vault_images") \
@@ -206,7 +207,15 @@ async def get_share_public(share_id: str):
                     .execute()
                 
                 if image_response.data:
-                    image_data = image_response.data[0]
+                    image_record = image_response.data[0]
+                    image_data = image_record
+                    
+                    # Build Cloudinary URL from asset_id
+                    if image_record.get("asset_id"):
+                        import os
+                        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "dkbqx8lcy")
+                        folder = os.getenv("CLOUDINARY_FOLDER", "pinit-thumbnails")
+                        cloudinary_url = f"https://res.cloudinary.com/{cloud_name}/image/upload/{folder}/{image_record['asset_id']}"
             except Exception as e:
                 print(f"⚠️ Could not fetch vault image: {e}")
         
@@ -231,7 +240,8 @@ async def get_share_public(share_id: str):
             "download_limit": share.get("download_limit"),
             "downloads_used": share.get("downloads_used", 0),
             "access_count": share.get("access_count", 0),
-            "image_data": image_data  # ← Add encrypted image data
+            "image_data": image_data,  # ← Full vault image record with metadata
+            "cloudinary_url": cloudinary_url  # ← Constructed Cloudinary URL for direct access
         }
     
     except HTTPException:
