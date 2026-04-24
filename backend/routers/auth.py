@@ -93,6 +93,8 @@ async def biometric_register(data: BiometricRegister, request: Request):
         existing = db.table("biometric_users").select("id").eq("user_id", data.userId).execute()
         if existing.data:
             raise HTTPException(status_code=400, detail="User ID already registered")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
         # Table might not exist yet, that's OK
         print(f"Info: biometric_users table check: {str(e)}")
@@ -143,6 +145,9 @@ async def biometric_register(data: BiometricRegister, request: Request):
         raise he
     except Exception as e:
         print(f"Biometric registration error: {str(e)}")
+        error_str = str(e).lower()
+        if 'duplicate key' in error_str or 'already exists' in error_str:
+            raise HTTPException(status_code=400, detail="User ID already registered")
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
