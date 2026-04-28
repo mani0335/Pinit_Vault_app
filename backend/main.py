@@ -230,6 +230,7 @@ async def api_user_check(data: dict):
             "reason": "User registered",
             "fingerprintRegistered": has_fingerprint,
             "faceRegistered": has_face,
+            "faceEmbedding": biometric_user.get("face_embedding"),
             "userId": user_id,
             "isActive": biometric_user.get("is_active", True)
         }
