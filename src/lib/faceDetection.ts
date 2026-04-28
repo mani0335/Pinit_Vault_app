@@ -2,22 +2,70 @@ import * as tf from "@tensorflow/tfjs";
 import * as blazeface from "@tensorflow-models/blazeface";
 
 let model: blazeface.BlazeFaceModel | null = null;
+let modelLoadingPromise: Promise<blazeface.BlazeFaceModel> | null = null;
 
 /**
- * Load the BlazeFace model for face detection
+ * Load the BlazeFace model for face detection with proper error handling
  */
 export async function loadFaceDetectionModel(): Promise<blazeface.BlazeFaceModel> {
-  if (!model) {
+  if (model) {
+    return model;
+  }
+  
+  if (modelLoadingPromise) {
+    return modelLoadingPromise;
+  }
+
+  modelLoadingPromise = (async () => {
     try {
-      await tf.ready();
-      model = await blazeface.load();
-      console.log('✅ Face detection model loaded');
+      console.log(' Initializing TensorFlow.js...');
+      
+      // Add timeout to prevent hanging
+      const initTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('TensorFlow.js initialization timeout')), 10000);
+      });
+      
+      await Promise.race([tf.ready(), initTimeout]);
+      console.log(' TensorFlow.js ready, loading BlazeFace model...');
+      
+      // Set backend to CPU for better compatibility
+      await tf.setBackend('cpu');
+      console.log(' TensorFlow.js backend set to CPU');
+      
+      // Add timeout for model loading
+      const modelTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('BlazeFace model loading timeout')), 15000);
+      });
+      
+      model = await Promise.race([blazeface.load(), modelTimeout]) as blazeface.BlazeFaceModel;
+      console.log(' Face detection model loaded successfully');
+      return model;
     } catch (error) {
       console.error("Failed to load face detection model:", error);
-      throw new Error("Face detection model failed to load");
+      
+      // Clean up on error
+      model = null;
+      modelLoadingPromise = null;
+      
+      // Provide more specific error message
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      
+      // Check for constructor errors (Y3, X3, etc.)
+      if (errorMsg.includes('Y3') || errorMsg.includes('X3') || errorMsg.includes('constructor')) {
+        console.error('🚨 Constructor Error Detected:', errorMsg);
+        throw new Error(`TensorFlow.js constructor error: ${errorMsg}. Please restart the app.`);
+      }
+      
+      // Check for memory issues
+      if (errorMsg.includes('memory') || errorMsg.includes('out of memory')) {
+        throw new Error(`Memory error: ${errorMsg}. Please close other apps and try again.`);
+      }
+      
+      throw new Error(`Face detection model failed: ${errorMsg}`);
     }
-  }
-  return model;
+  })();
+
+  return modelLoadingPromise;
 }
 
 /**
@@ -139,7 +187,7 @@ export function isFaceSuitableForRegistration(result: FaceDetectionResult): bool
   
   const face = result.landmarks[0];
   // Check that major landmarks are detected (eyes, nose, mouth)
-  if (!face.landmarks || face.landmarks.length < 6) {
+  if (!face.landmarks || Array.isArray(face.landmarks) && face.landmarks.length < 6) {
     return false;
   }
   
@@ -168,9 +216,17 @@ export function getFaceQualityScore(result: FaceDetectionResult): { score: numbe
  * Clean up TensorFlow memory
  */
 export async function disposeModels(): Promise<void> {
-  if (model) {
-    model.dispose();
+  try {
+    if (model) {
+      // BlazeFaceModel may not have dispose method, handle gracefully
+      if ('dispose' in model && typeof model.dispose === 'function') {
+        model.dispose();
+      }
+      model = null;
+    }
+    tf.disposeVariables();
+  } catch (error) {
+    console.warn('Error disposing models:', error);
     model = null;
   }
-  tf.disposeVariables();
 }

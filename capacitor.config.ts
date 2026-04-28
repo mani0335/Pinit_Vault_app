@@ -8,6 +8,10 @@ const config: CapacitorConfig = {
     cleartext: true,
   },
   plugins: {
+    // Capacitor Biometric: Native fingerprint/face authentication
+    Biometric: {
+      enabled: true,
+    },
     SplashScreen: {
       launchShowDuration: 0,
       autoHide: true,

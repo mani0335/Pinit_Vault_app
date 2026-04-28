@@ -7,7 +7,6 @@ import {
   Download,
   Share2,
   Calendar,
-  FileSize,
   Grid3x3,
   List,
   Search,
@@ -95,15 +94,46 @@ export const VaultManager: React.FC<VaultManagerProps> = ({ userId = 'user', onB
     loadVaultItems();
   };
 
-  const handleDownload = (item: VaultItem) => {
-    if (item.imagePreview) {
-      const link = document.createElement('a');
-      link.href = item.imagePreview;
-      link.download = item.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      logActivity(userId, 'download', item.fileName, item.assetId, 'Downloaded from vault', 'success');
+  const handleDownload = async (item: VaultItem) => {
+    try {
+      // Check if it's a document (scanned or uploaded)
+      const isDocument = item.type === 'document' || item.fileName?.includes('.');
+      
+      if (isDocument || item.id) {
+        // Download from backend endpoint
+        const url = `/vault/documents/${item.id}/download?user_id=${userId}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`Download failed: ${response.statusText}`);
+        }
+        
+        // Get the file blob
+        const blob = await response.blob();
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = item.fileName;
+        document.body.appendChild(link);
+        link.click();
+        URL.revokeObjectURL(link.href);
+        document.body.removeChild(link);
+        
+        logActivity(userId, 'download', item.fileName, item.assetId, 'Downloaded from vault', 'success');
+      } else if (item.imagePreview) {
+        // Fallback for images with preview
+        const link = document.createElement('a');
+        link.href = item.imagePreview;
+        link.download = item.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        logActivity(userId, 'download', item.fileName, item.assetId, 'Downloaded from vault', 'success');
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      alert(`Failed to download: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 

@@ -3,7 +3,8 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Component, ReactNode } from "react";
+import { BiometricInitializer } from "@/components/BiometricInitializer";
+import { Component, ReactNode, useState } from "react";
 import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
 import BiometricOptions from "./pages/BiometricOptions.tsx";
@@ -11,6 +12,14 @@ import Register from "./pages/Register.tsx";
 import TempAccessFace from "./pages/TempAccessFace.tsx";
 import TempAccess from "./pages/TempAccess.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
+import DocumentHub from "./pages/DocumentHub.tsx";
+import ProfileAdvanced from "./pages/ProfileAdvanced.tsx";
+import ProfileModern from "./pages/ProfileModern.tsx";
+import UploadPage from "./pages/UploadPage.tsx";
+import ScanDocumentFlow from "./pages/ScanDocumentFlow.tsx";
+import ReviewPage from "./pages/ReviewPage.tsx";
+import UploadFromDevice from "./pages/UploadFromDevice.tsx";
+import VaultPage from "./pages/VaultPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import ProtectedRoute from "./components/ProtectedRoute.tsx";
 import { SharedImageViewer } from "./components/SharedImageViewer.tsx";
@@ -173,12 +182,87 @@ class ErrorBoundary extends Component<
 
 const queryClient = new QueryClient();
 
+// Document Upload Flow Component
+function DocumentUploadFlow() {
+  const [currentStep, setCurrentStep] = useState<
+    "upload" | "scan" | "review" | "upload-device"
+  >("upload");
+  const [scannedPages, setScannedPages] = useState<string[]>([]);
+
+  const handleStartScan = () => {
+    setCurrentStep("scan");
+  };
+
+  const handleStartUpload = () => {
+    setCurrentStep("upload-device");
+  };
+
+  const handleScanSuccess = (pages: string[]) => {
+    setScannedPages(pages);
+    setCurrentStep("review");
+  };
+
+  const handleReviewSuccess = () => {
+    // Navigate back to dashboard or vault
+    window.location.hash = "/dashboard";
+  };
+
+  const handleUploadSuccess = () => {
+    // Navigate to vault
+    window.location.hash = "/vault";
+  };
+
+  const handleBack = () => {
+    if (currentStep === "scan" || currentStep === "upload-device") {
+      setCurrentStep("upload");
+    } else if (currentStep === "review") {
+      setCurrentStep("scan");
+      setScannedPages([]);
+    } else {
+      setCurrentStep("upload");
+      setScannedPages([]);
+    }
+  };
+
+  return (
+    <>
+      {currentStep === "upload" && (
+        <UploadPage
+          onSelectScan={handleStartScan}
+          onSelectUpload={handleStartUpload}
+          onBack={() => (window.location.hash = "/dashboard")}
+        />
+      )}
+      {currentStep === "scan" && (
+        <ScanDocumentFlow
+          onSuccess={handleScanSuccess}
+          onBack={handleBack}
+        />
+      )}
+      {currentStep === "review" && (
+        <ReviewPage
+          pages={scannedPages}
+          onBack={handleBack}
+          onSuccess={handleReviewSuccess}
+        />
+      )}
+      {currentStep === "upload-device" && (
+        <UploadFromDevice
+          onBack={handleBack}
+          onSuccess={handleUploadSuccess}
+        />
+      )}
+    </>
+  );
+}
+
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <BiometricInitializer />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
@@ -193,6 +277,38 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/documents"
+              element={
+                <ProtectedRoute>
+                  <DocumentHub />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/upload"
+              element={
+                <ProtectedRoute>
+                  <DocumentUploadFlow />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/vault"
+              element={
+                <ProtectedRoute>
+                  <VaultPage onBack={() => (window.location.hash = "/dashboard")} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <ProfileModern />
                 </ProtectedRoute>
               }
             />

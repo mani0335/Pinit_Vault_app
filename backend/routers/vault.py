@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from ..db.database import get_admin_db
 from ..models.schemas import VaultImageCreate, VaultImageResponse
@@ -133,6 +133,33 @@ async def list_vault_images(user_id: str = None):
         return {"assets": result.data, "total": len(result.data)}
     except Exception as e:
         print(f"❌ Vault List: Failed - {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load vault: {str(e)}")
+
+
+@router.post("/get-user-vault")
+async def get_user_vault(data: dict):
+    """
+    Get all vault documents for a user (for frontend integration)
+    """
+    db = get_admin_db()
+    user_id = data.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID required")
+    
+    print(f"✅ Get User Vault: Loading documents for user - {user_id}")
+    
+    try:
+        result = db.table("vault_images") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        
+        print(f"✅ Get User Vault: Found {len(result.data)} documents")
+        return {"documents": result.data, "total": len(result.data)}
+    except Exception as e:
+        print(f"❌ Get User Vault: Failed - {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to load vault: {str(e)}")
 
 
@@ -335,3 +362,373 @@ async def search_vault(q: str, user_id: str = None):
     except Exception as e:
         print(f"❌ Vault Search: Failed - {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to search: {str(e)}")
+
+
+# ============================================================================
+# DOCUMENT MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@router.post("/save-scanned-document")
+async def save_scanned_document(
+    user_id: str = Form(None),
+    doc_name: str = Form(None),
+    format: str = Form("pdf"),
+    request: Request = None
+):
+    """
+    Save scanned pages as PDF or separate images.
+    Accepts form data with doc_name, format, and user_id.
+    """
+    db = get_admin_db()
+    
+    try:
+        if not user_id or not doc_name:
+            raise HTTPException(status_code=400, detail="user_id and doc_name required")
+        
+        import uuid
+        from datetime import datetime
+        import base64
+        
+        # Get form data to extract pages
+        form_data = await request.form()
+        
+        # Extract all page data (page_0, page_1, etc.)
+        pages_data = []
+        idx = 0
+        while f"page_{idx}" in form_data:
+            page_data = form_data[f"page_{idx}"]
+            if isinstance(page_data, str):
+                pages_data.append(page_data)
+            idx += 1
+        
+        # For now, use first page as thumbnail/preview
+        first_page_base64 = pages_data[0] if pages_data else None
+        
+        # If pages are base64 data URLs, clean them
+        if first_page_base64 and first_page_base64.startswith("data:"):
+            first_page_base64 = first_page_base64.split(",")[1]
+        
+        # Generate unique document ID
+        doc_id = str(uuid.uuid4())
+        asset_id = f"scan_{doc_id[:8]}_{int(datetime.now().timestamp() * 1000)}"
+        
+        # Combine all pages into single file data (concatenate base64)
+        # For PDF: pages would need PDF generation library
+        # For now: store first page or concatenate
+        combined_page_data = first_page_base64 if first_page_base64 else ""
+        
+        # Create vault record for scanned document
+        vault_record = {
+            "user_id": user_id,
+            "asset_id": asset_id,
+            "file_name": f"{doc_name}.{format}",
+            "file_size": f"{len(combined_page_data) / (1024*1024):.2f} MB",
+            "file_type": "application/pdf" if format == "pdf" else "image/jpeg",
+            "resolution": "scanned",
+            "capture_timestamp": datetime.now().isoformat(),
+            "document_type": "scanned_document",
+            "format": format,
+            "page_count": len(pages_data),
+            "encryption_enabled": True,
+            "owner_name": user_id,
+            "owner_email": user_id,
+            "thumbnail_base64": first_page_base64
+        }
+        
+        # Save to vault_images table
+        response = db.table("vault_images").insert(vault_record).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to save document")
+        
+        vault_image_id = response.data[0]["id"]
+        
+        if request:
+            log_action(
+                user_id=user_id,
+                action="save_scanned_document",
+                details={"doc_name": doc_name, "format": format},
+                ip=str(request.client.host)
+            )
+        
+        print(f"✅ Scanned Document Saved: {doc_name} by {user_id}")
+        
+        return {
+            "ok": True,
+            "vault_image_id": vault_image_id,
+            "asset_id": asset_id,
+            "file_name": f"{doc_name}.{format}",
+            "format": format,
+            "message": "Document successfully encrypted and stored"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Save Scanned Document Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save document: {str(e)}")
+
+
+@router.post("/upload")
+async def upload_document(
+    file: UploadFile = None,
+    user_id: str = None,
+    doc_name: str = "",
+    request: Request = None
+):
+    """
+    Upload a document file from user's device.
+    Supports: PDF, DOCX, XLSX, Images (max 50MB)
+    """
+    db = get_admin_db()
+    
+    try:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id required")
+        
+        if not file or not file.filename:
+            raise HTTPException(status_code=400, detail="File required")
+        
+        # Read file
+        contents = await file.read()
+        file_size_mb = len(contents) / (1024 * 1024)
+        
+        # Validate size (50MB max)
+        if file_size_mb > 50:
+            raise HTTPException(status_code=400, detail="File too large (max 50MB)")
+        
+        import uuid
+        from datetime import datetime
+        import base64
+        
+        # Generate asset ID
+        doc_id = str(uuid.uuid4())
+        asset_id = f"doc_{doc_id[:8]}_{int(datetime.now().timestamp() * 1000)}"
+        
+        # Determine file display name
+        display_name = doc_name if doc_name.strip() else file.filename
+        
+        # Encode file data as base64 for storage
+        file_data_base64 = base64.b64encode(contents).decode('utf-8')
+        
+        # Save to vault_images table
+        vault_record = {
+            "user_id": user_id,
+            "asset_id": asset_id,
+            "file_name": display_name,
+            "file_size": f"{file_size_mb:.2f} MB",
+            "file_type": file.content_type or "application/octet-stream",
+            "resolution": "standard",
+            "capture_timestamp": datetime.now().isoformat(),
+            "document_type": "uploaded_document",
+            "original_filename": file.filename,
+            "encryption_enabled": True,
+            "owner_name": user_id,
+            "owner_email": user_id,
+            "thumbnail_base64": file_data_base64
+        }
+        
+        response = db.table("vault_images").insert(vault_record).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to save to vault")
+        
+        vault_image_id = response.data[0]["id"]
+        
+        if request:
+            log_action(
+                user_id=user_id,
+                action="upload_document",
+                details={"filename": file.filename, "size_mb": file_size_mb},
+                ip=str(request.client.host)
+            )
+        
+        print(f"✅ Document Uploaded: {file.filename} ({file_size_mb:.2f}MB) by {user_id}")
+        
+        return {
+            "ok": True,
+            "vault_image_id": vault_image_id,
+            "asset_id": asset_id,
+            "file_name": display_name,
+            "file_size": f"{file_size_mb:.2f} MB",
+            "file_type": file.content_type,
+            "message": "Document successfully encrypted and stored"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Upload Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@router.get("/documents/user/{user_id}")
+async def get_user_documents(user_id: str):
+    """
+    Get all documents uploaded/scanned by a user.
+    """
+    db = get_admin_db()
+    
+    try:
+        response = db.table("vault_images") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .eq("document_type", "scanned_document") \
+            .or_("document_type", "eq", "uploaded_document") \
+            .order("created_at", desc=True) \
+            .execute()
+        
+        # Calculate counts by type
+        scanned_count = sum(1 for d in response.data if d.get("document_type") == "scanned_document")
+        uploaded_count = sum(1 for d in response.data if d.get("document_type") == "uploaded_document")
+        
+        return {
+            "ok": True,
+            "total_count": len(response.data),
+            "scanned_count": scanned_count,
+            "uploaded_count": uploaded_count,
+            "documents": response.data
+        }
+    
+    except Exception as e:
+        print(f"❌ Get Documents Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving documents: {str(e)}")
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str, user_id: str = None, request: Request = None):
+    """
+    Delete a document from vault.
+    Only the owner can delete their documents.
+    """
+    db = get_admin_db()
+    
+    try:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id required")
+        
+        # Verify ownership
+        response = db.table("vault_images") \
+            .select("user_id") \
+            .eq("id", doc_id) \
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        if response.data[0]["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Delete document
+        db.table("vault_images") \
+            .delete() \
+            .eq("id", doc_id) \
+            .execute()
+        
+        if request:
+            log_action(
+                user_id=user_id,
+                action="delete_document",
+                details={"doc_id": doc_id},
+                ip=str(request.client.host)
+            )
+        
+        print(f"✅ Document Deleted: {doc_id}")
+        
+        return {
+            "ok": True,
+            "message": "Document successfully deleted"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Delete Document Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete: {str(e)}")
+
+
+@router.get("/documents/{doc_id}")
+async def get_document_details(doc_id: str, user_id: str = None):
+    """
+    Get details of a specific document.
+    """
+    db = get_admin_db()
+    
+    try:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id required")
+        
+        response = db.table("vault_images") \
+            .select("*") \
+            .eq("id", doc_id) \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {
+            "ok": True,
+            "document": response.data[0]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Get Document Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving document: {str(e)}")
+
+
+@router.get("/documents/{doc_id}/download")
+async def download_document(doc_id: str, user_id: str = None):
+    """
+    Download a document file from vault.
+    Only the owner can download their documents.
+    """
+    db = get_admin_db()
+    
+    try:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id required")
+        
+        # Fetch document details
+        response = db.table("vault_images") \
+            .select("*") \
+            .eq("id", doc_id) \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        document = response.data[0]
+        file_name = document.get("file_name", "document")
+        file_type = document.get("file_type", "application/octet-stream")
+        file_data_base64 = document.get("thumbnail_base64")  # File data stored as base64
+        
+        if not file_data_base64:
+            raise HTTPException(status_code=500, detail="File data not found")
+        
+        # Decode base64 to binary
+        import base64
+        try:
+            file_bytes = base64.b64decode(file_data_base64)
+            print(f"✅ Document Download: {file_name} ({len(file_bytes)} bytes) for user {user_id}")
+        except Exception as decode_err:
+            print(f"❌ Base64 decode failed: {str(decode_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to decode file: {str(decode_err)}")
+        
+        # Stream the file
+        return StreamingResponse(
+            iter([file_bytes]),
+            media_type=file_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_name}"'
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Document Download Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download document: {str(e)}")

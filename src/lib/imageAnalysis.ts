@@ -27,16 +27,30 @@ export async function analyzeImage(base64Data: string): Promise<ImageAnalysisRes
   try {
     console.log("🔍 Analyzing image...");
 
-    // Get image dimensions
-    const dimensions = await getImageDimensions(base64Data);
-    console.log(`📏 Image dimensions: ${dimensions.width}x${dimensions.height}`);
+    // Get image dimensions with error handling
+    let dimensions: { width: number; height: number } = { width: 1080, height: 1920 }; // Default dimensions
+    try {
+      dimensions = await getImageDimensions(base64Data);
+      console.log(`📏 Image dimensions: ${dimensions.width}x${dimensions.height}`);
+    } catch (dimError) {
+      console.warn("⚠️ Could not get image dimensions:", dimError);
+      // Keep default dimensions
+    }
 
     let imageType: ImageAnalysisResult["imageType"] = "unknown";
-    let confidence = 0;
+    let confidence = 50; // Default confidence
     const indicators: string[] = [];
 
-    // Check for AI-generated characteristics
-    const aiScore = await detectAIGenerated(base64Data);
+    // Check for AI-generated characteristics with error handling
+    let aiScore = 0;
+    try {
+      aiScore = await detectAIGenerated(base64Data);
+      console.log(`🤖 AI detection score: ${aiScore}`);
+    } catch (aiError) {
+      console.warn("⚠️ AI detection failed:", aiError);
+      indicators.push("AI detection unavailable");
+    }
+
     if (aiScore > 60) {
       imageType = "ai";
       confidence = aiScore;
@@ -88,10 +102,58 @@ export async function analyzeImage(base64Data: string): Promise<ImageAnalysisRes
     return result;
   } catch (error) {
     console.error("❌ Analysis error:", error);
+
+    // Handle constructor errors specifically (X3, Y3, etc.)
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const defaultDimensions = dimensions || { width: 1080, height: 1920 };
+
+    if (errorMsg.includes('X3') || errorMsg.includes('Y3') || errorMsg.includes('constructor')) {
+      console.error('🚨 Constructor Error Detected:', errorMsg);
+      return {
+        imageType: "unknown",
+        confidence: 0,
+        metadata: {
+          hasExif: false,
+          hasMetadata: false,
+          dimensions: `${defaultDimensions.width}x${defaultDimensions.height}`,
+          mimeType: "image/jpeg"
+        },
+        indicators: [`Constructor error: ${errorMsg}`],
+        ownership: {
+          isWatermarked: false,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+
+    // Handle memory errors
+    if (errorMsg.includes('memory') || errorMsg.includes('out of memory')) {
+      return {
+        imageType: "unknown",
+        confidence: 0,
+        metadata: {
+          hasExif: false,
+          hasMetadata: false,
+          dimensions: `${defaultDimensions.width}x${defaultDimensions.height}`,
+          mimeType: "image/jpeg"
+        },
+        indicators: ["Memory error - please close other apps"],
+        ownership: {
+          isWatermarked: false,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+
     return {
       imageType: "unknown",
       confidence: 0,
-      metadata: { hasExif: false, hasMetadata: false, mimeType: "unknown" },
+      metadata: { 
+        hasExif: false, 
+        hasMetadata: false, 
+        dimensions: `${defaultDimensions.width}x${defaultDimensions.height}`, 
+        mimeType: "image/jpeg" 
+      },
       indicators: ["Error during analysis"],
       ownership: { isWatermarked: false },
     };
@@ -130,9 +192,24 @@ async function detectAIGenerated(base64Data: string): Promise<number> {
   // - Texture analysis
 
   try {
+    console.log("🤖 Starting AI detection analysis...");
+    
     const img = new Image();
-    await new Promise((resolve) => {
-      img.onload = resolve;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("AI detection image loading timeout"));
+      }, 5000);
+      
+      img.onload = () => {
+        clearTimeout(timeout);
+        resolve(img);
+      };
+      
+      img.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error("Failed to load image for AI detection"));
+      };
+      
       img.src = base64Data.startsWith("data:") ? base64Data : `data:image/jpeg;base64,${base64Data}`;
     });
 
@@ -140,11 +217,16 @@ async function detectAIGenerated(base64Data: string): Promise<number> {
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return 0;
+    if (!ctx) {
+      console.warn("⚠️ Could not get canvas context for AI detection");
+      return 0;
+    }
 
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, 10, 10);
     const data = imageData.data;
+
+    console.log("🎨 Canvas analysis complete, checking AI characteristics...");
 
     // Check for AI characteristics:
     // 1. Unusual color distribution

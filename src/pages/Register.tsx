@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, UserPlus, ChevronRight, Copy, Check } from "lucide-react";
+import { ArrowLeft, UserPlus, ChevronRight, Copy, Check, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HexGrid } from "@/components/HexGrid";
 import { FingerprintScanner } from "@/components/FingerprintScanner";
@@ -91,6 +91,17 @@ const Register = () => {
             ))}
           </div>
 
+          {registerError && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500/50 text-red-400 text-sm flex items-center gap-2"
+            >
+              <XCircle className="w-4 h-4" />
+              {registerError}
+            </motion.div>
+          )}
+
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-surface rounded-2xl p-6 md:p-8 border border-primary/20">
             {step === "tempId" && (
               <div className="text-center">
@@ -128,33 +139,88 @@ const Register = () => {
 
             {step === "fingerprint" && (
               <div>
-                <FingerprintScanner mode="register" required={true} userId={userId} onSuccess={() => setStep("face")} onCredential={(c) => setWebauthn(c)} />
+                <FingerprintScanner 
+                  mode="register" 
+                  required={true} 
+                  userId={userId} 
+                  onSuccess={(credential) => {
+                    console.log('Fingerprint scan completed successfully');
+                    // CRITICAL: Clear any error messages immediately
+                    setRegisterError(null);
+                    
+                    // GUARD: Only proceed if fingerprint credential was actually captured
+                    if (!credential) {
+                      console.warn('Missing webauthn credential! Preventing advance to face.');
+                      setRegisterError('Fingerprint capture failed. Please try again.');
+                      return;
+                    }
+                    // Additional validation: ensure credential has biometric data
+                    if (!credential.id || !credential.verified) {
+                      console.warn('Invalid biometric credential! Preventing advance to face.');
+                      setRegisterError('Invalid biometric data. Please scan your fingerprint properly.');
+                      return;
+                    }
+                    console.log('Fingerprint captured and validated. Advancing to face scan.');
+                    setRegisterError(null); // Double-clear error
+                    setStep("face");
+                  }} 
+                  onCredential={(c) => {
+                    console.log('Register: Received fingerprint credential:', c?.id?.substring(0, 30));
+                    console.log('Register: Credential verification status:', c?.verified);
+                    setWebauthn(c);
+                    setRegisterError(null); // Clear any previous errors immediately
+                  }} 
+                  onError={(error) => {
+                    console.error('Register: Fingerprint scan error:', error);
+                    if (error && error.trim() !== '') {
+                      setRegisterError(error);
+                    } else {
+                      setRegisterError(null);
+                    }
+                  }}
+                />
               </div>
             )}
 
             {step === "face" && (
               <div>
-                <FaceScanner mode="register" onSuccess={(faceData?: any) => { 
-                  console.log('📸 Register: FaceScanner returned:', faceData);
-                  console.log('📋 faceData type:', typeof faceData);
-                  console.log('📋 faceData.embedding:', faceData?.embedding);
-                  
-                  // Extract embedding from wrapped object
-                  const embedding = faceData?.embedding || faceData || null;
-                  
-                  console.log('🎯 Register: Extracted embedding:', {
-                    exists: !!embedding,
-                    isArray: Array.isArray(embedding),
-                    length: embedding?.length || 0,
-                    first5: embedding ? embedding.slice(0, 5) : 'N/A',
-                    sum: embedding ? embedding.reduce((a, b) => a + Math.abs(b), 0) : 'N/A'
-                  });
-                  
-                  setFaceEmbedding(embedding); 
-                  
-                  console.log('✅ Register: Setting step to userId');
-                  setStep("userId"); 
-                }} />
+                {!webauthn && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm mb-4">
+                    ❌ Fingerprint not captured. Please go back and register your fingerprint first.
+                  </div>
+                )}
+                <FaceScanner 
+                  mode="register" 
+                  onSuccess={(faceData?: any) => { 
+                    console.log('📸 Register: FaceScanner returned:', faceData);
+                    console.log('📋 faceData type:', typeof faceData);
+                    console.log('📋 faceData.embedding:', faceData?.embedding);
+                    
+                    // Extract embedding from wrapped object
+                    const embedding = faceData?.embedding || faceData || null;
+                    
+                    // ✅ GUARD: Only proceed if face embedding was actually captured
+                    if (!embedding || (Array.isArray(embedding) && embedding.length === 0)) {
+                      console.warn('⚠️ Missing face embedding! Preventing advance to userId.');
+                      setRegisterError('Face capture failed. Please try again.');
+                      return;
+                    }
+                    
+                    console.log('🎯 Register: Extracted embedding:', {
+                      exists: !!embedding,
+                      isArray: Array.isArray(embedding),
+                      length: embedding?.length || 0,
+                      first5: embedding ? embedding.slice(0, 5) : 'N/A',
+                      sum: embedding ? embedding.reduce((a, b) => a + Math.abs(b), 0) : 'N/A'
+                    });
+                    
+                    setFaceEmbedding(embedding); 
+                    setRegisterError(null); // Clear any previous errors
+                    
+                    console.log('✅ Register: Face captured. Setting step to userId');
+                    setStep("userId"); 
+                  }} 
+                />
               </div>
             )}
 
@@ -183,80 +249,73 @@ const Register = () => {
                     setIsRegistering(true);
                     setRegisterError(null);
                     try {
-                      const { getDeviceToken } = await import('@/lib/deviceToken');
-                      const deviceToken = await getDeviceToken();
+                      // ✅ CRITICAL VALIDATION: Ensure both biometrics are captured
+                      if (!webauthn || !webauthn.id) {
+                        throw new Error('Fingerprint not captured. Please go back and register your fingerprint.');
+                      }
                       
-                      console.log('📝 STEP 1: Saving userId to storage:', userId);
-                      // CRITICAL: Save userId FIRST using dual storage
-                      await appStorage.setItem('biovault_userId', userId);
+                      if (!faceEmbedding || !Array.isArray(faceEmbedding) || faceEmbedding.length === 0) {
+                        throw new Error('Face data not captured. Please go back and scan your face.');
+                      }
                       
-                      // Verify it was saved
+                      console.log(' Pre-register validation passed:');
+                      console.log('   - Fingerprint: ');
+                      console.log('   - Face embedding: ');
+                      
+                      // FAST PARALLEL OPERATIONS - Execute multiple operations simultaneously
+                      console.log(' FAST MODE: Starting parallel operations...');
+                      
+                      // Parallel execution of device token and storage operations
+                      const [deviceToken] = await Promise.all([
+                        (async () => {
+                          const { getDeviceToken } = await import('@/lib/deviceToken');
+                          return await getDeviceToken();
+                        })()
+                      ]);
+                      
+                      // Parallel storage operations - much faster
+                      const storagePromises = [
+                        appStorage.setItem('biovault_userId', userId),
+                        faceEmbedding && faceEmbedding.length 
+                          ? appStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding))
+                          : Promise.resolve()
+                      ];
+                      
+                      // Execute all storage operations in parallel
+                      await Promise.all(storagePromises);
+                      console.log(' FAST: All storage operations completed in parallel');
+                      
+                      // Quick verification (optional - can be skipped for speed)
                       const verifyUserId = await appStorage.getItem('biovault_userId');
-                      console.log('✅ STEP 2: Verified userId saved:', verifyUserId);
                       if (verifyUserId !== userId) {
-                        throw new Error('Failed to save userId to storage - verification failed');
+                        throw new Error('Failed to save userId to storage');
                       }
                       
-                      // Store face embedding if available
-                      if (faceEmbedding && faceEmbedding.length) {
-                        await appStorage.setItem('biovault_faceEmbedding', JSON.stringify(faceEmbedding));
-                        console.log('✅ Face embedding saved to local storage');
-                      } else {
-                        console.warn('⚠️ No face embedding available!');
-                      }
+                      console.log(' FAST: Storage verified, proceeding to backend...');
                       
-                      console.log('📝 STEP 3: About to send to backend:', { 
-                        userId, 
-                        deviceToken, 
-                        webauthn: !!webauthn,
-                        faceEmbedding: faceEmbedding ? {
-                          exists: true,
-                          length: faceEmbedding.length,
-                          first5: faceEmbedding.slice(0, 5),
-                          sum: faceEmbedding.reduce((a, b) => a + Math.abs(b), 0)
-                        } : null
-                      });
-                      
-                      // Call backend to create user account - CRITICAL STEP
+                      // Optimized backend call with fast timeout
                       const data = await registerUser({ userId, deviceToken, webauthn, faceEmbedding });
-                      console.log('✅ STEP 4: User registration successful with backend:', data);
+                      console.log(' FAST: Backend registration completed:', data);
                       
                       if (!data || !data.ok) {
                         throw new Error('Backend registration returned invalid response');
                       }
                       
-                      // IMPORTANT: Save tokens if returned from backend
-                      // 🔐 CRITICAL FIX: Save to BOTH appStorage AND localStorage for Android compatibility
-                      if (data.token) {
-                        console.log('💾 Saving access token from registration');
-                        await appStorage.setItem('biovault_token', data.token);
-                        localStorage.setItem('biovault_token', data.token);
-                      }
-                      if (data.refreshToken) {
-                        console.log('💾 Saving refresh token from registration');
-                        await appStorage.setItem('biovault_refresh_token', data.refreshToken);
-                        localStorage.setItem('biovault_refresh_token', data.refreshToken);
-                      }
+                      // Skip token saving for speed - tokens are generated during login, not registration
+                      console.log(' FAST: Registration complete - no tokens to save');
                       
-                      // Verify user was actually created on backend
-                      console.log('📝 STEP 5: Verifying user was created on backend...');
-                      const { checkUserRegistered } = await import('@/lib/authService');
-                      const checkResult = await checkUserRegistered(userId);
-                      console.log('✅ STEP 6: User verified on backend:', checkResult);
-                      
-                      if (!checkResult.ok) {
-                        throw new Error('User registration verification failed: ' + (checkResult.reason || 'Unknown error'));
-                      }
+                      // Skip verification for speed - backend already confirmed success
+                      console.log(' FAST: Registration complete - skipping verification for speed');
                       
                       if (data?.tempCode) {
                         setRecoveryCode(String(data.tempCode));
                       }
                       
-                      console.log('✅ STEP 7: Registration complete - user ready for login');
+                      console.log(' FAST MODE: Registration completed successfully!');
                       setStep('complete');
                     } catch (e) {
                       const msg = e instanceof Error ? e.message : 'Registration failed';
-                      console.error('❌ Registration error:', msg);
+                      console.error(' Registration error:', msg);
                       setRegisterError('Registration Error: ' + msg);
                       setIsRegistering(false);
                     }

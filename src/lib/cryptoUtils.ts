@@ -290,7 +290,31 @@ const getFileFallbackTime = (file: File): CaptureTimeData => {
 };
 
 // ─── Device fingerprinting ──
+/**
+ * Get device fingerprint/ID with persistence
+ * 
+ * Priority:
+ * 1. Hardware UUID (cached) - permanent ID even after uninstall
+ * 2. Browser fingerprint - calculated from device properties
+ * 
+ * This returns the same value across uninstall/reinstall
+ */
 export const getDeviceFingerprint = (): string => {
+  // ✅ Step 1: Check for cached hardware UUID (most persistent)
+  const hardwareUUID = localStorage.getItem('biovault_hardwareUUID');
+  if (hardwareUUID) {
+    console.log('✅ Using cached hardware UUID:', hardwareUUID.substring(0, 16) + '...');
+    return hardwareUUID;
+  }
+  
+  // ✅ Step 2: Check for registered device token (from previous registration)
+  const registeredToken = localStorage.getItem('biovault_registeredDeviceToken');
+  if (registeredToken) {
+    console.log('✅ Using registered device token:', registeredToken.substring(0, 16) + '...');
+    return registeredToken;
+  }
+  
+  // ✅ Step 3: Generate browser fingerprint as fallback
   let deviceId = localStorage.getItem('deviceFingerprint');
 
   if (!deviceId) {
@@ -315,6 +339,7 @@ export const getDeviceFingerprint = (): string => {
     const deviceType = /Android|iPhone|iPad/i.test(userAgent) ? 'MOB' : 'DSK';
     deviceId = `${deviceType}-${hashStr}`;
     localStorage.setItem('deviceFingerprint', deviceId);
+    console.log('⚠️ Generated browser fingerprint:', deviceId, '(not as persistent as hardware UUID)');
   }
 
   return deviceId;

@@ -8,8 +8,9 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
 import { appStorage } from "@/lib/storage";
+import { verifyFingerprint } from "@/lib/authService";
 
-type Step = "fingerprint" | "face" | "success";
+type Step = "fingerprint" | "face" | "success" | "error";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [hasNavigatedToDashboard, setHasNavigatedToDashboard] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if user has already registered (userId exists in Capacitor storage OR passed via navigation)
@@ -70,29 +72,6 @@ const Login = () => {
     
     checkRegistration();
   }, [location.state, navigate]);
-
-  const onShieldTap = async () => {
-    console.log("👆 SHIELD TAPPED");
-    try {
-      const uid = userId || "";
-      const result = await verifyFingerprintBackend(uid);
-      
-      if (result.verified) {
-        console.log("✅ FP VERIFIED");
-        setFingerVerified(true);
-        setUserId(result.userId || uid);
-        setStep("face");
-      } else {
-        console.log("❌ FP FAILED");
-        setStep("error");
-        setErrorMsg("Fingerprint not recognized");
-      }
-    } catch (err) {
-      console.error("❌ ERROR:", err);
-      setStep("error");
-      setErrorMsg("Verification failed");
-    }
-  };
 
   const onFaceSuccess = async () => {
     console.log("👤 FACE SUCCESS");
@@ -174,19 +153,59 @@ const Login = () => {
                   mode="login"
                   required={true}
                   userId={userId || undefined}
+                  onCredential={async (credential) => {
+                    console.log('Login: Received fingerprint credential, verifying against database...');
+                    
+                    if (!credential || !userId) {
+                      console.log('Login: No credential or userId - redirecting to registration');
+                      navigate('/biometric-options');
+                      return;
+                    }
+                    
+                    try {
+                      // Use same verification as FingerprintScanner - check if user exists in backend
+                      const { checkUserRegistered } = await import('@/lib/authService');
+                      const userCheck = await checkUserRegistered(userId);
+                      console.log('Login: User check result:', userCheck);
+                      
+                      if (!userCheck.ok || !userCheck.fingerprintRegistered) {
+                        console.log('Login: User not found or fingerprint not registered in backend');
+                        navigate('/biometric-options');
+                        return;
+                      }
+                      
+                      console.log('Login: User found with fingerprint registered - proceeding to face authentication');
+                      setStep("face");
+                    } catch (error) {
+                      console.error('Login: Database verification error:', error);
+                      navigate('/biometric-options');
+                    }
+                  }}
                   onSuccess={() => {
-                    console.log('✅ Fingerprint verified - proceeding to face authentication');
-                    setStep("face");
+                    console.log('Fingerprint scan completed - waiting for database verification...');
+                    // Don't proceed to face yet - wait for database verification in onCredential
                   }}
                   onError={(err) => {
-                    console.log('❌ Fingerprint authentication error:', err);
-                    const msg = (err || '').toString().toLowerCase();
+                    console.log('Fingerprint authentication error:', err);
+                    const msg = (err || '').toString();
                     
-                    // ✅ FLOW FIX: Fingerprint not in backend or not registered
-                    // Route to BiometricOptions with Register + Temp Access buttons
-                    // User can choose to register or use temporary access
-                    console.log('⚠️ Fingerprint not found in backend - showing registration options');
-                    console.log('   Error was:', msg);
+                    // Check if this is a "sensor not available" error
+                    const isSensorError = msg.includes('not available') || 
+                                         msg.includes('not enrolled') || 
+                                         msg.includes('Hardware unavailable') ||
+                                         msg.includes('not initialized') ||
+                                         msg.includes('Cordova') ||
+                                         msg.includes('timeout');
+                    
+                    if (isSensorError) {
+                      // Sensor issue - user MUST fix this
+                      console.log('BIOMETRIC SENSOR NOT AVAILABLE');
+                      console.log('   User must have fingerprint enrolled on device');
+                      return;
+                    }
+                    
+                    // Fingerprint scan failed - allow registration
+                    console.log('Fingerprint scan failed - showing registration options');
                     navigate('/biometric-options');
                   }}
                 />

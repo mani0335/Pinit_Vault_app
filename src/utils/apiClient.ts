@@ -1,6 +1,6 @@
 // API Client for BioVault Backend
 // Use environment variable for API URL (default to latest Render backend)
-const BASE_URL = (import.meta.env.VITE_API_URL || 'https://biovault-backend-d1f3a.onrender.com').trim();
+const BASE_URL = (import.meta.env.VITE_API_URL || 'https://biovault-backend-d13a.onrender.com').trim();
 
 const getToken = () => {
   try {

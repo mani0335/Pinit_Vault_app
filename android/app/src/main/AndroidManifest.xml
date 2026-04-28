@@ -45,10 +45,14 @@
 
     <!-- Permissions -->
 
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <!-- ✅ CRITICAL: Biometric permission for API 28+ (required for fingerprint/face) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Alternative biometric permission for newer Android versions -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC_INTERNAL" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />

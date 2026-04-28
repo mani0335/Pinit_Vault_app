@@ -29,6 +29,7 @@ import {
   Trash2,
   Menu,
   X,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,7 +73,7 @@ interface HomePageProps {
   userId?: string;
   isRestricted?: boolean;
   vaultImages: any[];
-  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings" | "profile") => void;
 }
 
 function HomePage({ userId, isRestricted, vaultImages, setActivePage }: HomePageProps) {
@@ -213,7 +214,7 @@ function HomePage({ userId, isRestricted, vaultImages, setActivePage }: HomePage
 interface VaultPageProps {
   vaultImages: any[];
   loadingVault: boolean;
-  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings" | "profile") => void;
 }
 
 function VaultPage({ vaultImages, loadingVault, setActivePage }: VaultPageProps) {
@@ -271,7 +272,7 @@ function VaultPage({ vaultImages, loadingVault, setActivePage }: VaultPageProps)
 // AnalyzerPage component (moved outside)
 interface AnalyzerPageProps {
   userId?: string;
-  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings" | "profile") => void;
 }
 
 function AnalyzerPage({ userId, setActivePage }: AnalyzerPageProps) {
@@ -287,7 +288,7 @@ function AnalyzerPage({ userId, setActivePage }: AnalyzerPageProps) {
 interface SettingsPageProps {
   userId?: string;
   isRestricted?: boolean;
-  setActivePage: (page: "home" | "vault" | "analyzer" | "settings") => void;
+  setActivePage: (page: "home" | "vault" | "analyzer" | "settings" | "profile") => void;
   handleLogout: () => void;
 }
 
@@ -367,7 +368,7 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [activePage, setActivePage] = useState<"home" | "vault" | "analyzer" | "settings">("home");
+  const [activePage, setActivePage] = useState<"home" | "vault" | "analyzer" | "settings" | "profile">("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Data states
@@ -687,22 +688,28 @@ export function PINITDashboard({ userId, isRestricted }: PINITDashboardProps) {
             handleLogout={handleLogout} 
           />
         )}
+        {pageToRender === "profile" && (
+          <Profile />
+        )}
+        {pageToRender === "profile" && (
+          <Profile />
+        )}
       </div>
 
       {/* Bottom Navigation */}
       <motion.div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-6 pb-6 px-6 border-t border-slate-800/50">
         <motion.div className="max-w-4xl mx-auto grid grid-cols-4 gap-2">
           {[
-            { icon: Home, label: "Home", page: "home" },
-            { icon: Image, label: "Vault", page: "vault" },
-            { icon: FileSearch, label: "Analyzer", page: "analyzer" },
-            { icon: Settings, label: "Settings", page: "settings" },
+            { icon: Home, label: "Home", page: "home" as const },
+            { icon: Image, label: "Vault", page: "vault" as const },
+            { icon: FileSearch, label: "Analyzer", page: "analyzer" as const },
+            { icon: User, label: "Profile", page: "profile" as const },
           ].map((item, idx) => (
             <motion.button
               key={idx}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setActivePage(item.page as any)}
+              onClick={() => setActivePage(item.page)}
               className={`p-3 rounded-xl transition-all duration-200 ${
                 activePage === item.page
                   ? "bg-gradient-to-br from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/30"

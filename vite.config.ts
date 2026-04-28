@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@capacitor/biometric": path.resolve(__dirname, "./src/lib/biometric-mock.ts"),
     },
   },
 }));
