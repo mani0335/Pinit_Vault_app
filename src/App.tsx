@@ -23,6 +23,9 @@ import VaultPage from "./pages/VaultPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import ProtectedRoute from "./components/ProtectedRoute.tsx";
 import { SharedImageViewer } from "./components/SharedImageViewer.tsx";
+import PortfolioHome from "./pages/portfolio/PortfolioHome.tsx";
+import ChoosePortfolioType from "./pages/portfolio/ChoosePortfolioType.tsx";
+import PortfolioBuilder from "./pages/portfolio/PortfolioBuilder.tsx";
 
 // ===================== GLOBAL ERROR BOUNDARY =====================
 // This catches ANY error in the entire app and displays it on screen
@@ -309,6 +312,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ProfileModern />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio"
+              element={
+                <ProtectedRoute>
+                  <PortfolioHome />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio/choose-type"
+              element={
+                <ProtectedRoute>
+                  <ChoosePortfolioType />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio/builder/:type"
+              element={
+                <ProtectedRoute>
+                  <PortfolioBuilder />
                 </ProtectedRoute>
               }
             />

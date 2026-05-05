@@ -9,6 +9,14 @@
  * - Confidence scoring: Returns how many regions contained valid metadata
  */
 
+export interface WatermarkMetadata {
+  userId: string;
+  timestamp: string;
+  fileSize: string;
+  fileType: string;
+  confidence: number; // 0-5: how many regions had valid metadata
+}
+
 export interface EmbeddedMetadata {
   userId: string;
   timestamp: string;
@@ -58,6 +66,12 @@ export async function embedUserIdInImage(
   fileType?: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      reject(new Error('Image constructor not available'));
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {
@@ -168,6 +182,20 @@ export async function extractUserIdFromImage(
   imageBase64: string
 ): Promise<WatermarkMetadata | null> {
   return new Promise((resolve) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      console.warn('Image constructor not available for watermark extraction');
+      resolve(null);
+      return;
+    }
+    
+    // Check if document and canvas are available
+    if (typeof document === 'undefined' || typeof document.createElement === 'undefined') {
+      console.warn('Document or canvas not available for watermark extraction');
+      resolve(null);
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {

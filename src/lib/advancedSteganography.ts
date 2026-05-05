@@ -116,6 +116,12 @@ export async function embedAdvancedWatermark(
   gpsData?: { latitude: number; longitude: number; source: string }
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      reject(new Error('Image constructor not available'));
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {
@@ -193,6 +199,13 @@ export async function extractAdvancedWatermark(
   imageBase64: string
 ): Promise<AdvancedWatermarkMetadata | null> {
   return new Promise((resolve) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      console.warn('Image constructor not available for advanced watermark extraction');
+      resolve(null);
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {

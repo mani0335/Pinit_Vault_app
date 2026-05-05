@@ -88,7 +88,7 @@ export async function analyzeImage(base64Data: string): Promise<ImageAnalysisRes
       metadata: {
         hasExif: Math.random() > 0.5, // Simulated EXIF check
         hasMetadata: true,
-        dimensions,
+        dimensions: `${dimensions.width}x${dimensions.height}`,
         mimeType: "image/jpeg",
       },
       indicators,
@@ -105,7 +105,7 @@ export async function analyzeImage(base64Data: string): Promise<ImageAnalysisRes
 
     // Handle constructor errors specifically (X3, Y3, etc.)
     const errorMsg = error instanceof Error ? error.message : String(error);
-    const defaultDimensions = dimensions || { width: 1080, height: 1920 };
+    const defaultDimensions = { width: 1080, height: 1920 };
 
     if (errorMsg.includes('X3') || errorMsg.includes('Y3') || errorMsg.includes('constructor')) {
       console.error('🚨 Constructor Error Detected:', errorMsg);
@@ -194,6 +194,12 @@ async function detectAIGenerated(base64Data: string): Promise<number> {
   try {
     console.log("🤖 Starting AI detection analysis...");
     
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      console.warn("⚠️ Image constructor not available");
+      return 0;
+    }
+    
     const img = new Image();
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -213,6 +219,12 @@ async function detectAIGenerated(base64Data: string): Promise<number> {
       img.src = base64Data.startsWith("data:") ? base64Data : `data:image/jpeg;base64,${base64Data}`;
     });
 
+    // Check if document and canvas are available
+    if (typeof document === 'undefined' || typeof document.createElement === 'undefined') {
+      console.warn("⚠️ Document or canvas not available for AI detection");
+      return 0;
+    }
+    
     const canvas = document.createElement("canvas");
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;

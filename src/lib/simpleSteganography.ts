@@ -19,10 +19,21 @@ export async function embedSimpleWatermark(
   timestamp: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      reject(new Error('Image constructor not available'));
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {
         console.log('🎨 Starting simple watermark embedding...');
+        
+        // Check if document and canvas are available
+        if (typeof document === 'undefined' || typeof document.createElement === 'undefined') {
+          throw new Error('Document or createElement not available');
+        }
         
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
@@ -91,10 +102,24 @@ export async function extractSimpleWatermark(
   imageBase64: string
 ): Promise<SimpleWatermarkMetadata | null> {
   return new Promise((resolve) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      console.warn('Image constructor not available for watermark extraction');
+      resolve(null);
+      return;
+    }
+    
     const img = new Image();
     img.onload = () => {
       try {
         console.log('🔍 Starting simple watermark extraction...');
+        
+        // Check if document and canvas are available
+        if (typeof document === 'undefined' || typeof document.createElement === 'undefined') {
+          console.warn('Document or createElement not available for watermark extraction');
+          resolve(null);
+          return;
+        }
         
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
@@ -138,7 +163,13 @@ export async function extractSimpleWatermark(
         }
 
         // Parse message
+        console.log('🔍 Extracted message:', message);
+        console.log('🔍 Message length:', message.length);
+        console.log('🔍 Message format check:', message.substring(0, 20) + '...');
+        
         const match = message.match(/^PINIT\|(.+?)\|(.+?)\|END$/);
+        console.log('🔍 Regex match result:', match);
+        
         if (match) {
           const result: SimpleWatermarkMetadata = {
             userId: match[1],
@@ -146,9 +177,13 @@ export async function extractSimpleWatermark(
             method: 'simple'
           };
           console.log('✅ Simple watermark extracted successfully');
+          console.log('✅ Extracted userId:', result.userId);
+          console.log('✅ Extracted timestamp:', result.timestamp);
           resolve(result);
         } else {
           console.warn('⚠️ No valid simple watermark found');
+          console.warn('⚠️ Expected format: PINIT|userId|timestamp|END');
+          console.warn('⚠️ Actual message:', message);
           resolve(null);
         }
       } catch (err) {
@@ -181,7 +216,7 @@ export function extractFallbackMetadata(imageBase64: string): SimpleWatermarkMet
       return {
         userId: metadata.userId,
         timestamp: metadata.timestamp,
-        method: 'fallback'
+        method: 'simple'
       };
     }
   } catch (err) {

@@ -8,6 +8,7 @@ interface VaultDocument {
   encryptedData: string;
   encryptedImage?: string;          // Store encrypted version with embedded metadata for preview
   cloudinaryUrl?: string;
+  pageCount?: number;              // Number of pages for documents
   metadata: {
     timestamp: number;
     original_name: string;
@@ -19,7 +20,37 @@ interface VaultDocument {
   createdAt: string;
 }
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+
+/**
+ * Calculate page count for documents (simplified approach)
+ */
+export async function calculatePageCount(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    if (file.type === 'application/pdf') {
+      // For PDF, estimate based on file size (rough approximation)
+      // This avoids external dependencies and provides reasonable estimates
+      const fileSizeKB = file.size / 1024;
+      let estimatedPages = 1;
+      
+      if (fileSizeKB < 100) {
+        estimatedPages = 1; // Small PDF ~1 page
+      } else if (fileSizeKB < 500) {
+        estimatedPages = Math.floor(fileSizeKB / 100); // Medium PDF ~100KB per page
+      } else if (fileSizeKB < 2000) {
+        estimatedPages = Math.floor(fileSizeKB / 200); // Large PDF ~200KB per page
+      } else {
+        estimatedPages = Math.floor(fileSizeKB / 300); // Very large PDF ~300KB per page
+      }
+      
+      console.log(`PDF page count estimated: ${estimatedPages} pages (size: ${fileSizeKB}KB)`);
+      resolve(Math.max(1, Math.min(estimatedPages, 100))); // Cap at 100 pages
+    } else {
+      // For non-PDF documents, default to 1 page
+      resolve(1);
+    }
+  });
+}
 
 /**
  * Get user-specific vault storage key
@@ -27,8 +58,8 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"
 const getVaultStorageKey = (userId: string): string => `pinit_vault_documents_${userId}`;
 
 /**
- * Load vault documents from localStorage (user-specific)
- * Validates that documents belong to the current user
+ * Load vault documents from backend API (user-specific)
+ * Falls back to localStorage if backend fails
  */
 export async function loadVaultDocuments(userId: string): Promise<VaultDocument[]> {
   if (!userId) {
@@ -36,6 +67,47 @@ export async function loadVaultDocuments(userId: string): Promise<VaultDocument[
     return [];
   }
 
+  try {
+    // Try loading from backend first
+    const token = localStorage.getItem("biovault_token");
+    const response = await fetch(`${BACKEND_URL}/vault/get-user-vault`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ user_id: userId })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        console.log(`✅ Loaded vault from backend for user: ${userId}`);
+        // Convert backend format to VaultDocument format
+        const documents = data.documents.map((doc: any) => ({
+          id: doc.asset_id || doc.id,
+          name: doc.file_name,
+          encryptedData: doc.image_base64 || doc.thumbnail_base64,
+          encryptedImage: doc.thumbnail_base64,
+          cloudinaryUrl: doc.image_url || doc.thumbnail_url,
+          metadata: {
+            timestamp: new Date(doc.capture_timestamp).getTime(),
+            original_name: doc.file_name,
+            size: doc.file_size,
+            checksum: doc.file_hash,
+            encrypted: true,
+            ownerId: doc.user_id
+          },
+          createdAt: doc.capture_timestamp
+        }));
+        return await validateDocumentsForUser(userId, documents);
+      }
+    }
+  } catch (e) {
+    console.log("Backend vault load failed, trying localStorage:", e);
+  }
+
+  // Fallback to localStorage
   const VAULT_STORAGE_KEY = getVaultStorageKey(userId);
 
   try {
@@ -44,7 +116,6 @@ export async function loadVaultDocuments(userId: string): Promise<VaultDocument[
     if (stored) {
       console.log(`✅ Loaded vault from appStorage for user: ${userId}`);
       const documents = JSON.parse(stored) as VaultDocument[];
-      // Validate documents belong to this user
       return await validateDocumentsForUser(userId, documents);
     }
   } catch (e) {
@@ -57,7 +128,6 @@ export async function loadVaultDocuments(userId: string): Promise<VaultDocument[
     if (stored) {
       console.log(`✅ Loaded vault from localStorage for user: ${userId}`);
       const documents = JSON.parse(stored) as VaultDocument[];
-      // Validate documents belong to this user
       return await validateDocumentsForUser(userId, documents);
     }
   } catch (e) {
@@ -68,7 +138,7 @@ export async function loadVaultDocuments(userId: string): Promise<VaultDocument[
 }
 
 /**
- * Save vault documents to both localStorage and appStorage (user-specific)
+ * Save vault documents to backend API and local storage (user-specific)
  */
 export async function saveVaultDocuments(
   userId: string,
@@ -82,7 +152,51 @@ export async function saveVaultDocuments(
   const VAULT_STORAGE_KEY = getVaultStorageKey(userId);
   const data = JSON.stringify(documents);
 
-  // Save to localStorage (browser)
+  // Save to backend API first
+  try {
+    const token = localStorage.getItem("biovault_token");
+    if (token) {
+      // Save each document to backend vault_images table
+      for (const doc of documents) {
+        try {
+          const response = await fetch(`${BACKEND_URL}/vault/save`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              asset_id: doc.id,
+              file_name: doc.name,
+              image_base64: doc.encryptedData,
+              thumbnail_base64: doc.encryptedData?.substring(0, 1000), // First 1000 chars as thumbnail
+              metadata: {
+                ...doc.metadata,
+                original_name: doc.name,
+                size: doc.metadata.size,
+                checksum: doc.metadata.checksum,
+                encrypted: doc.metadata.encrypted,
+                created_at: doc.createdAt
+              }
+            })
+          });
+
+          if (response.ok) {
+            console.log(`✅ Document saved to backend: ${doc.name}`);
+          } else {
+            console.warn(`⚠️ Failed to save ${doc.name} to backend:`, response.statusText);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Error saving ${doc.name} to backend:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("⚠️ Backend save failed, using local storage only:", error);
+  }
+
+  // Also save to localStorage as fallback
   try {
     localStorage.setItem(VAULT_STORAGE_KEY, data);
     console.log(`✅ Vault saved to localStorage for user: ${userId}`);

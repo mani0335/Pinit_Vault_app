@@ -78,15 +78,30 @@ async def register(data: UserRegister, request: Request):
 @router.post("/biometric-register")
 async def biometric_register(data: BiometricRegister, request: Request):
     """Register user with biometric data (fingerprint + face)"""
+    print(f"🔐 Biometric Register Request: {data}")
     db = get_admin_db()
     
     # Validate userId is not empty
     if not data.userId or not data.userId.strip():
+        print("❌ Missing userId")
         raise HTTPException(status_code=400, detail="Missing userId")
     
     # Validate deviceToken is not empty
     if not data.deviceToken or not data.deviceToken.strip():
+        print("❌ Missing deviceToken")
         raise HTTPException(status_code=400, detail="Missing deviceToken")
+    
+    # Validate webauthn data
+    if not data.webauthn:
+        print("❌ Missing webauthn data")
+        raise HTTPException(status_code=400, detail="Missing webauthn credentials")
+    
+    # Validate face embedding
+    if not data.faceEmbedding or len(data.faceEmbedding) == 0:
+        print("❌ Missing face embedding")
+        raise HTTPException(status_code=400, detail="Missing face embedding")
+    
+    print(f"✅ All validations passed for userId: {data.userId}")
     
     # Check if userId already registered
     try:

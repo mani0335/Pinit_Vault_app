@@ -9,6 +9,8 @@ import {
   Clock,
   FileText,
   AlertCircle,
+  Shield,
+  Badge,
 } from "lucide-react";
 import {
   getAllDocuments,
@@ -30,6 +32,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
   const [decryptedContent, setDecryptedContent] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [autoDeleteMessage, setAutoDeleteMessage] = useState<string>("");
+  const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
 
   // Load documents on mount
   useEffect(() => {
@@ -38,6 +41,31 @@ export default function VaultPage({ onBack }: VaultPageProps) {
     setDocuments(docs);
     console.log(`📦 Loaded ${docs.length} documents from vault`);
   }, []);
+
+  // Count digital identity documents
+  const digitalIdentityCount = documents.filter(doc => 
+    doc.fileName.toLowerCase().includes('aadhaar') ||
+    doc.fileName.toLowerCase().includes('pan') ||
+    doc.fileName.toLowerCase().includes('passport') ||
+    doc.fileName.toLowerCase().includes('license') ||
+    doc.fileName.toLowerCase().includes('voter') ||
+    doc.fileName.toLowerCase().includes('id')
+  ).length;
+
+  // Filter digital identity documents
+  const digitalIdentityDocuments = documents.filter(doc => 
+    doc.fileName.toLowerCase().includes('aadhaar') ||
+    doc.fileName.toLowerCase().includes('pan') ||
+    doc.fileName.toLowerCase().includes('passport') ||
+    doc.fileName.toLowerCase().includes('license') ||
+    doc.fileName.toLowerCase().includes('voter') ||
+    doc.fileName.toLowerCase().includes('id')
+  );
+
+  // Handle Digital Identity button click
+  const handleDigitalIdentitiesClick = () => {
+    setShowDigitalIdentities(!showDigitalIdentities);
+  };
 
   // Delete document
   const handleDeleteDocument = (doc: VaultDocument) => {
@@ -144,11 +172,77 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
           <h1 className="text-3xl font-bold text-white">🗄️ My Vault</h1>
 
-          <div className="text-right">
-            <p className="text-sm text-gray-400">Documents stored</p>
-            <p className="text-2xl font-bold text-cyan-400">{documents.length}</p>
+          <div className="flex gap-4">
+            <button
+              onClick={handleDigitalIdentitiesClick}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white hover:from-purple-700 hover:to-pink-700 transition"
+            >
+              <Shield className="w-5 h-5" />
+              <span>Digital Identities</span>
+              <Badge className="bg-white text-purple-600">{digitalIdentityCount}</Badge>
+            </button>
+            <div className="text-right">
+              <p className="text-sm text-gray-400">Documents stored</p>
+              <p className="text-2xl font-bold text-cyan-400">{documents.length}</p>
+            </div>
           </div>
         </motion.div>
+
+        {/* Digital Identity Documents List */}
+        {showDigitalIdentities && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-6 p-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl"
+          >
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Digital Identity Documents
+            </h3>
+            {digitalIdentityDocuments.length === 0 ? (
+              <p className="text-gray-400 text-sm">No digital identity documents found</p>
+            ) : (
+              <div className="space-y-2">
+                {digitalIdentityDocuments.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition cursor-pointer"
+                    onClick={() => handlePreviewDocument(doc)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5 text-purple-400" />
+                      <div>
+                        <p className="text-white font-medium">{doc.fileName}</p>
+                        <p className="text-gray-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePreviewDocument(doc);
+                        }}
+                        className="p-2 hover:bg-slate-600 rounded-lg transition"
+                      >
+                        <Eye className="w-4 h-4 text-cyan-400" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteDocument(doc);
+                        }}
+                        className="p-2 hover:bg-slate-600 rounded-lg transition"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* Auto-Delete Message */}
         {autoDeleteMessage && (

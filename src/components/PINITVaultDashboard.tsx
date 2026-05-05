@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import jsPDF from "jspdf";
 import {
@@ -14,11 +14,14 @@ import {
   getVaultMetadata,
   saveImageToGallery,
   syncVaultMetadata,
+  calculatePageCount,
 } from "@/lib/vaultService";
 import { ensurePINITVaultFolder, saveImageToPINITVault } from "@/lib/folderUtils";
 import { embedAdvancedWatermark, extractAdvancedWatermark, type AdvancedWatermarkMetadata } from "@/lib/advancedSteganography";
 import { embedSimpleWatermark, extractSimpleWatermark, extractFallbackMetadata, type SimpleWatermarkMetadata } from "@/lib/simpleSteganography";
 import { analyzeImage, formatAnalysisResult, type ImageAnalysisResult } from "@/lib/imageAnalysis";
+import { computePHashFromBase64, findDuplicates, type DuplicateDocument } from "@/lib/phash";
+import { supabase } from "@/integrations/supabase/client";
 import {
   User,
   FileText,
@@ -34,6 +37,7 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ArrowLeft,
   Search,
   Filter,
   Download,
@@ -83,12 +87,16 @@ import { VaultManager } from "@/components/VaultManager";
 import { ActivityLogger } from "@/components/ActivityLogger";
 import Profile from "@/pages/Profile";
 import { ImageAnalyzer } from "@/components/ImageAnalyzer";
+import type { Portfolio } from "@/types/Portfolio";
+import PortfolioHome from "@/pages/portfolio/PortfolioHome";
 
 interface VaultDocument {
   id: string;
   name: string;
   encryptedData: string;
   cloudinaryUrl?: string;
+  pageCount?: number;              // Number of pages for documents
+  pHash?: string;                 // Perceptual hash for duplicate detection
   metadata: {
     timestamp: number;
     original_name: string;
@@ -123,6 +131,272 @@ interface PINITDashboardProps {
 
 type PageType = "home" | "vault" | "portfolio" | "share" | "identity" | "encrypt-preview" | "verify-proof" | "crypto" | "vault-advanced" | "activity" | "profile" | "analysis" | "upload-document" | "scan-document" | "review-scan";
 
+// ============= SHARE ACCESS PAGE =============
+function ShareAccessPage() {
+  const [shareData, setShareData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [shareId, setShareId] = useState<string>("");
+
+  useEffect(() => {
+    // Extract share ID from URL
+    const pathParts = window.location.pathname.split('/');
+    const extractedShareId = pathParts[pathParts.length - 1];
+    setShareId(extractedShareId);
+
+    if (extractedShareId) {
+      loadShareData(extractedShareId);
+    } else {
+      setError("Invalid share link");
+      setIsLoading(false);
+    }
+  }, []);
+
+  const loadShareData = async (shareId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log('🔍 Loading share data for ID:', shareId);
+
+      // Try Supabase first for cross-device sharing
+      console.log('🗄️ Trying Supabase...');
+      const { data: supabaseData, error: supabaseError } = await supabase
+        .from('shared_links')
+        .select('*')
+        .eq('share_id', shareId)
+        .single();
+
+      if (supabaseError) {
+        console.error('❌ Supabase error:', supabaseError);
+        throw new Error(supabaseError.message);
+      }
+
+      if (supabaseData) {
+        console.log('✅ Loading from Supabase:', supabaseData);
+        
+        // Check if share has expired
+        if (supabaseData.expiry_date && new Date(supabaseData.expiry_date) < new Date()) {
+          throw new Error("Share link has expired");
+        }
+
+        // Check download limit
+        if (supabaseData.download_limit && supabaseData.downloads_used >= supabaseData.download_limit) {
+          throw new Error("Download limit reached for this share");
+        }
+
+        setShareData({
+          shareId: supabaseData.share_id,
+          imageData: supabaseData.image_data,
+          fileName: supabaseData.file_name,
+          sharedBy: supabaseData.shared_by,
+          createdAt: supabaseData.created_at,
+          downloadsUsed: supabaseData.downloads_used,
+          downloadLimit: supabaseData.download_limit,
+          passwordProtected: supabaseData.password_protected,
+          sharePassword: supabaseData.share_password,
+          includeCertificate: supabaseData.include_certificate
+        });
+        setPasswordRequired(supabaseData.password_protected);
+        setAccessGranted(!supabaseData.password_protected);
+        setIsLoading(false);
+        return;
+      }
+
+      throw new Error("Share link not found");
+
+    } catch (err) {
+      console.error("❌ Error loading share:", err);
+      console.error("❌ Error details:", (err as any)?.message || String(err));
+      setError("Share link not found, expired, or invalid. Please check the link or try again.");
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (shareData && shareData.sharePassword === password) {
+      setAccessGranted(true);
+      setPasswordRequired(false);
+    } else {
+      setError("Incorrect password");
+    }
+  };
+
+  const handleDownload = async () => {
+    if (shareData && shareData.imageData) {
+      try {
+        // Create download link
+        const link = document.createElement('a');
+        link.href = shareData.imageData;
+        link.download = shareData.fileName || `shared-image-${shareId}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Update download count in Supabase
+        const { error: updateError } = await supabase
+          .from('shared_links')
+          .update({ downloads_used: (shareData.downloadsUsed || 0) + 1 })
+          .eq('share_id', shareId);
+
+        if (updateError) {
+          console.error('❌ Error updating download count:', updateError);
+        } else {
+          // Update local state
+          const updatedShareData = {
+            ...shareData,
+            downloadsUsed: (shareData.downloadsUsed || 0) + 1
+          };
+          setShareData(updatedShareData);
+        }
+
+        alert("✅ Image downloaded successfully!");
+      } catch (err) {
+        console.error("Download error:", err);
+        alert("❌ Failed to download image");
+      }
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-3 border-purple-500 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-white">Loading shared content...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center">
+        <div className="bg-red-900/20 border border-red-500/30 backdrop-blur-xl rounded-2xl p-8 max-w-md mx-4">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">❌</span>
+            </div>
+            <h2 className="text-2xl font-bold text-red-400 mb-2">Share Link Error</h2>
+            <p className="text-gray-300 mb-6">{error}</p>
+            <button
+              onClick={() => window.location.href = '/'}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition"
+            >
+              Go to PINIT Vault
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (passwordRequired && !accessGranted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center">
+        <div className="bg-slate-800/50 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-8 max-w-md mx-4 w-full">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🔒</span>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Password Protected</h2>
+            <p className="text-gray-300 mb-6">This share is protected with a password</p>
+            
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              className="w-full px-4 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-gray-400 mb-4"
+              onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+            />
+            
+            <button
+              onClick={handlePasswordSubmit}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition font-semibold"
+            >
+              Unlock Share
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-purple-900">
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-slate-800/50 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-8 max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-white mb-2">Shared Image</h1>
+            <p className="text-gray-300">Shared via PINIT Vault</p>
+          </div>
+
+          {/* Image Preview */}
+          <div className="mb-8">
+            {shareData?.imageData && (
+              <img
+                src={shareData.imageData}
+                alt="Shared image"
+                className="w-full max-h-96 object-contain rounded-lg mx-auto"
+              />
+            )}
+          </div>
+
+          {/* Share Info */}
+          <div className="bg-slate-700/30 rounded-lg p-6 mb-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Share Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-gray-400">File Name:</span>
+                <p className="text-white">{shareData?.fileName || 'Unknown'}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Shared By:</span>
+                <p className="text-white">{shareData?.sharedBy || 'PINIT User'}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Created:</span>
+                <p className="text-white">{shareData?.createdAt || 'Unknown'}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Downloads:</span>
+                <p className="text-white">{shareData?.downloadsUsed || 0} / {shareData?.downloadLimit || 'Unlimited'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button
+              onClick={handleDownload}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg transition font-semibold flex items-center justify-center gap-2"
+            >
+              <Download size={18} />
+              Download Image
+            </button>
+            
+            <button
+              onClick={() => window.location.href = '/'}
+              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-lg transition font-semibold"
+            >
+              Open PINIT Vault
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-8 text-center text-gray-400 text-sm">
+            <p>Shared securely with PINIT Vault • {shareData?.includeCertificate ? 'Certificate Included' : 'No Certificate'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINITDashboardProps) {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState<PageType>("home");
@@ -136,6 +410,183 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   const [userName, setUserName] = useState<string>("User");
   const [userId, setUserId] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  // Load profile info from backend on mount
+  useEffect(() => {
+    const loadProfileInfo = async () => {
+      if (!userId) return;
+      
+      console.log(`👤 Loading profile info for user: ${userId}`);
+      
+      try {
+        const token = localStorage.getItem("biovault_token");
+        const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+        
+        // Try to load from backend first
+        const response = await fetch(`${API_BASE}/profile/get-profile`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ userId: userId })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ Profile loaded from backend:', data);
+          
+          // Update state with backend data - match backend structure
+          if (data.profile && data.profile.personal) {
+            // Extract user name from personal category
+            if (data.profile.personal["User Name"]) {
+              const userName = data.profile.personal["User Name"].value;
+              setUserName(userName);
+              await appStorage.setItem("biovault_userName", userName);
+              localStorage.setItem("biovault_userName", userName);
+              console.log('✅ Loaded userName from backend:', userName);
+            }
+            
+            // Extract profile image from personal category
+            if (data.profile.personal["Profile Image"]) {
+              const profileImage = data.profile.personal["Profile Image"].value;
+              setProfileImage(profileImage);
+              await appStorage.setItem("biovault_profileImage", profileImage);
+              localStorage.setItem("biovault_profileImage", profileImage);
+              console.log('✅ Loaded profileImage from backend');
+            }
+          }
+        } else {
+          console.log('⚠️ Backend profile fetch failed, using local storage');
+        }
+      } catch (e) {
+        console.error("Error loading profile from backend:", e);
+      }
+
+      // Fallback to localStorage if backend fails
+      try {
+        const savedName = await appStorage.getItem("biovault_userName");
+        const savedImage = await appStorage.getItem("biovault_profileImage");
+        
+        if (savedName && !userName || userName === "User") {
+          setUserName(savedName);
+          console.log('📱 Loaded userName from storage:', savedName);
+        }
+        
+        if (savedImage && !profileImage) {
+          setProfileImage(savedImage);
+          console.log('📱 Loaded profileImage from storage');
+        }
+      } catch (e) {
+        console.error("Error loading profile info from storage:", e);
+      }
+    };
+    loadProfileInfo();
+  }, [userId]);
+
+  // Save profile info to storage and backend when changed
+  const handleSetUserName = async (name: string) => {
+    setUserName(name);
+    localStorage.setItem("biovault_userName", name);
+    appStorage.setItem("biovault_userName", name);
+    
+    // Save to backend
+    if (userId) {
+      try {
+        const token = localStorage.getItem("biovault_token");
+        const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+        
+        const response = await fetch(`${API_BASE}/profile/save-profile-item`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            category: "personal",
+            item_name: "User Name",
+            item_data: name
+          })
+        });
+        
+        if (response.ok) {
+          console.log('✅ Profile name saved to backend:', name);
+        } else {
+          console.warn('⚠️ Failed to save profile name to backend');
+        }
+      } catch (error) {
+        console.error('❌ Error saving profile name to backend:', error);
+      }
+    }
+  };
+
+  const handleSetProfileImage = async (image: string | null) => {
+    setProfileImage(image);
+    if (image) {
+      localStorage.setItem("biovault_profileImage", image);
+      appStorage.setItem("biovault_profileImage", image);
+
+      // Save to backend
+      if (userId) {
+        try {
+          const token = localStorage.getItem("biovault_token");
+          const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+          
+          const response = await fetch(`${API_BASE}/profile/save-profile-item`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              category: "personal",
+              item_name: "Profile Image",
+              item_data: image
+            })
+          });
+          
+          if (response.ok) {
+            console.log('✅ Profile image saved to backend');
+          } else {
+            console.warn('⚠️ Failed to save profile image to backend');
+          }
+        } catch (error) {
+          console.error('❌ Error saving profile image to backend:', error);
+        }
+      }
+    } else {
+      localStorage.removeItem("biovault_profileImage");
+      appStorage.removeItem("biovault_profileImage");
+    }
+  };
+
+  const handleDocumentUploaded = async (document: VaultDocument) => {
+    console.log('📤 handleDocumentUploaded called with document:', document.name);
+    console.log('📤 Current userId:', userId);
+    console.log('📤 Current vaultDocuments count:', vaultDocuments.length);
+
+    // Add to vault documents
+    const updated = [...vaultDocuments, document];
+    console.log('📤 Updated vaultDocuments count:', updated.length);
+    setVaultDocuments(updated);
+    console.log('📤 setVaultDocuments called');
+
+    // Save to vault service for persistence
+    if (userId) {
+      try {
+        console.log('💾 Attempting to save to vault service with userId:', userId);
+        await saveVaultDocuments(userId, updated);
+        console.log('✅ Document saved to vault service:', document.name);
+      } catch (error) {
+        console.error('❌ Failed to save document to vault service:', error);
+        alert('Failed to save document to vault. Please try again.');
+      }
+    } else {
+      console.error('❌ No userId available, document not persisted to vault service');
+      alert('Error: No user ID available. Please login again.');
+    }
+  };
+
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [verifyProofImage, setVerifyProofImage] = useState<string | null>(null);
@@ -186,20 +637,30 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
         return;
       }
 
+      console.log(`🏦 Initializing vault for user: ${userId}`);
+      
       try {
-        // Sync vault data between appStorage and localStorage
-        console.log("📊 Syncing vault data between storage types...");
-        const synced = await syncVaultData(userId);
-        if (synced) {
-          console.log(`✅ Vault data synchronized for user: ${userId}`);
-        }
-
-        // Load vault documents
+        // First, try to load from backend to get latest data
+        console.log("🔄 Loading vault documents from backend...");
         const docs = await loadVaultDocuments(userId);
-        setVaultDocuments(docs);
-        console.log(
-          `✅ Loaded ${docs.length} documents from vault for user: ${userId}`
-        );
+        
+        if (docs && docs.length > 0) {
+          console.log(`✅ Loaded ${docs.length} documents from backend vault for user: ${userId}`);
+          setVaultDocuments(docs);
+        } else {
+          console.log("📭 No documents found in backend, checking local storage...");
+          
+          // Fallback to local storage if backend is empty
+          const synced = await syncVaultData(userId);
+          if (synced) {
+            console.log(`✅ Vault data synchronized from local storage for user: ${userId}`);
+            const localDocs = await loadVaultDocuments(userId);
+            if (localDocs && localDocs.length > 0) {
+              setVaultDocuments(localDocs);
+              console.log(`📱 Loaded ${localDocs.length} documents from local storage`);
+            }
+          }
+        }
 
         // Log vault metadata
         const metadata = await getVaultMetadata(userId);
@@ -209,13 +670,28 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
         // Update persistence status
         setVaultPersistenceStatus({
-          isSynced: synced,
+          isSynced: metadata.documentCount > 0,
           lastSyncTime: metadata.lastSyncTime,
           documentCount: metadata.documentCount,
           storageType: metadata.storageType,
         });
+        
+        console.log(`🎯 Vault initialization complete for user: ${userId}`);
       } catch (error) {
-        console.error("Failed to initialize vault:", error);
+        console.error("❌ Failed to initialize vault:", error);
+        
+        // Try local storage fallback
+        try {
+          console.log("🔄 Attempting local storage fallback...");
+          const synced = await syncVaultData(userId);
+          const localDocs = await loadVaultDocuments(userId);
+          if (localDocs && localDocs.length > 0) {
+            setVaultDocuments(localDocs);
+            console.log(`📱 Fallback loaded ${localDocs.length} documents from local storage`);
+          }
+        } catch (fallbackError) {
+          console.error("❌ Local storage fallback also failed:", fallbackError);
+        }
       }
     };
 
@@ -261,21 +737,25 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
   const handleLogout = async () => {
     try {
-      // Clear vault data for current user
-      if (userId) {
-        await clearVaultForUser(userId);
-      }
+      console.log("🚪 Logging out - preserving vault and profile data in backend");
       
-      // Clear token storage
+      // DO NOT clear vault data - it should persist in backend
+      // Only clear authentication tokens
       await appStorage.removeItem("biovault_token");
       await appStorage.removeItem("biovault_refresh_token");
-      await appStorage.removeItem("biovault_userId");
+      
+      // Keep profile data in storage for next login
+      // Profile data should be loaded from backend on re-login
     } catch (e) {
       console.error("Error clearing appStorage:", e);
     }
+    
+    // Clear authentication tokens from localStorage
     localStorage.removeItem("biovault_token");
     localStorage.removeItem("biovault_refresh_token");
-    localStorage.removeItem("biovault_userId");
+    
+    // Keep userId and profile data in storage for next login
+    // This ensures data persistence across sessions
     navigate("/login", { replace: true });
   };
 
@@ -390,13 +870,13 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           }
         }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} quickActionCameraRef={quickActionCameraRef} quickActionFileRef={quickActionFileRef} onQuickActionImageSelected={handleQuickActionImageSelected} onVerifyProofImageSelected={handleVerifyProofImageSelected} navigate={navigate} />}
         {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} setCurrentPage={setCurrentPage} />}
-        {currentPage === "portfolio" && <PortfolioPage key="portfolio" />}
+        {currentPage === "portfolio" && <PortfolioHome key="portfolio" userId={userId} />}
         {currentPage === "share" && <SharePage key="share" shareConfigs={shareConfigs} setShareConfigs={setShareConfigs} shareHistory={shareHistory} setShareHistory={setShareHistory} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} shareExpiryDate={shareExpiryDate} setShareExpiryDate={setShareExpiryDate} shareExpiryTime={shareExpiryTime} setShareExpiryTime={setShareExpiryTime} shareDownloadLimit={shareDownloadLimit} setShareDownloadLimit={setShareDownloadLimit} sharePassword={sharePassword} setSharePassword={setSharePassword} includeCertificate={includeCertificate} setIncludeCertificate={setIncludeCertificate} generatedShareLink={generatedShareLink} setGeneratedShareLink={setGeneratedShareLink} generatedQRCode={generatedQRCode} setGeneratedQRCode={setGeneratedQRCode} shareStep={shareStep} setShareStep={setShareStep} userId={userId} vaultDocuments={vaultDocuments} />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
         {currentPage === "crypto" && <ImageCryptoFull key="crypto" userId={userId || undefined} />}
         {currentPage === "vault-advanced" && <VaultManager key="vault-advanced" userId={userId || undefined} />}
         {currentPage === "activity" && <ActivityLogger key="activity" userId={userId || undefined} />}
-        {currentPage === "profile" && <DigitalIdentityDashboard key="profile" onBack={() => setCurrentPage("home")} userName={userName} setUserName={setUserName} profileImage={profileImage} setProfileImage={setProfileImage} userId={userId} />}
+        {currentPage === "profile" && <DigitalIdentityDashboard key="profile" onBack={() => setCurrentPage("home")} userName={userName} setUserName={handleSetUserName} profileImage={profileImage} setProfileImage={handleSetProfileImage} userId={userId} onDocumentUploaded={handleDocumentUploaded} />}
         {currentPage === "upload-document" && (
           <DocumentUploadPage
             key="upload-document"
@@ -633,6 +1113,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             active={currentPage === "portfolio"}
             onClick={() => {
               try {
+                console.log('🚀 Dashboard: Portfolio button clicked, setting currentPage to portfolio');
                 setCurrentPage("portfolio");
               } catch (e) {
                 console.error("Error navigating to portfolio:", e);
@@ -775,7 +1256,7 @@ function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage
               gradient: "from-orange-600 to-red-600", 
               onClick: () => {
                 console.log("📄 Navigating to document upload...");
-                navigate("/upload");
+                setCurrentPage("upload-document");
               },
               subtext: "📄"
             },
@@ -867,9 +1348,29 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
   const [embeddedMetadata, setEmbeddedMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
+  const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
+
+  // Filter digital identity documents
+  const digitalIdentityDocuments = vaultDocs.filter(doc => {
+    const name = doc.name.toLowerCase();
+    console.log('🔍 Checking document:', doc.name);
+    const isDigitalIdentity =
+      name.includes('personal') ||
+      name.includes('academic') ||
+      name.includes('projects') ||
+      name.includes('internships') ||
+      name.includes('certifications') ||
+      name.includes('entrance') ||
+      name.includes('exams') ||
+      name.includes('docs');
+    console.log('  Is digital identity:', isDigitalIdentity);
+    return isDigitalIdentity;
+  });
 
   // Sync documents when prop changes
   useEffect(() => {
+    console.log('📦 VaultPage: Documents prop changed:', documents.length);
+    console.log('📦 VaultPage: Document names:', documents.map(d => d.name));
     setVaultDocs(documents);
   }, [documents]);
 
@@ -905,8 +1406,10 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
         return;
       }
       
-      // Get base64 data from multiple sources
-      let base64Data = doc.encryptedData;
+      // Get base64 data from multiple sources - prioritize encryptedImage (watermarked)
+      let base64Data = doc.encryptedImage || doc.encryptedData;
+      
+      console.log("🔍 Using image data:", base64Data === doc.encryptedImage ? "Watermarked (encryptedImage)" : "Original (encryptedData)");
       
       if (!base64Data && doc.cloudinaryUrl) {
         // Try to fetch from Cloudinary if local data not available
@@ -1294,6 +1797,73 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
         />
       </div>
 
+      {/* Digital Identity Button */}
+      <button
+        onClick={() => setShowDigitalIdentities(!showDigitalIdentities)}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white hover:from-purple-700 hover:to-pink-700 transition"
+      >
+        <Shield size={18} />
+        <span className="text-sm font-semibold">Digital Identities</span>
+        <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">{digitalIdentityDocuments.length}</span>
+      </button>
+
+      {/* Digital Identity Documents List */}
+      {showDigitalIdentities && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          className="mb-4 p-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl"
+        >
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            Digital Identity Documents
+          </h3>
+          {digitalIdentityDocuments.length === 0 ? (
+            <p className="text-gray-400 text-sm">No digital identity documents found</p>
+          ) : (
+            <div className="space-y-2">
+              {digitalIdentityDocuments.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition cursor-pointer"
+                  onClick={() => handleDocumentClick(doc)}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-purple-400" />
+                    <div>
+                      <p className="text-white font-medium">{doc.name}</p>
+                      <p className="text-gray-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDocumentClick(doc);
+                      }}
+                      className="p-2 hover:bg-slate-600 rounded-lg transition"
+                    >
+                      <Eye className="w-4 h-4 text-cyan-400" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDocToDelete(doc.id);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="p-2 hover:bg-slate-600 rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
+
       {/* Files List - Modern Cards */}
       <div className="space-y-3">
         {filteredDocs.length > 0 ? (
@@ -1679,60 +2249,29 @@ function EncryptPreviewPage({
       }
       
       setIsProcessing(true);
-      setError(null);
       
-      let embeddedImageBase64 = null;
-      let encryptionMethod = 'none';
+      // Declare variables outside try-catch
+      let embeddedImageBase64: string | null = null;
+      let encryptionMethod: string = 'simple';
       
-      // Try advanced steganography first (your code)
+      // Use simple steganography only for better performance
       try {
-        console.log('🔧 Attempting advanced steganography watermark...');
-        console.log('🔧 Calling embedAdvancedWatermark with:', {
+        console.log('🔧 Using simple steganography watermark...');
+        console.log('🔧 Calling embedSimpleWatermark with:', {
           imageLength: image.length,
           userId: userId.substring(0, 8) + '...',
           timestamp: new Date().toISOString()
         });
         
-        embeddedImageBase64 = await embedAdvancedWatermark(
-          image,
-          userId,
-          new Date().toISOString(),
-          undefined,
-          undefined,
-          undefined,
-          undefined
-        );
-        console.log('✅ Advanced steganography successful, result length:', embeddedImageBase64?.length || 0);
-        encryptionMethod = 'advanced';
-      } catch (embedErr) {
-        console.warn('⚠️ Advanced steganography failed, trying simple watermark:', embedErr);
-        const errorMsg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-        
-        // Check for constructor errors specifically
-        if (errorMsg.includes('Y3') || errorMsg.includes('X3') || errorMsg.includes('constructor')) {
-          console.error('🚨 Constructor Error Detected - Using fallback method');
-        }
-        
-        // Fallback to simple watermark embedding
-        try {
-          console.log('🔄 Using simple watermark fallback...');
-          embeddedImageBase64 = await embedSimpleWatermark(image, userId, new Date().toISOString());
-          console.log('✅ Simple watermark successful, result length:', embeddedImageBase64?.length || 0);
-          encryptionMethod = 'simple';
-        } catch (simpleErr) {
-          console.error('❌ Simple watermark also failed:', simpleErr);
-          // Final fallback - just return the original image with metadata in URL
-          console.log('🔄 Using metadata-in-URL fallback...');
-          const metadata = btoa(JSON.stringify({
-            userId: userId,
-            timestamp: new Date().toISOString(),
-            encrypted: true,
-            method: 'fallback'
-          }));
-          embeddedImageBase64 = image + '#metadata:' + metadata;
-          console.log('✅ Fallback method applied');
-          encryptionMethod = 'fallback';
-        }
+        embeddedImageBase64 = await embedSimpleWatermark(image, userId, new Date().toISOString());
+        console.log('✅ Simple watermark successful, result length:', embeddedImageBase64?.length || 0);
+        encryptionMethod = 'simple';
+      } catch (err) {
+        console.error('❌ Simple watermark failed:', err);
+        // Use original image if watermarking fails
+        embeddedImageBase64 = image;
+        encryptionMethod = 'none';
+        console.log('⚠️ Using original image without watermark');
       }
       
       if (!embeddedImageBase64) {
@@ -1929,48 +2468,6 @@ function EncryptPreviewPage({
   );
 }
 
-// ============= PORTFOLIO PAGE =============
-function PortfolioPage() {
-  const [portfolioName, setPortfolioName] = useState("");
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-6 space-y-4"
-    >
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Create Portfolio</h1>
-
-      <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
-        <div>
-          <label className="text-purple-300 text-sm font-semibold">Portfolio Name</label>
-          <input
-            type="text"
-            placeholder="e.g., Job Application"
-            value={portfolioName}
-            onChange={(e) => setPortfolioName(e.target.value)}
-            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all"
-          />
-        </div>
-
-        <div>
-          <label className="text-purple-300 text-sm font-semibold">Description</label>
-          <textarea
-            placeholder="Add details..."
-            rows={3}
-            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all resize-none"
-          />
-        </div>
-
-        <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all">
-          Create Portfolio
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
 // ============= SHARE PAGE =============
 function SharePage({ 
   shareConfigs, setShareConfigs, 
@@ -2090,6 +2587,32 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
+      // Save share data to Supabase for cross-device sharing
+      const shareData = {
+        share_id: shareId,
+        image_data: selectedShareImage.encryptedImage || selectedShareImage.encryptedData,
+        file_name: selectedShareImage.name,
+        shared_by: userId || "PINIT User",
+        downloads_used: 0,
+        download_limit: shareDownloadLimit,
+        password_protected: sharePassword.length > 0,
+        share_password: sharePassword.length > 0 ? sharePassword : null,
+        include_certificate: includeCertificate,
+        expiry_date: shareExpiryDate ? new Date(`${shareExpiryDate}T${shareExpiryTime}`).toISOString() : null
+      };
+
+      // Save to Supabase
+      const { error: supabaseError } = await supabase
+        .from('shared_links')
+        .insert(shareData);
+
+      if (supabaseError) {
+        console.error('❌ Error saving to Supabase:', supabaseError);
+        throw new Error(`Failed to save share: ${supabaseError.message}`);
+      }
+
+      console.log('✅ Share saved to Supabase successfully');
+
       // Add to configs
       setShareConfigs([...shareConfigs, config]);
 
@@ -2103,6 +2626,7 @@ function SharePage({
       }]);
 
       console.log("✅ Share link generated successfully:", shareLink);
+      console.log("✅ Share data saved to localStorage:", shareData);
       alert("✅ Share link created! Your friend can scan the QR code or use the link to access it.");
       setShareStep("preview");
     } catch (error) {
@@ -2185,6 +2709,9 @@ function SharePage({
                       <div className="flex-1">
                         <p className="font-semibold text-white">{doc.name}</p>
                         <p className="text-xs text-purple-300/60">Uploaded: {doc.createdAt}</p>
+                        {doc.pageCount && (
+                          <p className="text-xs text-purple-300/60">Number of Pages: {doc.pageCount}</p>
+                        )}
                       </div>
                       <CheckCircle className={`w-5 h-5 ${selectedShareImage?.id === doc.id ? "text-green-500" : "text-gray-600"}`} />
                     </div>
@@ -2541,6 +3068,26 @@ function IdentityPage({ userName, userId }: { userName: string; userId: string |
   );
 }
 
+// Helper function to get image dimensions
+const getImageDimensions = (base64Data: string): Promise<{ width: number; height: number }> => {
+  return new Promise((resolve, reject) => {
+    // Check if Image constructor is available
+    if (typeof Image === 'undefined') {
+      reject(new Error('Image constructor not available'));
+      return;
+    }
+    
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = () => {
+      reject(new Error('Failed to load image'));
+    };
+    img.src = base64Data;
+  });
+};
+
 // ============= VERIFY PROOF PAGE =============
 function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void }) {
   const [isAnalyzing, setIsAnalyzing] = useState(true);
@@ -2552,53 +3099,163 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
       try {
         setIsAnalyzing(true);
         setError(null);
-        console.log("🔍 Starting basic image analysis...");
+        console.log("🔍 Starting comprehensive image analysis...");
 
-        // Get image size from base64
-        const base64Data = image.includes(",") ? image.split(",")[1] : image;
-        const sizeInBytes = (base64Data.length * 3) / 4;
-        const sizeInKB = (sizeInBytes / 1024).toFixed(2);
+        // Safe fallback dimensions
+        let dimensions = { width: 1080, height: 1920 };
+        
+        // Safe image dimensions extraction
+        try {
+          const dimResult = await getImageDimensions(image);
+          if (dimResult && dimResult.width && dimResult.height) {
+            dimensions = dimResult;
+            console.log("📏 Image dimensions:", dimensions);
+          }
+        } catch (dimErr) {
+          console.warn("⚠️ Could not get image dimensions, using defaults:", dimErr);
+        }
 
-        // Simple analysis without canvas or image loading
+        // Safe image analysis
+        let imageAnalysisResult = null;
+        try {
+          const analysisResult = await analyzeImage(image);
+          if (analysisResult && analysisResult.imageType) {
+            imageAnalysisResult = analysisResult;
+            console.log("🤖 Image analysis result:", imageAnalysisResult);
+          }
+        } catch (analysisErr) {
+          console.warn("⚠️ Image analysis failed, using defaults:", analysisErr);
+          imageAnalysisResult = {
+            imageType: "unknown",
+            confidence: 0,
+            metadata: {
+              hasExif: false,
+              hasMetadata: false,
+              dimensions: `${dimensions.width}x${dimensions.height}`,
+              mimeType: "image/jpeg"
+            },
+            indicators: ["Analysis unavailable"],
+            ownership: {
+              isWatermarked: false,
+              timestamp: new Date().toISOString()
+            }
+          };
+        }
+
+        // Safe watermark extraction
+        let watermarkResult = null;
+        try {
+          console.log("🔍 Starting watermark extraction...");
+          console.log("🔍 Image length:", image.length);
+          console.log("🔍 Image starts with:", image.substring(0, 50) + "...");
+          
+          const extractedWatermark = await extractSimpleWatermark(image);
+          console.log("🔍 Extraction result:", extractedWatermark);
+          
+          if (extractedWatermark && extractedWatermark.userId) {
+            watermarkResult = {
+              hasWatermark: true,
+              watermark: extractedWatermark,
+              timestamp: extractedWatermark.timestamp,
+              userId: extractedWatermark.userId
+            };
+            console.log("✅ Watermark detected successfully:", watermarkResult);
+          } else {
+            console.log("⚠️ No watermark found in image");
+            watermarkResult = { hasWatermark: false };
+          }
+        } catch (watermarkErr) {
+          console.error("❌ Watermark extraction failed:", watermarkErr);
+          console.log("⚠️ No watermark detected:", watermarkErr);
+          watermarkResult = { hasWatermark: false };
+        }
+
+        // Safe base64 processing
+        let sizeInKB = "Unknown";
+        try {
+          const base64Data = image.includes(",") ? image.split(",")[1] : image;
+          if (base64Data) {
+            const sizeInBytes = (base64Data.length * 3) / 4;
+            sizeInKB = (sizeInBytes / 1024).toFixed(2);
+          }
+        } catch (sizeErr) {
+          console.warn("⚠️ Could not calculate image size:", sizeErr);
+        }
+
+        // Comprehensive analysis result with full fallbacks
         const result = {
-          imageResolution: "Unknown",
+          imageResolution: `${dimensions.width}x${dimensions.height}`,
           imageSize: `${sizeInKB} KB`,
+          pixelCount: dimensions.width * dimensions.height,
+          isEncrypted: watermarkResult?.hasWatermark || false,
+          encryptionType: watermarkResult?.hasWatermark ? "LSB Steganography" : "None",
+          ownershipDetails: {
+            pinItId: watermarkResult?.userId || "Not encrypted with PINIT",
+            timestamp: watermarkResult?.timestamp || "N/A",
+            encryptionFormat: watermarkResult?.hasWatermark ? "Simple LSB" : "None",
+          },
+          imageType: imageAnalysisResult?.imageType || "unknown",
+          imageTypeAnalysis: imageAnalysisResult,
+          imageTypeDetails: `${imageAnalysisResult?.imageType?.toUpperCase() || "UNKNOWN"} (${imageAnalysisResult?.confidence || 0}% confidence)`,
+          imageTypeIndicators: imageAnalysisResult?.indicators || [],
+          watermarkAnalysis: watermarkResult,
+          metadata: {
+            hasExif: imageAnalysisResult?.metadata?.hasExif || false,
+            hasMetadata: imageAnalysisResult?.metadata?.hasMetadata || false,
+            dimensions: `${dimensions.width}x${dimensions.height}`,
+            mimeType: imageAnalysisResult?.metadata?.mimeType || "image/jpeg"
+          },
+          confidence: imageAnalysisResult?.confidence || 0,
+        };
+
+        setAnalysis(result);
+        console.log("✅ Comprehensive analysis complete:", result);
+        setIsAnalyzing(false);
+      } catch (err) {
+        console.error("❌ Analysis error:", err);
+        
+        // Ultimate fallback - provide basic analysis even if everything fails
+        const fallbackResult = {
+          imageResolution: "Unknown",
+          imageSize: "Unknown",
           pixelCount: 0,
           isEncrypted: false,
           encryptionType: "None",
           ownershipDetails: {
-            pinItId: "Not encrypted with PINIT",
+            pinItId: "Analysis failed",
             timestamp: "N/A",
             encryptionFormat: "None",
           },
           imageType: "unknown",
           imageTypeAnalysis: {
             imageType: "unknown",
-            confidence: 50,
+            confidence: 0,
             metadata: {
               hasExif: false,
               hasMetadata: false,
               dimensions: "Unknown",
               mimeType: "image/jpeg"
             },
-            indicators: ["Basic analysis - no canvas processing"],
+            indicators: ["Analysis failed - constructor issues"],
             ownership: {
               isWatermarked: false,
               timestamp: new Date().toISOString()
             }
           },
-          imageTypeDetails: "UNKNOWN (50% confidence)",
-          imageTypeIndicators: ["Basic analysis - no canvas processing"],
-          metadata: null,
+          imageTypeDetails: "UNKNOWN (0% confidence)",
+          imageTypeIndicators: ["Analysis failed - constructor issues"],
+          watermarkAnalysis: { hasWatermark: false },
+          metadata: {
+            hasExif: false,
+            hasMetadata: false,
+            dimensions: "Unknown",
+            mimeType: "image/jpeg"
+          },
           confidence: 0,
         };
-
-        setAnalysis(result);
-        console.log("✅ Basic analysis complete:", result);
-        setIsAnalyzing(false);
-      } catch (err) {
-        console.error("❌ Analysis error:", err);
-        setError(err instanceof Error ? err.message : "Failed to analyze image");
+        
+        setAnalysis(fallbackResult);
+        setError("Analysis partially failed due to environment limitations");
         setIsAnalyzing(false);
       }
     };
@@ -3209,10 +3866,10 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
   
   const handleFileUpload = async () => {
     try {
-      // Use HTML file input for file selection
+      // Use HTML file input for file selection - RESTRICT TO DOCUMENTS ONLY
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      input.accept = 'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation';
       input.multiple = false;
       
       input.onchange = async (event) => {
@@ -3221,6 +3878,15 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
           setIsUploading(true);
           
           try {
+            // Validate file type - DOCUMENTS ONLY
+            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
+            
+            if (!allowedTypes.includes(file.type)) {
+              alert('Only documents are allowed (PDF, DOCX, XLSX, PPTX)');
+              setIsUploading(false);
+              return;
+            }
+            
             // Check file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
               alert('File size must be less than 10MB');
@@ -3228,7 +3894,7 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
               return;
             }
             
-            // Create FileReader to read the file
+            // Create FileReader to read file
             const reader = new FileReader();
             reader.onload = async (e) => {
               try {
@@ -3239,6 +3905,10 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
                   throw new Error('Failed to read file data');
                 }
                 
+                // Calculate page count for documents
+                const pageCount = await calculatePageCount(file);
+                console.log(`Document ${file.name} page count: ${pageCount}`);
+                
                 // Encrypt file data
                 const encryptedData = await encryptFile(base64);
                 
@@ -3247,6 +3917,7 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
                   id: `doc_${Date.now()}`,
                   name: file.name,
                   encryptedData: encryptedData,
+                  pageCount: pageCount, // Add page count
                   metadata: {
                     timestamp: Date.now(),
                     original_name: file.name,
@@ -3260,12 +3931,18 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
                 
                 // Pass document to parent component for vault storage
                 console.log('File uploaded and encrypted:', file.name);
+                console.log('Document created:', newDoc);
+                
+                // Call the parent callback to handle vault storage
                 onDocumentUploaded(newDoc);
                 setIsUploading(false);
-                // Go back to dashboard after successful upload
+                
+                // Show success message and go back to dashboard
+                alert(`Document "${file.name}" uploaded successfully!`);
                 setTimeout(() => {
+                  console.log('Navigating back to dashboard after upload');
                   onBack();
-                }, 500);
+                }, 1000);
                 
               } catch (processingError) {
                 console.error('File processing error:', processingError);
@@ -3310,15 +3987,38 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
           Upload Document
         </h1>
         <button
-          onClick={() => {
-            // Navigate to vault to see existing documents
-            setCurrentPage("vault");
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('View Vault button clicked - calling onBack()');
+            console.log('onBack function:', typeof onBack);
+            
+            // Fallback navigation - always try to navigate back
+            try {
+              if (typeof onBack === 'function') {
+                onBack();
+                console.log('onBack() called successfully');
+              } else {
+                console.error('onBack is not a function! Using fallback...');
+                // Fallback: try to access parent's setCurrentPage
+                if (window.history && window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  // Last resort: redirect to home
+                  window.location.href = '/';
+                }
+              }
+            } catch (error) {
+              console.error('Navigation error:', error);
+              // Ultimate fallback
+              window.location.href = '/';
+            }
           }}
           className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-lg transition-all transform hover:scale-105 text-sm"
           type="button"
         >
-          <FileText size={16} className="inline-block mr-2" />
-          View Vault ({documents.length})
+          <ArrowLeft className="w-4 h-4 inline-block mr-2" />
+          View Vault
         </button>
       </div>
 
@@ -3399,60 +4099,107 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
   const [documents, setDocuments] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [vaultDocs, setVaultDocs] = useState<VaultDocument[]>([]);
+
+  // Load documents from vault on mount
+  useEffect(() => {
+    const loadVaultDocuments = async () => {
+      try {
+        const userId = localStorage.getItem('biovault_userId');
+        if (userId) {
+          const docs = await loadVaultDocuments(userId);
+          // Filter documents for this category
+          const categoryDocs = docs.filter(doc => doc.name.includes(category.name));
+          setVaultDocs(categoryDocs);
+          console.log(`Loaded ${categoryDocs.length} documents for ${category.name} from vault`);
+        }
+      } catch (error) {
+        console.error('Failed to load vault documents:', error);
+      }
+    };
+    loadVaultDocuments();
+  }, [category.name]);
 
   const handleCameraCapture = async () => {
     try {
       setIsCapturing(true);
       console.log('Opening camera for category:', category.name);
       
-      // Check camera permissions
-      const permissions = await Camera.checkPermissions();
-      console.log('Camera permissions:', permissions);
-      
-      if (permissions.camera !== 'granted') {
-        console.log('Requesting camera permissions...');
-        const permissionResult = await Camera.requestPermissions();
-        console.log('Permission request result:', permissionResult);
-        
-        if (permissionResult.camera !== 'granted') {
-          alert('Camera permission is required to capture documents. Please enable camera permissions in your device settings.');
-          setIsCapturing(false);
-          return;
-        }
-      }
-      
-      const photo = await Camera.getPhoto({
+      const photo = await CapacitorCamera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.Base64,
         source: CameraSource.Camera,
+        promptLabelHeader: 'Take Photo',
+        promptLabelCancel: 'Cancel',
+        promptLabelPhoto: 'Capture',
       });
 
       if (photo.base64String) {
         console.log('Photo captured successfully for category:', category.name);
-        
+
+        // Compute pHash for duplicate detection
+        const base64Data = `data:image/jpeg;base64,${photo.base64String}`;
+        const pHash = await computePHashFromBase64(base64Data);
+        console.log('🔍 Computed pHash:', pHash);
+
+        // Check for duplicates
+        if (pHash && vaultDocs.length > 0) {
+          const img = new Image();
+          img.src = base64Data;
+          await new Promise((resolve) => {
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0);
+                const duplicates = findDuplicates(canvas, vaultDocs.map(doc => ({ id: doc.id, name: doc.name, pHash: doc.pHash })), 90);
+                if (duplicates.length > 0) {
+                  const duplicateNames = duplicates.map(d => d.documentName).join(', ');
+                  alert(`⚠️ Possible duplicate detected! Similar to: ${duplicateNames}\nSimilarity: ${duplicates[0].similarity}%\n\nDo you want to continue uploading?`);
+                }
+              }
+              resolve(null);
+            };
+            img.onerror = () => resolve(null);
+          });
+        }
+
         // Add to documents list
         const updatedDocuments = [...documents, photo.base64String];
         setDocuments(updatedDocuments);
-        
-        // Create vault document
+
+        // Create vault document (without encryption for now)
         const vaultDoc: VaultDocument = {
           id: `${category.id}_${Date.now()}`,
           name: `${category.name}_${new Date().toISOString().split('T')[0]}_${documents.length + 1}.jpg`,
           encryptedData: photo.base64String,
+          pHash: pHash || undefined,
           metadata: {
             timestamp: Date.now(),
             original_name: `${category.name}_${new Date().toISOString().split('T')[0]}_${documents.length + 1}.jpg`,
             size: photo.base64String.length,
             checksum: Math.random().toString(36).substring(7),
-            encrypted: true,
+            encrypted: false,
             ownerId: undefined,
           },
           createdAt: new Date().toISOString(),
         };
-        
+
         // Store in vault
         onDocumentUploaded(vaultDoc);
+        console.log('Photo stored in vault:', vaultDoc.name);
+
+        // Refresh vault documents to show updated count
+        const userId = localStorage.getItem('biovault_userId');
+        if (userId) {
+          const docs = await loadVaultDocuments(userId);
+          const categoryDocs = docs.filter(doc => doc.name.includes(category.name));
+          setVaultDocs(categoryDocs);
+        }
+
         alert(`Document successfully added to ${category.name}!`);
       } else {
         console.error('No photo data received');
@@ -3460,13 +4207,8 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
       }
     } catch (error) {
       console.error("Camera error:", error);
-      if (error.message && error.message.includes('permission')) {
-        alert('Camera permission is required. Please enable camera permissions in your device settings and try again.');
-      } else if (error.message && error.message.includes('cancelled')) {
-        console.log('Camera cancelled by user');
-      } else {
-        alert("Failed to open camera. Please check camera permissions and try again.");
-      }
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      alert(`Camera error: ${error?.message || error || 'Unknown error'}. Please try again.`);
     } finally {
       setIsCapturing(false);
     }
@@ -3486,6 +4228,8 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
         const file = (event.target as HTMLInputElement).files?.[0];
         if (file) {
           try {
+            console.log('File selected:', file.name, 'Size:', file.size);
+            
             // Check file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
               alert('File size must be less than 10MB');
@@ -3499,49 +4243,87 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
               try {
                 const result = e.target?.result as string;
                 const base64 = result?.split(',')[1] || '';
-                
+
+                console.log('Base64 length:', base64.length);
+
                 if (!base64) {
                   throw new Error('Failed to read file data');
                 }
-                
-                // Encrypt file data
-                const encryptedData = await encryptFile(base64);
-                
+
+                // Compute pHash for duplicate detection
+                const base64Data = result || '';
+                const pHash = await computePHashFromBase64(base64Data);
+                console.log('🔍 Computed pHash:', pHash);
+
+                // Check for duplicates
+                if (pHash && vaultDocs.length > 0) {
+                  const img = new Image();
+                  img.src = base64Data;
+                  await new Promise((resolve) => {
+                    img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.width;
+                      canvas.height = img.height;
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) {
+                        ctx.drawImage(img, 0, 0);
+                        const duplicates = findDuplicates(canvas, vaultDocs.map(doc => ({ id: doc.id, name: doc.name, pHash: doc.pHash })), 90);
+                        if (duplicates.length > 0) {
+                          const duplicateNames = duplicates.map(d => d.documentName).join(', ');
+                          alert(`⚠️ Possible duplicate detected! Similar to: ${duplicateNames}\nSimilarity: ${duplicates[0].similarity}%\n\nDo you want to continue uploading?`);
+                        }
+                      }
+                      resolve(null);
+                    };
+                    img.onerror = () => resolve(null);
+                  });
+                }
+
                 // Add to documents list
                 const updatedDocuments = [...documents, base64];
                 setDocuments(updatedDocuments);
-                
-                // Create vault document
+
+                // Create vault document (without encryption for now)
                 const vaultDoc: VaultDocument = {
                   id: `${category.id}_${Date.now()}`,
                   name: file.name,
-                  encryptedData: encryptedData,
+                  encryptedData: base64,
+                  pHash: pHash || undefined,
                   metadata: {
                     timestamp: Date.now(),
                     original_name: file.name,
                     size: file.size,
                     checksum: Math.random().toString(36).substring(7),
-                    encrypted: true,
+                    encrypted: false,
                     ownerId: undefined,
                   },
                   createdAt: new Date().toISOString(),
                 };
-                
+
                 // Store in vault
                 onDocumentUploaded(vaultDoc);
-                console.log('File uploaded and encrypted:', file.name);
+                console.log('File uploaded and stored in vault:', file.name);
+
+                // Refresh vault documents to show updated count
+                const userId = localStorage.getItem('biovault_userId');
+                if (userId) {
+                  const docs = await loadVaultDocuments(userId);
+                  const categoryDocs = docs.filter(doc => doc.name.includes(category.name));
+                  setVaultDocs(categoryDocs);
+                }
+
                 alert(`Document successfully added to ${category.name}!`);
                 setIsUploading(false);
                 
               } catch (processingError) {
                 console.error('File processing error:', processingError);
-                alert('Failed to process file. Please try again.');
+                alert(`Processing error: ${processingError.message || 'Unknown error'}. Please try again.`);
                 setIsUploading(false);
               }
             };
             
-            reader.onerror = () => {
-              console.error('FileReader error');
+            reader.onerror = (error) => {
+              console.error('FileReader error:', error);
               alert('Failed to read file. Please try again.');
               setIsUploading(false);
             };
@@ -3550,16 +4332,19 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
             
           } catch (fileError) {
             console.error('File handling error:', fileError);
-            alert('Failed to handle file. Please try again.');
+            alert(`File handling error: ${fileError.message || 'Unknown error'}. Please try again.`);
             setIsUploading(false);
           }
+        } else {
+          setIsUploading(false);
         }
       };
       
       input.click();
     } catch (error) {
       console.error('File picker error:', error);
-      alert('Failed to open file picker. Please try again.');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      alert(`File picker error: ${error?.message || error || 'Unknown error'}. Please try again.`);
       setIsUploading(false);
     }
   };
@@ -3588,7 +4373,7 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
           <p className="text-slate-400 text-sm mb-2">Upload and manage your documents</p>
           <div className="flex items-center justify-center gap-2">
             <span className={`px-3 py-1 ${category.color === 'blue' ? 'bg-blue-500/20 text-blue-300' : category.color === 'green' ? 'bg-green-500/20 text-green-300' : category.color === 'purple' ? 'bg-purple-500/20 text-purple-300' : category.color === 'orange' ? 'bg-orange-500/20 text-orange-300' : category.color === 'cyan' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-red-500/20 text-red-300'} text-xs rounded-full border ${category.color === 'blue' ? 'border-blue-500/30' : category.color === 'green' ? 'border-green-500/30' : category.color === 'purple' ? 'border-purple-500/30' : category.color === 'orange' ? 'border-orange-500/30' : category.color === 'cyan' ? 'border-cyan-500/30' : 'border-red-500/30'}`}>
-              {documents.length} documents
+              {vaultDocs.length} documents
             </span>
           </div>
         </div>
@@ -3642,7 +4427,7 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
       {/* Documents Grid */}
       <div className="space-y-4">
         <h3 className="text-white font-semibold">Your Documents</h3>
-        {documents.length === 0 ? (
+        {vaultDocs.length === 0 ? (
           <div className="text-center py-8">
             <div className="w-16 h-16 bg-slate-800/60 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileText size={24} className="text-slate-400" />
@@ -3652,20 +4437,20 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {documents.map((doc, index) => (
+            {vaultDocs.map((doc, index) => (
               <div
-                key={index}
+                key={doc.id}
                 className="bg-slate-800/60 backdrop-blur-sm rounded-xl border border-slate-700/50 p-3 cursor-pointer hover:border-slate-600 transition-all"
               >
                 <div className="aspect-square bg-slate-700/50 rounded-lg mb-2 overflow-hidden">
                   <img
-                    src={`data:image/jpeg;base64,${doc}`}
-                    alt={`Document ${index + 1}`}
+                    src={`data:image/jpeg;base64,${doc.encryptedData}`}
+                    alt={doc.name}
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <p className="text-white text-xs font-medium truncate">Document {index + 1}</p>
-                <p className="text-slate-400 text-xs">Just now</p>
+                <p className="text-white text-xs font-medium truncate">{doc.name}</p>
+                <p className="text-slate-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
               </div>
             ))}
           </div>
@@ -3676,1002 +4461,6 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
 }
 
 // Share Access Page - Handles public share links and QR codes
-function ShareAccessPage() {
-  const [shareData, setShareData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [documentData, setDocumentData] = useState<string | null>(null);
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
-  const [password, setPassword] = useState("");
+// (ShareAccessPage component is already defined above)
 
-  useEffect(() => {
-    const loadSharedContent = async () => {
-      try {
-        // Get share ID from URL
-        const pathParts = window.location.pathname.split('/');
-        const shareId = pathParts[pathParts.length - 1];
-        
-        if (!shareId || shareId === 'share') {
-          setError('Invalid share link');
-          setIsLoading(false);
-          return;
-        }
-
-        console.log('Loading share with ID:', shareId);
-
-        // Call backend to get share data
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-        const response = await fetch(`${backendUrl}/share/${shareId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Share not found or expired');
-        }
-
-        const shareInfo = await response.json();
-        console.log('Share data loaded:', shareInfo);
-
-        setShareData(shareInfo);
-
-        // Check if password is required
-        if (shareInfo.password_protected && !shareInfo.password_verified) {
-          setShowPasswordPrompt(true);
-          setIsLoading(false);
-          return;
-        }
-
-        // Load the document
-        if (shareInfo.vault_image_id) {
-          // Load from vault
-          const documentResponse = await fetch(`${backendUrl}/share/document/${shareId}`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (documentResponse.ok) {
-            const documentBlob = await documentResponse.blob();
-            const reader = new FileReader();
-            reader.onload = () => {
-              setDocumentData(reader.result as string);
-            };
-            reader.readAsDataURL(documentBlob);
-          }
-        } else if (shareInfo.encrypted_data) {
-          // Use encrypted data directly
-          setDocumentData(`data:image/jpeg;base64,${shareInfo.encrypted_data}`);
-        }
-
-        setIsLoading(false);
-      } catch (err) {
-        console.error('Error loading share:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load shared content');
-        setIsLoading(false);
-      }
-    };
-
-    loadSharedContent();
-  }, []);
-
-  const handlePasswordSubmit = async () => {
-    if (!password.trim()) {
-      alert('Please enter a password');
-      return;
-    }
-
-    try {
-      const pathParts = window.location.pathname.split('/');
-      const shareId = pathParts[pathParts.length - 1];
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-
-      const response = await fetch(`${backendUrl}/share/${shareId}/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Invalid password');
-      }
-
-      const shareInfo = await response.json();
-      setShareData(shareInfo);
-      setShowPasswordPrompt(false);
-
-      // Load the document
-      if (shareInfo.encrypted_data) {
-        setDocumentData(`data:image/jpeg;base64,${shareInfo.encrypted_data}`);
-      }
-
-    } catch (err) {
-      console.error('Password verification error:', err);
-      alert(err instanceof Error ? err.message : 'Password verification failed');
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!documentData) return;
-
-    try {
-      const link = document.createElement('a');
-      link.href = documentData;
-      link.download = shareData?.original_name || `shared_document_${Date.now()}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error('Download error:', err);
-      alert('Failed to download document');
-    }
-  };
-
-  const handleShare = async () => {
-    if (navigator.share && documentData) {
-      try {
-        await navigator.share({
-          title: 'Shared Document',
-          text: 'Check out this shared document',
-          url: window.location.href,
-        });
-      } catch (err) {
-        console.error('Share error:', err);
-      }
-    } else {
-      // Fallback: copy link to clipboard
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard!');
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white">Loading shared content...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center px-4">
-        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <X size={32} className="text-red-400" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Content Not Found</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
-          <p className="text-slate-500 text-sm">The share link may have expired or is invalid.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (showPasswordPrompt) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center px-4">
-        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 max-w-md w-full">
-          <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock size={32} className="text-blue-400" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Password Required</h2>
-          <p className="text-slate-400 mb-6">This shared content is password protected.</p>
-          
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
-            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-4 py-3 text-white placeholder-slate-400 mb-4"
-            onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-          />
-          
-          <button
-            onClick={handlePasswordSubmit}
-            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 transition-opacity"
-          >
-            Unlock Content
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center">
-                <Share2 size={24} className="text-green-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">Shared Document</h1>
-                <p className="text-slate-400 text-sm">Shared via PINIT Vault</p>
-              </div>
-            </div>
-            <button
-              onClick={handleShare}
-              className="p-2 bg-slate-700/50 rounded-lg hover:bg-slate-600/50 transition-all"
-            >
-              <Share2 size={20} className="text-slate-300" />
-            </button>
-          </div>
-          
-          {shareData && (
-            <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-              <span>Shared: {new Date(shareData.created_at).toLocaleDateString()}</span>
-              {shareData.expires_at && (
-                <span>Expires: {new Date(shareData.expires_at).toLocaleDateString()}</span>
-              )}
-              {shareData.download_limit && (
-                <span>Downloads: {shareData.downloads_used}/{shareData.download_limit}</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Document Preview */}
-        {documentData && (
-          <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6 mb-6">
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-white mb-2">Document Preview</h2>
-              {shareData?.original_name && (
-                <p className="text-slate-400 text-sm">{shareData.original_name}</p>
-              )}
-            </div>
-            
-            <div className="bg-slate-900/50 rounded-lg overflow-hidden mb-4">
-              <img
-                src={documentData}
-                alt="Shared document"
-                className="w-full h-auto max-h-96 object-contain"
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleDownload}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-              >
-                <Download size={16} />
-                Download
-              </button>
-              
-              <button
-                onClick={handleShare}
-                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-              >
-                <Share2 size={16} />
-                Share
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="text-center">
-          <p className="text-slate-500 text-sm mb-2">
-            Powered by <span className="text-blue-400 font-semibold">PINIT Vault</span>
-          </p>
-          <p className="text-slate-600 text-xs">
-            Secure document sharing with encryption
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DigitalIdentityDashboard({ onBack, userName, setUserName, profileImage, setProfileImage, userId }: { onBack: () => void; userName: string; setUserName: React.Dispatch<React.SetStateAction<string>>; profileImage: string | null; setProfileImage: React.Dispatch<React.SetStateAction<string | null>>; userId: string | null }) {
-  const [activeTab, setActiveTab] = useState("profile");
-  const [selectedCategory, setSelectedCategory] = useState<any>(null);
-  
-  // Enhanced Profile State
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
-  const [userPhone, setUserPhone] = useState("");
-  const [userBio, setUserBio] = useState("");
-  const [userLocation, setUserLocation] = useState("");
-  const [userLanguage, setUserLanguage] = useState("English");
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
-  const [socialLinkedIn, setSocialLinkedIn] = useState("");
-  const [socialGitHub, setSocialGitHub] = useState("");
-  const [socialPortfolio, setSocialPortfolio] = useState("");
-  const [isEmailVerified, setIsEmailVerified] = useState(false);
-  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
-  const [showProfileImagePreview, setShowProfileImagePreview] = useState(false);
-
-  // Security State
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
-  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
-  const [biometricType, setBiometricType] = useState<"fingerprint" | "face" | "none">("none");
-  const [autoLockMinutes, setAutoLockMinutes] = useState(5);
-  const [securityAlertsEnabled, setIsSecurityAlertsEnabled] = useState(true);
-  const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [recoveryPhone, setRecoveryPhone] = useState("");
-
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfileImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleCategoryClick = (category: any) => {
-    console.log('Category clicked:', category.name);
-    setSelectedCategory(category);
-  };
-
-  const handleDocumentUploaded = (document: VaultDocument) => {
-    console.log('Document uploaded to vault:', document.name);
-    // Add to vault documents
-    setVaultDocuments(prev => [...prev, document]);
-  };
-
-  if (selectedCategory) {
-    return (
-      <CategoryDetailPage
-        category={selectedCategory}
-        onBack={() => setSelectedCategory(null)}
-        onDocumentUploaded={handleDocumentUploaded}
-      />
-    );
-  }
-
-  return (
-    <div className="px-4 pt-6 pb-24 min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
-      {/* Header */}
-      <div className="flex items-center mb-6">
-        <button
-          onClick={onBack}
-          className="p-2 hover:bg-slate-700/50 rounded-lg transition-all"
-        >
-          <ChevronLeft size={24} className="text-slate-300" />
-        </button>
-        <h1 className="text-xl font-bold text-white ml-2">Profile</h1>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-2 mb-6">
-        <div className="flex gap-2 overflow-x-auto">
-          {[
-            { id: "profile", label: "Profile", icon: User },
-            { id: "security", label: "Security", icon: Shield },
-            { id: "digital-identity", label: "Digital Identity", icon: CreditCard },
-            { id: "subscription", label: "Subscription", icon: Star }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
-                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              <tab.icon size={16} />
-              <span className="text-sm">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === "profile" && (
-        <div className="space-y-4">
-          {/* Profile Picture Section */}
-          <div className="bg-gradient-to-br from-purple-900/40 to-blue-900/40 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Profile Picture</h2>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                {profileImage ? (
-                  <img 
-                    src={profileImage} 
-                    alt="Profile" 
-                    className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/50"
-                  />
-                ) : (
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 flex items-center justify-center text-white text-4xl font-bold border-4 border-purple-500/50">
-                    {userName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <button
-                  onClick={() => setShowProfileImagePreview(!showProfileImagePreview)}
-                  className="absolute bottom-0 right-0 bg-purple-600 hover:bg-purple-700 rounded-full p-2 transition-all"
-                >
-                  <Camera size={16} className="text-white" />
-                </button>
-              </div>
-              <div className="flex-1">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="profile-image-upload"
-                />
-                <label
-                  htmlFor="profile-image-upload"
-                  className="block bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg cursor-pointer transition-all text-center mb-2"
-                >
-                  Upload Photo
-                </label>
-                <p className="text-xs text-purple-300/70">Supports JPG, PNG (Max 5MB)</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Username */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Username</h2>
-            <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3">
-              <div>
-                <p className="text-white font-semibold">{userName}</p>
-                <p className="text-purple-300/70 text-xs font-mono">@{userName.toLowerCase().replace(/\s/g, '_')}</p>
-              </div>
-              <button className="text-purple-400 hover:text-purple-300 transition-colors">
-                <Copy size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* User ID (Static) */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">User ID</h2>
-            <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3">
-              <div>
-                <p className="text-white font-mono text-sm">{userId || "Not assigned"}</p>
-                <p className="text-purple-300/70 text-xs">Fixed ID from registration</p>
-              </div>
-              <button className="text-purple-400 hover:text-purple-300 transition-colors">
-                <Copy size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Edit Profile */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white">Edit Profile</h2>
-              <button
-                onClick={() => setIsEditingProfile(!isEditingProfile)}
-                className="text-purple-400 hover:text-purple-300 transition-colors"
-              >
-                <Edit size={18} />
-              </button>
-            </div>
-            {isEditingProfile ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">Name</label>
-                  <input
-                    type="text"
-                    value={userName}
-                    onChange={(e) => setUserName(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">Email</label>
-                  <input
-                    type="email"
-                    value={userEmail}
-                    onChange={(e) => setUserEmail(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">Phone</label>
-                  <input
-                    type="tel"
-                    value={userPhone}
-                    onChange={(e) => setUserPhone(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <button
-                  onClick={() => setIsEditingProfile(false)}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg transition-all"
-                >
-                  Save Changes
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-sm">Name</span>
-                  <span className="text-white text-sm">{userName}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-sm">Email</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-sm">{userEmail || "Not set"}</span>
-                    {isEmailVerified && <CheckCircle size={14} className="text-green-400" />}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-sm">Phone</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-sm">{userPhone || "Not set"}</span>
-                    {isPhoneVerified && <CheckCircle size={14} className="text-green-400" />}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bio / About */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Bio / About</h2>
-            <textarea
-              value={userBio}
-              onChange={(e) => setUserBio(e.target.value)}
-              placeholder="Tell us about yourself..."
-              className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm h-24 resize-none"
-              maxLength={200}
-            />
-            <p className="text-xs text-purple-300/70 mt-2 text-right">{userBio.length}/200</p>
-          </div>
-
-          {/* Location */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Location</h2>
-            <div className="flex items-center gap-3">
-              <MapPin size={20} className="text-purple-400" />
-              <input
-                type="text"
-                value={userLocation}
-                onChange={(e) => setUserLocation(e.target.value)}
-                placeholder="Enter your location"
-                className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Language Preferences */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Language Preferences</h2>
-            <select
-              value={userLanguage}
-              onChange={(e) => setUserLanguage(e.target.value)}
-              className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-            >
-              <option value="English">English</option>
-              <option value="Spanish">Spanish</option>
-              <option value="French">French</option>
-              <option value="German">German</option>
-              <option value="Hindi">Hindi</option>
-              <option value="Chinese">Chinese</option>
-            </select>
-          </div>
-
-          {/* Theme Settings */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Theme Settings</h2>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {isDarkMode ? <Moon size={20} className="text-purple-400" /> : <Sun size={20} className="text-yellow-400" />}
-                <span className="text-white text-sm">{isDarkMode ? "Dark Mode" : "Light Mode"}</span>
-              </div>
-              <button
-                onClick={() => setIsDarkMode(!isDarkMode)}
-                className={`w-12 h-6 rounded-full transition-all ${isDarkMode ? 'bg-purple-600' : 'bg-slate-600'}`}
-              >
-                <div className={`w-5 h-5 bg-white rounded-full transition-all ${isDarkMode ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-          </div>
-
-          {/* Emergency Contact */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Emergency Contact</h2>
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={emergencyContactName}
-                onChange={(e) => setEmergencyContactName(e.target.value)}
-                placeholder="Contact Name"
-                className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-              />
-              <input
-                type="tel"
-                value={emergencyContactPhone}
-                onChange={(e) => setEmergencyContactPhone(e.target.value)}
-                placeholder="Contact Phone"
-                className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Social Links */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Social Links</h2>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Linkedin size={20} className="text-blue-400" />
-                <input
-                  type="url"
-                  value={socialLinkedIn}
-                  onChange={(e) => setSocialLinkedIn(e.target.value)}
-                  placeholder="LinkedIn URL"
-                  className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <Github size={20} className="text-slate-400" />
-                <input
-                  type="url"
-                  value={socialGitHub}
-                  onChange={(e) => setSocialGitHub(e.target.value)}
-                  placeholder="GitHub URL"
-                  className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <Globe size={20} className="text-green-400" />
-                <input
-                  type="url"
-                  value={socialPortfolio}
-                  onChange={(e) => setSocialPortfolio(e.target.value)}
-                  placeholder="Portfolio URL"
-                  className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Security Tab */}
-      {activeTab === "security" && (
-        <div className="space-y-4">
-          {/* Change Password */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white">Change Password</h2>
-              <button
-                onClick={() => setIsChangingPassword(!isChangingPassword)}
-                className="text-purple-400 hover:text-purple-300 transition-colors"
-              >
-                <Edit size={18} />
-              </button>
-            </div>
-            {isChangingPassword ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">Old Password</label>
-                  <input
-                    type="password"
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">New Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-purple-300/70 mb-1 block">Confirm Password</label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                  />
-                </div>
-                <button
-                  onClick={() => setIsChangingPassword(false)}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg transition-all"
-                >
-                  Update Password
-                </button>
-              </div>
-            ) : (
-              <p className="text-slate-400 text-sm">Last changed: Never</p>
-            )}
-          </div>
-
-          {/* Two-Factor Authentication */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Two-Factor Authentication</h2>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Shield size={20} className="text-purple-400" />
-                <div>
-                  <p className="text-white text-sm font-medium">2FA Status</p>
-                  <p className="text-slate-400 text-xs">{is2FAEnabled ? "Enabled" : "Disabled"}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIs2FAEnabled(!is2FAEnabled)}
-                className={`w-12 h-6 rounded-full transition-all ${is2FAEnabled ? 'bg-purple-600' : 'bg-slate-600'}`}
-              >
-                <div className={`w-5 h-5 bg-white rounded-full transition-all ${is2FAEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-            {is2FAEnabled && (
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Mail size={16} className="text-purple-400" />
-                  <span>SMS OTP</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Mail size={16} className="text-purple-400" />
-                  <span>Email OTP</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Smartphone size={16} className="text-purple-400" />
-                  <span>Authenticator App</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Biometric Settings */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Biometric Settings</h2>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Fingerprint size={20} className="text-purple-400" />
-                  <div>
-                    <p className="text-white text-sm font-medium">Fingerprint</p>
-                    <p className="text-slate-400 text-xs">Use fingerprint to login</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setBiometricType(biometricType === "fingerprint" ? "none" : "fingerprint")}
-                  className={`w-12 h-6 rounded-full transition-all ${biometricType === "fingerprint" ? 'bg-purple-600' : 'bg-slate-600'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full transition-all ${biometricType === "fingerprint" ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <User size={20} className="text-purple-400" />
-                  <div>
-                    <p className="text-white text-sm font-medium">Face Unlock</p>
-                    <p className="text-slate-400 text-xs">Use face recognition to login</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setBiometricType(biometricType === "face" ? "none" : "face")}
-                  className={`w-12 h-6 rounded-full transition-all ${biometricType === "face" ? 'bg-purple-600' : 'bg-slate-600'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full transition-all ${biometricType === "face" ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Device Management */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Device Management</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3">
-                <div className="flex items-center gap-3">
-                  <Smartphone size={18} className="text-green-400" />
-                  <div>
-                    <p className="text-white text-sm">This Device</p>
-                    <p className="text-slate-400 text-xs">Current session</p>
-                  </div>
-                </div>
-                <span className="text-xs text-green-400">Active</span>
-              </div>
-              <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3">
-                <div className="flex items-center gap-3">
-                  <Smartphone size={18} className="text-slate-400" />
-                  <div>
-                    <p className="text-white text-sm">iPhone 14 Pro</p>
-                    <p className="text-slate-400 text-xs">Last active: 2 days ago</p>
-                  </div>
-                </div>
-                <button className="text-xs text-red-400 hover:text-red-300">Remove</button>
-              </div>
-            </div>
-          </div>
-
-          {/* Session Management */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Session Management</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Active Sessions</span>
-                <span className="text-white text-sm font-semibold">2</span>
-              </div>
-              <button className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 font-medium py-2 rounded-lg transition-all text-sm">
-                Revoke All Sessions
-              </button>
-            </div>
-          </div>
-
-          {/* Login History */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Login History</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="text-white">Today, 10:30 AM</p>
-                  <p className="text-slate-400 text-xs">This Device • Mumbai</p>
-                </div>
-                <CheckCircle size={16} className="text-green-400" />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="text-white">Yesterday, 8:15 PM</p>
-                  <p className="text-slate-400 text-xs">iPhone 14 Pro • Delhi</p>
-                </div>
-                <CheckCircle size={16} className="text-green-400" />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="text-white">Apr 20, 3:45 PM</p>
-                  <p className="text-slate-400 text-xs">Chrome • Bangalore</p>
-                </div>
-                <CheckCircle size={16} className="text-green-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Security Alerts */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Security Alerts</h2>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <Bell size={20} className="text-purple-400" />
-                <div>
-                  <p className="text-white text-sm font-medium">Alert Notifications</p>
-                  <p className="text-slate-400 text-xs">Get notified of security events</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsSecurityAlertsEnabled(!securityAlertsEnabled)}
-                className={`w-12 h-6 rounded-full transition-all ${securityAlertsEnabled ? 'bg-purple-600' : 'bg-slate-600'}`}
-              >
-                <div className={`w-5 h-5 bg-white rounded-full transition-all ${securityAlertsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-            {securityAlertsEnabled && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Check size={16} className="text-green-400" />
-                  <span>New login from new device</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Check size={16} className="text-green-400" />
-                  <span>Suspicious activity detected</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <Check size={16} className="text-green-400" />
-                  <span>Password changed</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Recovery Options */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Recovery Options</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-purple-300/70 mb-1 block">Recovery Email</label>
-                <input
-                  type="email"
-                  value={recoveryEmail}
-                  onChange={(e) => setRecoveryEmail(e.target.value)}
-                  placeholder="recovery@example.com"
-                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-purple-300/70 mb-1 block">Recovery Phone</label>
-                <input
-                  type="tel"
-                  value={recoveryPhone}
-                  onChange={(e) => setRecoveryPhone(e.target.value)}
-                  placeholder="+91 9876543210"
-                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              <button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-lg transition-all text-sm">
-                Generate Backup Codes
-              </button>
-            </div>
-          </div>
-
-          {/* Auto Lock Settings */}
-          <div className="bg-gradient-to-br from-slate-800/60 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Auto Lock Settings</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-purple-300/70 mb-1 block">Auto logout after inactivity</label>
-                <select
-                  value={autoLockMinutes}
-                  onChange={(e) => setAutoLockMinutes(Number(e.target.value))}
-                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                >
-                  <option value={1}>1 minute</option>
-                  <option value={5}>5 minutes</option>
-                  <option value={15}>15 minutes</option>
-                  <option value={30}>30 minutes</option>
-                  <option value={60}>1 hour</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Lock on app background</span>
-                <button className={`w-12 h-6 rounded-full transition-all bg-purple-600`}>
-                  <div className="w-5 h-5 bg-white rounded-full transition-all translate-x-6" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Document Categories Grid */}
-      {activeTab === "digital-identity" && (
-      <div className="grid grid-cols-2 gap-4">
-        {[
-          { id: "personal-docs", name: "Personal Docs", icon: FileText, color: "blue" },
-          { id: "academic", name: "Academic", icon: BookOpen, color: "green" },
-          { id: "projects", name: "Projects", icon: Briefcase, color: "purple" },
-          { id: "internships", name: "Internships", icon: Award, color: "orange" },
-          { id: "certifications", name: "Certifications", icon: Shield, color: "cyan" },
-          { id: "entrance-exams", name: "Entrance & Exams", icon: Target, color: "red" }
-        ].map((category, index) => (
-          <div
-            key={category.id}
-            onClick={() => handleCategoryClick(category)}
-            className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-4 cursor-pointer hover:border-slate-600 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 ${category.color === 'blue' ? 'bg-blue-500/20' : category.color === 'green' ? 'bg-green-500/20' : category.color === 'purple' ? 'bg-purple-500/20' : category.color === 'orange' ? 'bg-orange-500/20' : category.color === 'cyan' ? 'bg-cyan-500/20' : 'bg-red-500/20'} rounded-lg flex items-center justify-center border border-slate-600/30`}>
-                  <category.icon size={20} className={category.color === 'blue' ? 'text-blue-400' : category.color === 'green' ? 'text-green-400' : category.color === 'purple' ? 'text-purple-400' : category.color === 'orange' ? 'text-orange-400' : category.color === 'cyan' ? 'text-cyan-400' : 'text-red-400'} />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold text-sm">{category.name}</h3>
-                  <p className="text-slate-400 text-xs">0 items</p>
-                </div>
-              </div>
-              <button className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                View All
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      )}
-    </div>
-  );
-}
+export default PINITVaultDashboard;

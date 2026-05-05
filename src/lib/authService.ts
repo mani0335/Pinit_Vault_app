@@ -145,7 +145,7 @@ export async function registerUser(payload: RegisterPayload): Promise<{ ok: true
     try {
       console.log(` OPTIMIZED Registration attempt ${attempt}/3...`);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for Render compatibility
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for better reliability
 
       const response = await fetch(`${apiUrl}/auth/biometric-register`, {
         method: "POST",
@@ -197,15 +197,23 @@ export async function registerUser(payload: RegisterPayload): Promise<{ ok: true
     return { ok: true, tempCode: data.tempCode, mode: "remote" };
     } catch (fetchErr: any) {
       console.error('❌ Network error during registration:', fetchErr.message);
+      console.error('❌ Error name:', fetchErr.name);
       console.error('❌ Backend URL:', apiUrl);
-      console.error('❌ Is backend reachable? Check Render dashboard');
-      lastError = fetchErr;
+      
+      // Handle AbortError specifically
+      if (fetchErr.name === 'AbortError') {
+        console.error('❌ Request timed out - backend took too long to respond');
+        lastError = new Error('Registration timed out. Backend server may be slow. Please try again.');
+      } else {
+        lastError = fetchErr;
+      }
+      
       if (attempt < 3) {
         console.log(`⏳ Network error, retrying after 2 seconds...`);
         await new Promise(r => setTimeout(r, 2000));
         continue;
       }
-      throw new Error(`Failed to register: ${fetchErr.message}. Backend: ${apiUrl}`);
+      throw new Error(`Failed to register: ${lastError.message}. Backend: ${apiUrl}`);
     }
   }
   

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Camera, Upload, FileText, Plus } from 'lucide-react';
+import { Camera as CapacitorCamera } from '@capacitor/camera';
 import '../Profile.css';
 
 const ITEMS = [
@@ -11,38 +12,30 @@ const ITEMS = [
 
 export default function CertificationsPage({ categoryTitle = 'Certifications', categoryEmoji = '🎓', onBack }: any) {
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [uploadMethod, setUploadMethod] = useState<any>(null);
+  const [uploadMethod, setUploadMethod] = useState<'camera' | 'upload' | 'text' | null>(null);
   const [textValue, setTextValue] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentItem = ITEMS.find(item => item.id === selectedItem);
 
   const handleStartCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setCameraActive(true);
+      const image = await CapacitorCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: 'base64' as any,
+        source: 'camera' as any
+      });
+      
+      if (image?.base64String) {
+        console.log('✅ Image captured:', selectedItem);
+        const imageData = `data:image/jpeg;base64,${image.base64String}`;
+        setCameraActive(false);
       }
     } catch (error) {
+      console.error('Camera access denied:', error);
       alert('Camera access denied');
-    }
-  };
-
-  const handleCapture = () => {
-    if (!canvasRef.current || !videoRef.current) return;
-    const context = canvasRef.current.getContext('2d');
-    if (context) {
-      context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-      setCameraActive(false);
-      if (videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-      }
-      setUploadMethod(null);
     }
   };
 
@@ -120,14 +113,13 @@ export default function CertificationsPage({ categoryTitle = 'Certifications', c
                 )}
               </div>
             </div>
-          ) : uploadMethod === 'camera' && cameraActive ? (
+          ) : uploadMethod === 'camera' ? (
             <div className="camera-view">
-              <video ref={videoRef} autoPlay playsInline className="camera-stream" />
-              <canvas ref={canvasRef} width={640} height={480} style={{ display: 'none' }} />
-              <div className="camera-controls">
-                <motion.button className="capture-button" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleCapture}>📸 Capture</motion.button>
-                <button className="cancel-button" onClick={() => { setCameraActive(false); if (videoRef.current?.srcObject) { const st = videoRef.current.srcObject as MediaStream; st.getTracks().forEach(t => t.stop()); } setUploadMethod(null); }}>✕ Cancel</button>
+              <div className="camera-placeholder">
+                <Camera size={64} />
+                <p>Opening camera...</p>
               </div>
+              <button className="cancel-button" onClick={() => setUploadMethod(null)}>✕ Cancel</button>
             </div>
           ) : uploadMethod === 'upload' ? (
             <div className="upload-area">

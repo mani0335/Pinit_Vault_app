@@ -182,3 +182,78 @@ export const pHashSimWithRotationCompat = (
     note: bestMeta?.note || null,
   };
 };
+
+// ─── Compute pHash from base64 image data ───────────────────────────────────
+export const computePHashFromBase64 = async (base64Data: string): Promise<string | null> => {
+  try {
+    return new Promise((resolve) => {
+      // Check if Image constructor is available
+      if (typeof Image === 'undefined') {
+        console.warn('Image constructor not available for pHash computation');
+        resolve(null);
+        return;
+      }
+      
+      const img = new Image();
+      img.src = base64Data;
+      
+      img.onload = () => {
+        // Check if document and canvas are available
+        if (typeof document === 'undefined' || typeof document.createElement === 'undefined') {
+          console.warn('Document or canvas not available for pHash computation');
+          resolve(null);
+          return;
+        }
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        const hash = computePHash(canvas);
+        resolve(hash);
+      };
+      
+      img.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+};
+
+// ─── Find duplicates in document list ───────────────────────────────────────
+export interface DuplicateDocument {
+  documentId: string;
+  documentName: string;
+  similarity: number;
+  rotation: number;
+}
+
+export const findDuplicates = (
+  uploadedCanvas: HTMLCanvasElement,
+  existingDocuments: Array<{ id: string; name: string; pHash?: string }>,
+  threshold: number = 90
+): DuplicateDocument[] => {
+  const duplicates: DuplicateDocument[] = [];
+  
+  for (const doc of existingDocuments) {
+    if (!doc.pHash || doc.pHash === 'PHASH-UNAVAIL') continue;
+    
+    const result = pHashSimWithRotationCompat(uploadedCanvas, doc.pHash);
+    if (result.sim && result.sim >= threshold) {
+      duplicates.push({
+        documentId: doc.id,
+        documentName: doc.name,
+        similarity: result.sim,
+        rotation: result.rotation
+      });
+    }
+  }
+  
+  // Sort by similarity (highest first)
+  return duplicates.sort((a, b) => b.similarity - a.similarity);
+};

@@ -22,7 +22,7 @@ const Login = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if user has already registered (userId exists in Capacitor storage OR passed via navigation)
+    // Check if user has already registered and has biometrics in backend
     const checkRegistration = async () => {
       try {
         // FIRST: Check if userId was passed from Register page (via navigation state)
@@ -46,9 +46,45 @@ const Login = () => {
           
           if (savedUserId) {
             console.log('✅ Login: User is registered with ID:', savedUserId);
-            setUserId(savedUserId);
-            setIsLoading(false);
-            return;
+            
+            // THIRD: Check backend for existing biometrics
+            try {
+              const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+              const response = await fetch(`${API_BASE}/api/user/check`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ user_id: savedUserId })
+              });
+
+              if (response.ok) {
+                const biometricData = await response.json();
+                console.log('🔍 Backend biometric check:', biometricData);
+                
+                if (biometricData.ok && (biometricData.fingerprintRegistered || biometricData.faceRegistered)) {
+                  console.log('✅ Login: User has biometrics in backend, proceeding to biometric login');
+                  setUserId(savedUserId);
+                  setIsLoading(false);
+                  return;
+                } else {
+                  console.log('⚠️ Login: User exists but no biometrics in backend');
+                  setUserId(savedUserId);
+                  setIsLoading(false);
+                  return;
+                }
+              } else {
+                console.log('⚠️ Login: Backend check failed, proceeding with local userId');
+                setUserId(savedUserId);
+                setIsLoading(false);
+                return;
+              }
+            } catch (backendError) {
+              console.log('⚠️ Login: Backend error, proceeding with local userId:', backendError);
+              setUserId(savedUserId);
+              setIsLoading(false);
+              return;
+            }
           }
           
           // Wait before retry
