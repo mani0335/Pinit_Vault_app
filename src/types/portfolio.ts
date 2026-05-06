@@ -1,6 +1,6 @@
 export interface Portfolio {
   id: string;
-  type: "personal" | "academic" | "masters";
+  type: "personal" | "academic" | "professional" | "masters";
   name: string; // user name
   role?: string;
   email?: string;

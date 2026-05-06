@@ -1,15 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Check, FileText } from "lucide-react";
-
-interface VaultDocument {
-  id: string;
-  name: string;
-  metadata: {
-    original_name: string;
-    size: number;
-    timestamp: number;
-  };
-}
+import { VaultDocument } from "@/lib/vaultService";
 
 interface VaultDocumentModalProps {
   isOpen: boolean;
@@ -45,20 +36,26 @@ export default function VaultDocumentModal({ isOpen, onClose, onSelection }: Vau
         {
           id: "1",
           name: "Resume.pdf",
+          encryptedData: "mock_encrypted_data_1",
           metadata: {
             original_name: "John_Doe_Resume.pdf",
             size: 245760,
-            timestamp: 1704067200000
-          }
+            timestamp: 1704067200000,
+            checksum: "abc123def456"
+          },
+          createdAt: new Date().toISOString()
         },
         {
           id: "2",
           name: "Transcript.pdf",
+          encryptedData: "mock_encrypted_data_2",
           metadata: {
             original_name: "Academic_Transcript.pdf",
             size: 512000,
-            timestamp: 1704067200000
-          }
+            timestamp: 1704067200000,
+            checksum: "xyz789uvw012"
+          },
+          createdAt: new Date().toISOString()
         }
       ]);
     } finally {

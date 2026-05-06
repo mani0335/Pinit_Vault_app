@@ -76,18 +76,19 @@ import {
   Fingerprint,
   Bell,
 } from "lucide-react";
+import type { LucideProps } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appStorage } from "@/lib/storage";
 import { ImageCryptoFull } from "@/components/ImageCryptoFull";
 import { VaultManager } from "@/components/VaultManager";
 import { ActivityLogger } from "@/components/ActivityLogger";
-import Profile from "@/pages/Profile";
-import { ImageAnalyzer } from "@/components/ImageAnalyzer";
+import PortfolioPage from "@/pages/PortfolioPage";
 
 interface VaultDocument {
   id: string;
   name: string;
   encryptedData: string;
+  encryptedImage?: string;
   cloudinaryUrl?: string;
   metadata: {
     timestamp: number;
@@ -98,6 +99,22 @@ interface VaultDocument {
     ownerId?: string;
   };
   createdAt: string;
+}
+
+interface ShareHistoryEntry {
+  id: string;
+  action: string;
+  document: string;
+  config: ShareConfig;
+  timestamp: string;
+}
+
+interface PortfolioCategory {
+  id: string;
+  name: string;
+  icon: React.ForwardRefExoticComponent<Omit<LucideProps, "ref"> & React.RefAttributes<SVGSVGElement>>;
+  color: string;
+  description?: string;
 }
 
 interface ShareConfig {
@@ -150,7 +167,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
   // Share Management State
   const [shareConfigs, setShareConfigs] = useState<ShareConfig[]>([]);
-  const [shareHistory, setShareHistory] = useState<any[]>([]);
+  const [shareHistory, setShareHistory] = useState<ShareHistoryEntry[]>([]);
   const [selectedShareImage, setSelectedShareImage] = useState<VaultDocument | null>(null);
   const [shareExpiryDate, setShareExpiryDate] = useState<string>("");
   const [shareExpiryTime, setShareExpiryTime] = useState<string>("00:00");
@@ -396,7 +413,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
         {currentPage === "crypto" && <ImageCryptoFull key="crypto" userId={userId || undefined} />}
         {currentPage === "vault-advanced" && <VaultManager key="vault-advanced" userId={userId || undefined} />}
         {currentPage === "activity" && <ActivityLogger key="activity" userId={userId || undefined} />}
-        {currentPage === "profile" && <DigitalIdentityDashboard key="profile" onBack={() => setCurrentPage("home")} userName={userName} setUserName={setUserName} profileImage={profileImage} setProfileImage={setProfileImage} userId={userId} />}
+        {currentPage === "profile" && <DigitalIdentityDashboard key="profile" onBack={() => setCurrentPage("home")} userName={userName} setUserName={setUserName} profileImage={profileImage} setProfileImage={setProfileImage} userId={userId} vaultDocuments={vaultDocuments} setVaultDocuments={setVaultDocuments} />}
         {currentPage === "upload-document" && (
           <DocumentUploadPage
             key="upload-document"
@@ -412,8 +429,11 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
               if (userId) {
                 await saveVaultDocuments(userId, updated);
               }
-              console.log('Document saved to vault:', document.name);
+              alert("? Document uploaded successfully!");
+              setCurrentPage("vault");
             }}
+            setCurrentPage={setCurrentPage}
+            documents={vaultDocuments}
           />
         )}
         {currentPage === "scan-document" && (
@@ -436,14 +456,14 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
               const updated = scannedPages.filter((_, i) => i !== index);
               setScannedPages(updated);
             }}
-            onSaveToPDF={async (pdfData: string) => {
+            onSavePDF={async (pdfData: string, fileName: string) => {
               const newDoc: VaultDocument = {
                 id: `pdf_${Date.now()}`,
-                name: `Document_${new Date().toLocaleDateString()}.pdf`,
+                name: fileName,
                 encryptedData: pdfData,
                 metadata: {
                   timestamp: Date.now(),
-                  original_name: `Document_${new Date().toLocaleDateString()}.pdf`,
+                  original_name: fileName,
                   size: pdfData.length,
                   checksum: Math.random().toString(36).substring(7),
                   encrypted: true,
@@ -461,6 +481,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
               setCurrentPage("vault");
             }}
             onBack={() => setCurrentPage("scan-document")}
+            onRescan={() => setCurrentPage("scan-document")}
           />
         )}
         {currentPage === "verify-proof" && verifyProofImage && (
@@ -515,7 +536,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                 console.log(`🔐 Image encrypted with PINIT ID: ${ownerIdUsed}`);
                 
                 // Upload to Cloudinary (optional cloud backup) - wrap in try-catch
-                let uploadResult = { cloudinaryUrl: null };
+                let uploadResult: { success: boolean; cloudinaryUrl?: string; error?: string } = { success: false, cloudinaryUrl: null };
                 try {
                   console.log("☁️ Uploading to Cloudinary...");
                   uploadResult = await uploadImageToCloudinary(
@@ -533,7 +554,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
 
                 // Save encrypted image to device gallery in PINIT Vault folder
                 console.log("💾 Saving to device gallery...");
-                let galleryResult = { success: false, error: "Not attempted" };
+                let galleryResult: { success: boolean; path?: string; error?: string } = { success: false, error: "Not attempted" };
                 try {
                   galleryResult = await saveImageToGallery(
                     encryptedPackage.encryptedImage || encryptedPackage.encrypted_data,
@@ -552,11 +573,20 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
                 // Create document with encrypted preview for display
                 const newDoc: VaultDocument = {
                   id: Date.now().toString(),
-                  name: encryptedPackage.metadata.original_name,
+                  name: encryptedPackage.metadata.original_name || 'encrypted_document.jpg',
                   encryptedData: encryptedPackage.encrypted_data,
                   encryptedImage: encryptedPackage.encryptedImage, // Store for preview
                   cloudinaryUrl: uploadResult.cloudinaryUrl,
-                  metadata: encryptedPackage.metadata,
+                  metadata: {
+                    timestamp: typeof encryptedPackage.metadata.timestamp === 'string' 
+                      ? new Date(encryptedPackage.metadata.timestamp).getTime()
+                      : encryptedPackage.metadata.timestamp,
+                    original_name: encryptedPackage.metadata.original_name || 'encrypted_document.jpg',
+                    size: encryptedPackage.metadata.size || 0,
+                    checksum: encryptedPackage.metadata.checksum || '',
+                    encrypted: true,
+                    ownerId: encryptedPackage.metadata.ownerId || encryptedPackage.metadata.userId
+                  },
                   createdAt: new Date().toLocaleDateString(),
                 };
 
@@ -676,7 +706,7 @@ function NavButton({
   onClick,
   highlight = false,
 }: {
-  icon: any;
+  icon: React.ComponentType<any>;
   label: string;
   active: boolean;
   onClick: () => void;
@@ -1339,6 +1369,23 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
 }
 
 // ============= ENCRYPT PREVIEW PAGE =============
+interface EncryptedPackage {
+  encrypted_data: string;
+  encryptedImage?: string;
+  check_digest?: string;
+  metadata: {
+    timestamp: number | string;
+    algorithm?: string;
+    encryptionMethod?: string;
+    keyId?: string;
+    original_name?: string;
+    size?: number;
+    userId?: string;
+    ownerId?: string;
+    checksum?: string;
+  };
+}
+
 function EncryptPreviewPage({
   image,
   userId,
@@ -1348,10 +1395,10 @@ function EncryptPreviewPage({
   image: string;
   userId: string;
   onRetake: () => void;
-  onSaveToVault: (encryptedPackage: any) => Promise<void>;
+  onSaveToVault: (encryptedPackage: EncryptedPackage) => Promise<void>;
 }) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [encryptedData, setEncryptedData] = useState<any>(null);
+  const [encryptedData, setEncryptedData] = useState<EncryptedPackage | null>(null);
   const [encryptedImage, setEncryptedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1929,47 +1976,6 @@ function EncryptPreviewPage({
   );
 }
 
-// ============= PORTFOLIO PAGE =============
-function PortfolioPage() {
-  const [portfolioName, setPortfolioName] = useState("");
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="px-4 pt-6 space-y-4"
-    >
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Create Portfolio</h1>
-
-      <div className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-2xl p-6 space-y-4 shadow-xl">
-        <div>
-          <label className="text-purple-300 text-sm font-semibold">Portfolio Name</label>
-          <input
-            type="text"
-            placeholder="e.g., Job Application"
-            value={portfolioName}
-            onChange={(e) => setPortfolioName(e.target.value)}
-            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all"
-          />
-        </div>
-
-        <div>
-          <label className="text-purple-300 text-sm font-semibold">Description</label>
-          <textarea
-            placeholder="Add details..."
-            rows={3}
-            className="w-full mt-3 bg-slate-700/50 border border-purple-500/30 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500/70 focus:bg-slate-700/70 transition-all resize-none"
-          />
-        </div>
-
-        <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all">
-          Create Portfolio
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
 
 // ============= SHARE PAGE =============
 function SharePage({ 
@@ -1989,8 +1995,8 @@ function SharePage({
 }: {
   shareConfigs: ShareConfig[];
   setShareConfigs: React.Dispatch<React.SetStateAction<ShareConfig[]>>;
-  shareHistory: any[];
-  setShareHistory: React.Dispatch<React.SetStateAction<any[]>>;
+  shareHistory: ShareHistoryEntry[];
+  setShareHistory: React.Dispatch<React.SetStateAction<ShareHistoryEntry[]>>;
   selectedShareImage: VaultDocument | null;
   setSelectedShareImage: React.Dispatch<React.SetStateAction<VaultDocument | null>>;
   shareExpiryDate: string;
@@ -2818,6 +2824,8 @@ interface DocumentUploadPageProps {
   onBack: () => void;
   onScanClick: () => void;
   onDocumentUploaded: (document: VaultDocument) => void;
+  setCurrentPage: React.Dispatch<React.SetStateAction<PageType>>;
+  documents: VaultDocument[];
 }
 
 // 2. SCAN DOCUMENT PAGE - Camera scanning with pocket system
@@ -2905,7 +2913,7 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
         const base64Data = scannedPages[i];
         
         // Create image from base64
-        const img = new Image();
+        const img = new globalThis.Image();
         img.src = `data:image/jpeg;base64,${base64Data}`;
         
         // Wait for image to load
@@ -3063,9 +3071,10 @@ interface ReviewScanPageProps {
   onSavePDF: (pdfData: string, fileName: string) => void;
   onBack: () => void;
   onRescan: () => void;
+  onDeletePage?: (index: number) => void;
 }
 
-function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan }: ReviewScanPageProps) {
+function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan, onDeletePage }: ReviewScanPageProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
 
@@ -3122,8 +3131,21 @@ function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan }: ReviewSca
               alt={`Page ${idx + 1}`}
               className="w-full aspect-[3/4] object-cover"
             />
-            <div className="absolute top-2 right-2 bg-emerald-600 text-white px-2 py-1 rounded text-xs font-bold">
-              Page {idx + 1}
+            <div className="absolute top-2 right-2 flex gap-1">
+              <div className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-bold">
+                Page {idx + 1}
+              </div>
+              {onDeletePage && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePage(idx);
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white p-1 rounded text-xs font-bold transition-all"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
             </div>
           </motion.div>
         ))}
@@ -3204,7 +3226,7 @@ const encryptFile = async (fileData: string): Promise<string> => {
   return btoa(fileData);
 };
 
-function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: DocumentUploadPageProps) {
+function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded, setCurrentPage, documents }: DocumentUploadPageProps) {
   const [isUploading, setIsUploading] = useState(false);
   
   const handleFileUpload = async () => {
@@ -3976,9 +3998,9 @@ function ShareAccessPage() {
   );
 }
 
-function DigitalIdentityDashboard({ onBack, userName, setUserName, profileImage, setProfileImage, userId }: { onBack: () => void; userName: string; setUserName: React.Dispatch<React.SetStateAction<string>>; profileImage: string | null; setProfileImage: React.Dispatch<React.SetStateAction<string | null>>; userId: string | null }) {
+function DigitalIdentityDashboard({ onBack, userName, setUserName, profileImage, setProfileImage, userId, vaultDocuments, setVaultDocuments }: { onBack: () => void; userName: string; setUserName: React.Dispatch<React.SetStateAction<string>>; profileImage: string | null; setProfileImage: React.Dispatch<React.SetStateAction<string | null>>; userId: string | null; vaultDocuments: VaultDocument[]; setVaultDocuments: React.Dispatch<React.SetStateAction<VaultDocument[]>> }) {
   const [activeTab, setActiveTab] = useState("profile");
-  const [selectedCategory, setSelectedCategory] = useState<any>(null);
+  const [selectedCategory, setSelectedCategory] = useState<PortfolioCategory | null>(null);
   
   // Enhanced Profile State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -4021,7 +4043,7 @@ function DigitalIdentityDashboard({ onBack, userName, setUserName, profileImage,
     }
   };
 
-  const handleCategoryClick = (category: any) => {
+  const handleCategoryClick = (category: PortfolioCategory) => {
     console.log('Category clicked:', category.name);
     setSelectedCategory(category);
   };

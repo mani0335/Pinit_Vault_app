@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, FileText, X, Check } from "lucide-react";
-import { VaultDocument as VaultDocumentType } from "@/types/portfolioBuilder";
-import { getVaultDocuments, VaultDocument, saveToVault } from "@/services/vaultService";
+import { Preferences } from "@capacitor/preferences";
+import { getVaultDocuments, VaultDocument } from "@/lib/vaultService";
 import VaultSelector from "@/components/vault/VaultSelector";
 
 interface DocumentsSectionProps {
@@ -42,7 +42,13 @@ export function DocumentsSection({ documents, onChange }: DocumentsSectionProps)
   const loadVaultDocuments = async () => {
     try {
       setLoading(true);
-      const docs = await getVaultDocuments();
+      // Get user ID from preferences
+      const { value: userId } = await Preferences.get({ key: "biovault_userId" });
+      if (!userId) {
+        console.warn("No user ID found");
+        return;
+      }
+      const docs = await getVaultDocuments(userId);
       setVaultDocuments(docs);
     } catch (error) {
       console.error("Failed to load vault documents:", error);
@@ -108,7 +114,7 @@ export function DocumentsSection({ documents, onChange }: DocumentsSectionProps)
               className="bg-gradient-to-br from-slate-800/40 to-purple-900/30 border border-purple-500/30 backdrop-blur-xl rounded-xl p-4 shadow-xl flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
-                {getDocumentIcon(vaultDocuments.find(doc => doc.id === docId)?.type || "Document")}
+                {getDocumentIcon("Document")}
                 <span className="text-white font-medium">{getDocumentName(docId)}</span>
               </div>
               <button

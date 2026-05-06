@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, FileText, Calendar, User, Mail } from "lucide-react";
 import { getPortfolioById, updatePortfolio } from "../services/portfolioService";
 import { Portfolio } from "../types/portfolio";
+import { getVaultDocuments, VaultDocument } from "../lib/vaultService";
+import { Preferences } from "@capacitor/preferences";
 
 export default function PortfolioView() {
   const { id } = useParams<{ id: string }>();
@@ -11,10 +13,12 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", role: "", email: "" });
+  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
 
   useEffect(() => {
     if (id) {
       loadPortfolio();
+      loadVaultDocuments();
     }
   }, [id]);
 
@@ -35,6 +39,18 @@ export default function PortfolioView() {
       navigate("/portfolio");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadVaultDocuments = async () => {
+    try {
+      const { value: userId } = await Preferences.get({ key: "biovault_userId" });
+      if (userId) {
+        const docs = await getVaultDocuments(userId);
+        setVaultDocuments(docs);
+      }
+    } catch (error) {
+      console.error("Failed to load vault documents:", error);
     }
   };
 
@@ -223,12 +239,25 @@ export default function PortfolioView() {
               </div>
             ) : (
               <div className="space-y-2">
-                {portfolio.documents.map((docId, index) => (
-                  <div key={docId} className="bg-slate-900 rounded-lg p-3 border border-slate-600">
-                    <p className="text-white">Document ID: {docId}</p>
-                    <p className="text-gray-400 text-sm">Document #{index + 1}</p>
-                  </div>
-                ))}
+                {portfolio.documents.map((docId, index) => {
+                  const vaultDoc = vaultDocuments.find(doc => doc.id === docId);
+                  return (
+                    <div key={docId} className="bg-slate-900 rounded-lg p-3 border border-slate-600">
+                      <p className="text-white font-medium">
+                        {vaultDoc ? vaultDoc.name : `Document ${index + 1}`}
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        {vaultDoc ? vaultDoc.metadata.original_name : `Document ID: ${docId}`}
+                      </p>
+                      {vaultDoc && (
+                        <p className="text-gray-500 text-xs">
+                          Size: {Math.round(vaultDoc.metadata.size / 1024)} KB • 
+                          {new Date(vaultDoc.metadata.timestamp).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

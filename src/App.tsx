@@ -339,6 +339,14 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/portfolio/edit/:id"
+              element={
+                <ProtectedRoute>
+                  <PortfolioCreate />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

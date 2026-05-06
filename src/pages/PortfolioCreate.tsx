@@ -1,18 +1,46 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Save } from "lucide-react";
-import { savePortfolio } from "../services/portfolioService";
+import { savePortfolio, getPortfolioById, updatePortfolio } from "../services/portfolioService";
 import VaultDocumentModal from "../components/portfolio/VaultDocumentModal";
 import { Portfolio } from "../types/portfolio";
 
 export default function PortfolioCreate() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [isEditMode, setIsEditMode] = useState(false);
   const [step, setStep] = useState<"type" | "profile" | "documents" | "complete">("type");
-  const [portfolioType, setPortfolioType] = useState<"personal" | "academic" | "masters">("personal");
+  const [portfolioType, setPortfolioType] = useState<"personal" | "academic" | "professional" | "masters">("personal");
   const [profile, setProfile] = useState({ name: "", role: "", email: "" });
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [showVaultModal, setShowVaultModal] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      setIsEditMode(true);
+      loadPortfolioForEdit();
+    }
+  }, [id]);
+
+  const loadPortfolioForEdit = async () => {
+    try {
+      const portfolio = await getPortfolioById(id);
+      if (portfolio) {
+        setPortfolioType(portfolio.type);
+        setProfile({
+          name: portfolio.name,
+          role: portfolio.role || "",
+          email: portfolio.email || "",
+        });
+        setSelectedDocuments(portfolio.documents);
+        setStep("complete"); // Skip to complete step for editing
+      }
+    } catch (error) {
+      console.error("Failed to load portfolio for editing:", error);
+      navigate("/portfolio");
+    }
+  };
 
   const portfolioTypes = [
     {
@@ -24,6 +52,11 @@ export default function PortfolioCreate() {
       type: "academic" as const,
       title: "Academic Portfolio",
       description: "Highlight your education and academic work",
+    },
+    {
+      type: "professional" as const,
+      title: "Professional / Placement Portfolio",
+      description: "Perfect for job applications and career opportunities",
     },
     {
       type: "masters" as const,
@@ -50,18 +83,37 @@ export default function PortfolioCreate() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const newPortfolio: Portfolio = {
-        id: Date.now().toString(),
-        type: portfolioType,
-        name: profile.name,
-        role: profile.role,
-        email: profile.email,
-        documents: selectedDocuments,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      if (isEditMode && id) {
+        // Update existing portfolio
+        const updatedPortfolio: Portfolio = {
+          id,
+          type: portfolioType,
+          name: profile.name,
+          role: profile.role,
+          email: profile.email,
+          documents: selectedDocuments,
+          createdAt: new Date().toISOString(), // Will be updated from existing
+          updatedAt: new Date().toISOString(),
+        };
 
-      await savePortfolio(newPortfolio);
+        await updatePortfolio(updatedPortfolio);
+        alert("Portfolio updated successfully!");
+      } else {
+        // Create new portfolio
+        const newPortfolio: Portfolio = {
+          id: Date.now().toString(),
+          type: portfolioType,
+          name: profile.name,
+          role: profile.role,
+          email: profile.email,
+          documents: selectedDocuments,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await savePortfolio(newPortfolio);
+        alert("Portfolio created successfully!");
+      }
       navigate("/portfolio");
     } catch (error) {
       console.error("Failed to save portfolio:", error);
@@ -85,7 +137,7 @@ export default function PortfolioCreate() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-semibold text-white">Create Portfolio</h1>
+        <h1 className="text-lg font-semibold text-white">{isEditMode ? "Edit Portfolio" : "Create Portfolio"}</h1>
         <div className="w-9"></div>
       </div>
 

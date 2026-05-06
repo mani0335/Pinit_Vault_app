@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { EducationEntry } from "@/types/portfolioBuilder";
+import { Education } from "@/types/portfolioBuilder";
 
 interface EducationSectionProps {
-  education: EducationEntry[];
-  onChange: (education: EducationEntry[]) => void;
+  education: Education[];
+  onChange: (education: Education[]) => void;
 }
 
 export function EducationSection({ education, onChange }: EducationSectionProps) {
   const addEducation = () => {
-    const newEntry: EducationEntry = {
+    const newEntry: Education = {
       id: Date.now().toString(),
       degree: "",
       institution: "",
@@ -18,7 +18,7 @@ export function EducationSection({ education, onChange }: EducationSectionProps)
     onChange([...education, newEntry]);
   };
 
-  const updateEducation = (id: string, field: keyof EducationEntry, value: string) => {
+  const updateEducation = (id: string, field: keyof Education, value: string) => {
     onChange(education.map(entry => 
       entry.id === id ? { ...entry, [field]: value } : entry
     ));

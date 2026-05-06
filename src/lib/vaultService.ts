@@ -2,7 +2,7 @@ import { appStorage } from "./storage";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Preferences } from "@capacitor/preferences";
 
-interface VaultDocument {
+export interface VaultDocument {
   id: string;
   name: string;
   encryptedData: string;
