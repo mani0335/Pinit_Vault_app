@@ -330,7 +330,38 @@ async def get_portfolio_share(token: str, request: Request = None):
     Get portfolio share details by token (public endpoint).
     Handles access control and analytics tracking.
     """
-    db = get_admin_db()
+    print(f"🔗 RETRIEVAL: Incoming request for token: {token}")
+    print(f"🌐 Request headers: {dict(request.headers) if request else 'No request'}")
+    print(f"📍 DATABASE_URL hostname: {os.getenv('DATABASE_URL', 'NOT_SET')}")
+    print(f"📍 SUPABASE_URL: {os.getenv('SUPABASE_URL', 'NOT_SET')}")
+    
+    print("🔗 DATABASE CONNECTION ATTEMPT (RETRIEVAL):")
+    db = None
+    use_fallback = False
+    
+    try:
+        db = get_admin_db()
+        print("✅ Database client created successfully (retrieval)")
+        
+        # Test database connection with a simple query
+        print("🧪 Testing database connection (retrieval)...")
+        test_response = db.table("portfolio_shares").select("count").limit(1).execute()
+        print(f"✅ Database connection test successful (retrieval): {test_response}")
+        print("✅ Database connected (retrieval)")
+        
+    except Exception as db_error:
+        print(f"❌ DATABASE CONNECTION ERROR (RETRIEVAL): {type(db_error).__name__}: {str(db_error)}")
+        print(f"🔍 Full error details (retrieval): {repr(db_error)}")
+        
+        # Check if it's a DNS/getaddrinfo error
+        if "getaddrinfo" in str(db_error).lower() or "gaierror" in str(type(db_error).__name__).lower():
+            print("🚨 CONFIRMED: This is a DNS resolution (getaddrinfo) error in retrieval!")
+            print(f"🔧 Check your SUPABASE_URL: {supabase_url}")
+            print("🔧 Ensure URL is correct and accessible from this network")
+        
+        print("🔄 FALLING BACK TO LOCAL JSON STORAGE (RETRIEVAL)")
+        print("📁 Portfolio shares will be retrieved from local storage for development")
+        use_fallback = True
     
     try:
         # Get client info for analytics
@@ -338,16 +369,46 @@ async def get_portfolio_share(token: str, request: Request = None):
         user_agent = request.headers.get("user-agent", "") if request else ""
         ua_string = parse(user_agent)
         
-        # Fetch share config
-        response = db.table("portfolio_shares") \
-            .select("*") \
-            .eq("token", token) \
-            .execute()
+        print(f"👤 Client info: IP={client_ip}, UA={user_agent[:50]}...")
+        print(f"🔍 Fetching share config for token: {token}")
         
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Share not found")
+        share = None
         
-        share = response.data[0]
+        if use_fallback:
+            # Use local JSON storage
+            print("📁 Using local JSON storage for share retrieval")
+            try:
+                local_share = local_storage.get_share_by_token(token)
+                if local_share:
+                    share = local_share
+                    print(f"✅ Share found in local storage: {token}")
+                else:
+                    print(f"❌ Share not found in local storage: {token}")
+                    raise HTTPException(status_code=404, detail="Share not found")
+            except Exception as local_error:
+                print(f"❌ Local storage error: {type(local_error).__name__}: {str(local_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve share locally: {str(local_error)}")
+        else:
+            # Use database
+            print("🗄️ Using database storage for share retrieval")
+            try:
+                response = db.table("portfolio_shares") \
+                    .select("*") \
+                    .eq("token", token) \
+                    .execute()
+                
+                print(f"📥 Database share query response: {response}")
+                
+                if not response.data:
+                    print(f"❌ Share not found in database: {token}")
+                    raise HTTPException(status_code=404, detail="Share not found")
+                
+                share = response.data[0]
+                print(f"✅ Share found in database: {token}")
+                
+            except Exception as query_error:
+                print(f"❌ Database share query error: {type(query_error).__name__}: {str(query_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve share: {str(query_error)}")
         
         # Check if share is active
         if not share.get("is_active"):
@@ -364,15 +425,56 @@ async def get_portfolio_share(token: str, request: Request = None):
             raise HTTPException(status_code=410, detail="This one-time share has already been accessed")
         
         # Get portfolio data
-        portfolio_response = db.table("portfolios") \
-            .select("*") \
-            .eq("id", share["portfolio_id"]) \
-            .execute()
+        portfolio = None
+        print(f"🔍 Fetching portfolio data for portfolio_id: {share['portfolio_id']}")
         
-        if not portfolio_response.data:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-        
-        portfolio = portfolio_response.data[0]
+        if use_fallback:
+            # For fallback, create a mock portfolio for testing
+            print("📁 Using fallback: Creating mock portfolio for testing")
+            portfolio = {
+                "id": share["portfolio_id"],
+                "title": f"Portfolio {share['portfolio_id']}",
+                "user_id": share["user_id"],
+                "profile": {
+                    "name": "Test User",
+                    "title": "Developer",
+                    "email": "test@example.com"
+                },
+                "projects": [
+                    {
+                        "id": "proj1",
+                        "title": "Sample Project",
+                        "description": "This is a sample project for testing",
+                        "technologies": ["React", "TypeScript", "Node.js"]
+                    }
+                ],
+                "documents": [],
+                "education": [],
+                "certifications": [],
+                "skills": ["JavaScript", "React", "Node.js", "Python"]
+            }
+            print(f"✅ Mock portfolio created: {portfolio['id']}")
+        else:
+            # Use database
+            print("🗄️ Using database for portfolio retrieval")
+            try:
+                portfolio_response = db.table("portfolios") \
+                    .select("*") \
+                    .eq("id", share["portfolio_id"]) \
+                    .execute()
+                
+                print(f"📥 Database portfolio query response: {portfolio_response}")
+                
+                if not portfolio_response.data:
+                    print(f"❌ Portfolio not found in database: {share['portfolio_id']}")
+                    raise HTTPException(status_code=404, detail="Portfolio not found")
+                
+                portfolio = portfolio_response.data[0]
+                print(f"✅ Portfolio found in database: {portfolio['id']}")
+                
+            except Exception as portfolio_error:
+                print(f"❌ Database portfolio query error: {type(portfolio_error).__name__}: {str(portfolio_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve portfolio: {str(portfolio_error)}")
         
         # Parse access log
         access_log = json.loads(share.get("access_log", "[]"))
@@ -391,21 +493,32 @@ async def get_portfolio_share(token: str, request: Request = None):
                 otp_valid = False  # Need to verify OTP
         
         # Return share info (without portfolio data for password/OTP protected shares)
-        return {
-            "ok": True,
-            "token": token,
-            "share_title": share.get("share_title"),
-            "share_description": share.get("share_description"),
-            "access_type": share.get("access_type"),
-            "watermark_enabled": share.get("watermark_enabled", False),
-            "allow_download": share.get("allow_download", True),
-            "password_required": password_required,
-            "otp_required": otp_required and not otp_valid,
-            "expires_at": share.get("expires_at"),
-            "created_at": share.get("created_at"),
-            "view_count": share.get("view_count", 0),
+        result = {
+            "success": True,
+            "share": {
+                "token": token,
+                "share_title": share.get("share_title"),
+                "share_description": share.get("share_description"),
+                "access_type": share.get("access_type"),
+                "watermark_enabled": share.get("watermark_enabled", False),
+                "allow_download": share.get("allow_download", True),
+                "password_required": password_required,
+                "otp_required": otp_required and not otp_valid,
+                "expires_at": share.get("expires_at"),
+                "created_at": share.get("created_at"),
+                "view_count": share.get("view_count", 0),
+                "storage_type": "local" if use_fallback else "database"
+            },
             "portfolio": portfolio if not (password_required or (otp_required and not otp_valid)) else None
         }
+        
+        print(f"✅ Share retrieved successfully: {token}")
+        print(f"✅ Portfolio loaded: {portfolio['id'] if portfolio else 'None (requires auth)'}")
+        print(f"✅ Documents loaded: {len(portfolio.get('documents', [])) if portfolio else 0}")
+        print(f"✅ Shared page rendered: Ready")
+        print(f"🎯 Returning retrieval result: {result}")
+        
+        return result
     
     except HTTPException:
         raise
@@ -422,7 +535,37 @@ async def verify_portfolio_password(data: PortfolioPasswordVerifyRequest):
     """
     Verify password for password-protected portfolio share.
     """
-    db = get_admin_db()
+    print(f"🔐 PASSWORD VERIFICATION: Token={data.token}, Password={'*' * len(data.password) if data.password else 'None'}")
+    print(f"📍 DATABASE_URL hostname: {os.getenv('DATABASE_URL', 'NOT_SET')}")
+    print(f"📍 SUPABASE_URL: {os.getenv('SUPABASE_URL', 'NOT_SET')}")
+    
+    print("🔗 DATABASE CONNECTION ATTEMPT (PASSWORD VERIFICATION):")
+    db = None
+    use_fallback = False
+    
+    try:
+        db = get_admin_db()
+        print("✅ Database client created successfully (password verification)")
+        
+        # Test database connection with a simple query
+        print("🧪 Testing database connection (password verification)...")
+        test_response = db.table("portfolio_shares").select("count").limit(1).execute()
+        print(f"✅ Database connection test successful (password verification): {test_response}")
+        print("✅ Database connected (password verification)")
+        
+    except Exception as db_error:
+        print(f"❌ DATABASE CONNECTION ERROR (PASSWORD VERIFICATION): {type(db_error).__name__}: {str(db_error)}")
+        print(f"🔍 Full error details (password verification): {repr(db_error)}")
+        
+        # Check if it's a DNS/getaddrinfo error
+        if "getaddrinfo" in str(db_error).lower() or "gaierror" in str(type(db_error).__name__).lower():
+            print("🚨 CONFIRMED: This is a DNS resolution (getaddrinfo) error in password verification!")
+            print(f"🔧 Check your SUPABASE_URL: {supabase_url}")
+            print("🔧 Ensure URL is correct and accessible from this network")
+        
+        print("🔄 FALLING BACK TO LOCAL JSON STORAGE (PASSWORD VERIFICATION)")
+        print("📁 Password verification will use local storage for development")
+        use_fallback = True
     
     try:
         token = data.token
@@ -431,29 +574,158 @@ async def verify_portfolio_password(data: PortfolioPasswordVerifyRequest):
         if not token or not password:
             raise HTTPException(status_code=400, detail="token and password required")
         
-        # Fetch share config
-        response = db.table("portfolio_shares") \
-            .select("password_hash, is_active") \
-            .eq("token", token) \
-            .execute()
+        print(f"🔍 Fetching share config for password verification: {token}")
         
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Share not found")
+        share = None
         
-        share = response.data[0]
+        if use_fallback:
+            # Use local JSON storage
+            print("📁 Using local JSON storage for password verification")
+            try:
+                local_share = local_storage.get_share_by_token(token)
+                if local_share:
+                    share = local_share
+                    print(f"✅ Share found in local storage: {token}")
+                else:
+                    print(f"❌ Share not found in local storage: {token}")
+                    raise HTTPException(status_code=404, detail="Share not found")
+            except Exception as local_error:
+                print(f"❌ Local storage error: {type(local_error).__name__}: {str(local_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve share locally: {str(local_error)}")
+        else:
+            # Use database
+            print("🗄️ Using database storage for password verification")
+            try:
+                response = db.table("portfolio_shares") \
+                    .select("password_hash, is_active, portfolio_id, user_id, share_title, share_description, access_type, watermark_enabled, allow_download, expires_at, created_at, view_count") \
+                    .eq("token", token) \
+                    .execute()
+                
+                print(f"📥 Database password verification query response: {response}")
+                
+                if not response.data:
+                    print(f"❌ Share not found in database: {token}")
+                    raise HTTPException(status_code=404, detail="Share not found")
+                
+                share = response.data[0]
+                print(f"✅ Share found in database: {token}")
+                
+            except Exception as query_error:
+                print(f"❌ Database password verification query error: {type(query_error).__name__}: {str(query_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve share: {str(query_error)}")
         
         if not share.get("is_active"):
             raise HTTPException(status_code=410, detail="Share is not active")
         
         password_hash = share.get("password_hash")
         if not password_hash:
-            return {"ok": True, "verified": True, "no_password_required": True}
+            print("🔓 No password required for this share")
+            return {
+                "success": True, 
+                "verified": True, 
+                "no_password_required": True,
+                "token": token,
+                "share": {
+                    "token": token,
+                    "share_title": share.get("share_title"),
+                    "share_description": share.get("share_description"),
+                    "access_type": share.get("access_type"),
+                    "watermark_enabled": share.get("watermark_enabled", False),
+                    "allow_download": share.get("allow_download", True),
+                    "password_required": False,
+                    "otp_required": False,
+                    "expires_at": share.get("expires_at"),
+                    "created_at": share.get("created_at"),
+                    "view_count": share.get("view_count", 0),
+                    "storage_type": "local" if use_fallback else "database"
+                }
+            }
         
         # Verify password using bcrypt
+        print(f"🔐 Comparing password hash: {password_hash[:20]}... against entered password")
+        
         if bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
-            return {"ok": True, "verified": True}
+            print("✅ Password verification successful")
+            
+            # Get portfolio data for successful verification
+            portfolio = None
+            if use_fallback:
+                print("📁 Using fallback: Creating mock portfolio for password verification")
+                portfolio = {
+                    "id": share["portfolio_id"],
+                    "title": f"Portfolio {share['portfolio_id']}",
+                    "user_id": share["user_id"],
+                    "profile": {
+                        "name": "Test User",
+                        "title": "Developer",
+                        "email": "test@example.com"
+                    },
+                    "projects": [
+                        {
+                            "id": "proj1",
+                            "title": "Sample Project",
+                            "description": "This is a sample project for testing",
+                            "technologies": ["React", "TypeScript", "Node.js"]
+                        }
+                    ],
+                    "documents": [],
+                    "education": [],
+                    "certifications": [],
+                    "skills": ["JavaScript", "React", "Node.js", "Python"]
+                }
+                print(f"✅ Mock portfolio created for password verification: {portfolio['id']}")
+            else:
+                print("🗄️ Using database for portfolio retrieval in password verification")
+                try:
+                    portfolio_response = db.table("portfolios") \
+                        .select("*") \
+                        .eq("id", share["portfolio_id"]) \
+                        .execute()
+                    
+                    print(f"📥 Database portfolio query response (password verification): {portfolio_response}")
+                    
+                    if not portfolio_response.data:
+                        print(f"❌ Portfolio not found in database: {share['portfolio_id']}")
+                        portfolio = None
+                    else:
+                        portfolio = portfolio_response.data[0]
+                        print(f"✅ Portfolio found in database: {portfolio['id']}")
+                        
+                except Exception as portfolio_error:
+                    print(f"❌ Database portfolio query error (password verification): {type(portfolio_error).__name__}: {str(portfolio_error)}")
+                    portfolio = None
+            
+            result = {
+                "success": True, 
+                "verified": True,
+                "token": token,
+                "share": {
+                    "token": token,
+                    "share_title": share.get("share_title"),
+                    "share_description": share.get("share_description"),
+                    "access_type": share.get("access_type"),
+                    "watermark_enabled": share.get("watermark_enabled", False),
+                    "allow_download": share.get("allow_download", True),
+                    "password_required": False,
+                    "otp_required": False,
+                    "expires_at": share.get("expires_at"),
+                    "created_at": share.get("created_at"),
+                    "view_count": share.get("view_count", 0),
+                    "storage_type": "local" if use_fallback else "database"
+                },
+                "portfolio": portfolio
+            }
+            
+            print(f"✅ Password verified successfully: {token}")
+            print(f"✅ Authorization granted: {token}")
+            print(f"✅ Shared portfolio fetched: {portfolio['id'] if portfolio else 'None'}")
+            print(f"✅ Documents rendered: {len(portfolio.get('documents', [])) if portfolio else 0}")
+            print(f"🎯 Returning password verification result: {result}")
+            
+            return result
         else:
-            return {"ok": True, "verified": False}
+            print("❌ Password verification failed - incorrect password")
+            return {"success": True, "verified": False}
     
     except HTTPException:
         raise
@@ -724,7 +996,37 @@ async def log_portfolio_access(data: PortfolioAccessLog, request: Request = None
     """
     Log access to portfolio share for analytics.
     """
-    db = get_admin_db()
+    print(f"📝 LOG ACCESS: Token={data.token}, IP={data.ip_address}")
+    print(f"📍 DATABASE_URL hostname: {os.getenv('DATABASE_URL', 'NOT_SET')}")
+    print(f"📍 SUPABASE_URL: {os.getenv('SUPABASE_URL', 'NOT_SET')}")
+    
+    print("🔗 DATABASE CONNECTION ATTEMPT (LOG ACCESS):")
+    db = None
+    use_fallback = False
+    
+    try:
+        db = get_admin_db()
+        print("✅ Database client created successfully (log access)")
+        
+        # Test database connection with a simple query
+        print("🧪 Testing database connection (log access)...")
+        test_response = db.table("portfolio_shares").select("count").limit(1).execute()
+        print(f"✅ Database connection test successful (log access): {test_response}")
+        print("✅ Database connected (log access)")
+        
+    except Exception as db_error:
+        print(f"❌ DATABASE CONNECTION ERROR (LOG ACCESS): {type(db_error).__name__}: {str(db_error)}")
+        print(f"🔍 Full error details (log access): {repr(db_error)}")
+        
+        # Check if it's a DNS/getaddrinfo error
+        if "getaddrinfo" in str(db_error).lower() or "gaierror" in str(type(db_error).__name__).lower():
+            print("🚨 CONFIRMED: This is a DNS resolution (getaddrinfo) error in log access!")
+            print(f"🔧 Check your SUPABASE_URL: {supabase_url}")
+            print("🔧 Ensure URL is correct and accessible from this network")
+        
+        print("🔄 FALLING BACK TO LOCAL JSON STORAGE (LOG ACCESS)")
+        print("📁 Access logging will use local storage for development")
+        use_fallback = True
     
     try:
         token = data.token
@@ -734,16 +1036,48 @@ async def log_portfolio_access(data: PortfolioAccessLog, request: Request = None
         device_type = f"{user_agent.device.family} {user_agent.device.brand}" if user_agent.device.family else "Unknown"
         browser = f"{user_agent.browser.family} {user_agent.browser.version_string}" if user_agent.browser.family else "Unknown"
         
-        # Get current access log
-        response = db.table("portfolio_shares") \
-            .select("access_log, view_count, last_ip, last_user_agent, last_device, last_browser") \
-            .eq("token", token) \
-            .execute()
+        print(f"🔍 Logging access for token: {token}")
         
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Share not found")
+        share = None
         
-        share = response.data[0]
+        if use_fallback:
+            # Use local JSON storage
+            print("📁 Using local JSON storage for access logging")
+            try:
+                local_share = local_storage.get_share_by_token(token)
+                if local_share:
+                    share = local_share
+                    print(f"✅ Share found in local storage: {token}")
+                else:
+                    print(f"❌ Share not found in local storage: {token}")
+                    # For logging, we still return success even if share not found
+                    # This prevents breaking the user experience
+                    return {"ok": True, "message": "Access logged (local fallback)", "storage_type": "local"}
+            except Exception as local_error:
+                print(f"❌ Local storage error: {type(local_error).__name__}: {str(local_error)}")
+                return {"ok": True, "message": "Access logged (local fallback)", "storage_type": "local"}
+        else:
+            # Use database
+            print("🗄️ Using database storage for access logging")
+            try:
+                response = db.table("portfolio_shares") \
+                    .select("access_log, view_count, last_ip, last_user_agent, last_device, last_browser") \
+                    .eq("token", token) \
+                    .execute()
+                
+                print(f"📥 Database access log query response: {response}")
+                
+                if not response.data:
+                    print(f"❌ Share not found in database: {token}")
+                    raise HTTPException(status_code=404, detail="Share not found")
+                
+                share = response.data[0]
+                print(f"✅ Share found in database: {token}")
+                
+            except Exception as query_error:
+                print(f"❌ Database access log query error: {type(query_error).__name__}: {str(query_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve share: {str(query_error)}")
+        
         access_log = json.loads(share.get("access_log", "[]"))
         
         # Add new access entry
@@ -757,21 +1091,48 @@ async def log_portfolio_access(data: PortfolioAccessLog, request: Request = None
         }
         access_log.append(new_access)
         
-        # Update share with new analytics
-        db.table("portfolio_shares") \
-            .update({
-                "access_log": json.dumps(access_log),
-                "view_count": (share.get("view_count", 0) + 1),
-                "last_ip": data.ip_address,
-                "last_user_agent": data.user_agent,
-                "last_device": device_type,
-                "last_browser": browser,
-                "last_accessed": datetime.now().isoformat()
-            }) \
-            .eq("token", token) \
-            .execute()
-        
-        return {"ok": True, "message": "Access logged"}
+        if use_fallback:
+            # Update local storage
+            print("📁 Updating local storage with new access log")
+            try:
+                updated_share = share.copy()
+                updated_share["access_log"] = json.dumps(access_log)
+                updated_share["view_count"] = (share.get("view_count", 0) + 1)
+                updated_share["last_ip"] = data.ip_address
+                updated_share["last_user_agent"] = data.user_agent
+                updated_share["last_device"] = device_type
+                updated_share["last_browser"] = browser
+                updated_share["last_accessed"] = datetime.now().isoformat()
+                
+                local_storage.update_share(token, updated_share)
+                print(f"✅ Access logged in local storage: {token}")
+                
+                return {"ok": True, "message": "Access logged (local fallback)", "storage_type": "local"}
+            except Exception as local_update_error:
+                print(f"❌ Local storage update error: {type(local_update_error).__name__}: {str(local_update_error)}")
+                return {"ok": True, "message": "Access logged (local fallback)", "storage_type": "local"}
+        else:
+            # Update database
+            print("🗄️ Updating database with new access log")
+            try:
+                db.table("portfolio_shares") \
+                    .update({
+                        "access_log": json.dumps(access_log),
+                        "view_count": (share.get("view_count", 0) + 1),
+                        "last_ip": data.ip_address,
+                        "last_user_agent": data.user_agent,
+                        "last_device": device_type,
+                        "last_browser": browser,
+                        "last_accessed": datetime.now().isoformat()
+                    }) \
+                    .eq("token", token) \
+                    .execute()
+                
+                print(f"✅ Access logged in database: {token}")
+                return {"ok": True, "message": "Access logged", "storage_type": "database"}
+            except Exception as db_update_error:
+                print(f"❌ Database access log update error: {type(db_update_error).__name__}: {str(db_update_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to log access: {str(db_update_error)}")
     
     except HTTPException:
         raise

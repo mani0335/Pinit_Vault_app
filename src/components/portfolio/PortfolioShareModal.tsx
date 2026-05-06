@@ -244,11 +244,24 @@ export default function PortfolioShareModal({
       console.log("=== MAKING API CALL ===");
       const createdShareData = await shareService.createShare(portfolioId, shareData, userId);
       console.log("=== API RESPONSE ===");
-      console.log("API RESPONSE:", createdShareData);
+      console.log("FULL SHARE RESPONSE:", createdShareData);
+      console.log("RESPONSE DATA:", createdShareData);
       
-      const url = generateShareUrl(createdShareData.token);
-      console.log("=== SUCCESS ===");
+      // Use backend shareUrl directly, fallback to generated URL
+      const url = createdShareData.shareUrl || generateShareUrl(createdShareData.token);
+      console.log("=== URL EXTRACTION ===");
+      console.log("Backend shareUrl:", createdShareData.shareUrl);
       console.log("Generated URL:", url);
+      
+      // Validate URL
+      if (!url || url.includes("undefined")) {
+        console.error("❌ Invalid share URL:", url);
+        throw new Error("Invalid share URL generated");
+      }
+      
+      console.log("✅ Share created successfully");
+      console.log("✅ Token extracted:", createdShareData.token);
+      console.log("✅ Valid share URL generated:", url);
       
       setCreatedShare(createdShareData);
       setShareUrl(url);
@@ -292,11 +305,28 @@ export default function PortfolioShareModal({
 
   const handleCopyLink = async () => {
     try {
+      // Validate URL before copying
+      if (!shareUrl || shareUrl.includes('undefined')) {
+        console.error('❌ Cannot copy invalid URL:', shareUrl);
+        setError('Invalid share URL. Please create a new share.');
+        return;
+      }
+      
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      console.log('✅ Share URL copied to clipboard:', shareUrl);
+      
+      // Show success feedback for longer
+      setTimeout(() => setCopied(false), 3000);
+      
+      // Optional: Show toast notification
+      if (typeof window !== 'undefined' && window.alert) {
+        // You could replace this with a proper toast component
+        console.log('✅ Share link copied successfully!');
+      }
     } catch (error) {
-      console.error('Failed to copy link:', error);
+      console.error('❌ Failed to copy link:', error);
+      setError('Failed to copy link. Please try again.');
     }
   };
 

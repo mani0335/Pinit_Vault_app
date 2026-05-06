@@ -122,23 +122,58 @@ class ShareServiceImpl implements ShareService {
     });
 
     console.log("📥 API Response received:", response);
+    console.log("FULL SHARE RESPONSE:", response);
+    console.log("RESPONSE DATA:", response.data);
+
+    // Extract token safely with multiple fallback options
+    const token = 
+      response?.share_token ||
+      response?.token ||
+      response?.data?.share_token ||
+      response?.data?.token ||
+      response?.share?.token;
+
+    // Extract share_url directly from backend if available
+    const generatedUrl = 
+      response?.share_url ||
+      response?.data?.share_url ||
+      (token ? `${window.location.origin}/shared/portfolio/${token}` : null);
+
+    console.log("🔍 EXTRACTED VALUES:");
+    console.log("Token:", token);
+    console.log("Generated URL:", generatedUrl);
+
+    // Validate extracted values
+    if (!token) {
+      console.error("❌ No token found in backend response");
+      throw new Error("Invalid share response: missing token");
+    }
+
+    if (!generatedUrl || generatedUrl.includes("undefined")) {
+      console.error("❌ Invalid share URL generated:", generatedUrl);
+      throw new Error("Invalid share URL generated");
+    }
 
     const result = {
-      id: response.token,
+      id: token,
       portfolioId,
-      token: response.token,
-      shareTitle: response.share_title,
-      shareDescription: response.share_description,
-      accessType: response.access_type,
-      expiresAt: response.expires_at,
-      otpEnabled: response.otp_enabled,
+      token: token,
+      shareUrl: generatedUrl, // Use backend URL directly
+      shareTitle: response?.share_title || config.shareTitle,
+      shareDescription: response?.share_description || config.shareDescription,
+      accessType: response?.access_type || config.accessType,
+      expiresAt: response?.expires_at,
+      otpEnabled: response?.otp_enabled || config.otpEnabled,
       watermarkEnabled: config.watermarkEnabled,
       allowDownload: config.allowDownload,
       active: true,
-      createdAt: response.created_at,
+      createdAt: response?.created_at || new Date().toISOString(),
       views: 0,
     };
 
+    console.log("✅ Share created successfully");
+    console.log("✅ Token extracted:", token);
+    console.log("✅ Valid share URL generated:", generatedUrl);
     console.log("🔄 Returning from shareService.createShare:", result);
     return result;
   }
@@ -168,37 +203,77 @@ class ShareServiceImpl implements ShareService {
   }
 
   async getShareByToken(token: string): Promise<SharedPortfolioLink | null> {
+    console.log(`🔍 shareService.getShareByToken called with token: ${token}`);
+    
     const response = await this.apiCall(`/${token}`);
     
-    if (!response) {
+    console.log(`📥 getShareByToken API response:`, response);
+    
+    if (!response || !response.success) {
+      console.log(`❌ No valid response for token: ${token}`);
       return null;
     }
 
-    return {
-      id: response.token,
-      portfolioId: response.portfolio_id,
-      token: response.token,
-      shareTitle: response.share_title,
-      shareDescription: response.share_description,
-      accessType: response.access_type,
-      expiresAt: response.expires_at,
-      otpEnabled: response.otp_enabled,
-      watermarkEnabled: response.watermark_enabled,
-      allowDownload: response.allow_download,
-      active: response.is_active,
-      createdAt: response.created_at,
-      views: response.view_count || 0,
-      portfolio: response.portfolio // Include portfolio data for display
+    // Handle new response format with share and portfolio objects
+    const shareData = response.share;
+    const portfolioData = response.portfolio;
+    
+    console.log(`🔍 Extracted share data:`, shareData);
+    console.log(`🔍 Extracted portfolio data:`, portfolioData);
+
+    const result = {
+      id: shareData.token,
+      portfolioId: portfolioData?.id || 'unknown', // Will be populated when portfolio is available
+      token: shareData.token,
+      shareTitle: shareData.share_title,
+      shareDescription: shareData.share_description,
+      accessType: shareData.access_type,
+      expiresAt: shareData.expires_at,
+      otpEnabled: shareData.otp_required,
+      watermarkEnabled: shareData.watermark_enabled,
+      allowDownload: shareData.allow_download,
+      active: true, // Always active when retrieved
+      createdAt: shareData.created_at,
+      views: shareData.view_count || 0,
+      portfolio: portfolioData, // Include portfolio data for display
+      passwordRequired: shareData.password_required,
+      storageType: shareData.storage_type
     };
+
+    console.log(`✅ Share retrieved successfully: ${token}`);
+    console.log(`✅ Portfolio loaded: ${portfolioData?.id || 'None (requires auth)'}`);
+    console.log(`✅ Documents loaded: ${portfolioData?.documents?.length || 0}`);
+    console.log(`🔄 Returning from getShareByToken:`, result);
+    
+    return result;
   }
 
   async verifyPassword(token: string, password: string): Promise<boolean> {
+    console.log(`🔐 shareService.verifyPassword called with token: ${token}, password: ${'*'.repeat(password.length)}`);
+    
     const response = await this.apiCall('/verify-password', {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     });
 
-    return response.valid || false;
+    console.log(`📥 Password verification response:`, response);
+    
+    if (!response || !response.success) {
+      console.log(`❌ Password verification failed: ${response?.detail || 'Unknown error'}`);
+      return false;
+    }
+    
+    const verified = response.verified;
+    console.log(`✅ Password verification result: ${verified}`);
+    
+    if (verified) {
+      console.log(`✅ Password verified successfully`);
+      console.log(`✅ Authorization granted`);
+      console.log(`✅ Shared portfolio fetched: ${response.portfolio?.id || 'None'}`);
+      console.log(`✅ Documents rendered: ${response.portfolio?.documents?.length || 0}`);
+    }
+    
+    return verified;
   }
 
   async sendOTP(token: string): Promise<{ otpCode?: string; expiresAt: string }> {

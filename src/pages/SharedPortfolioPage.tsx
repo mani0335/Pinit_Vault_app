@@ -40,17 +40,31 @@ export default function SharedPortfolioPage() {
   const [watermarkText, setWatermarkText] = useState("");
 
   useEffect(() => {
+    console.log("🔗 SHARED PORTFOLIO PAGE LOADED");
+    console.log("🎯 Token from URL:", token);
+    
     if (!token) {
+      console.error("❌ No token found in URL");
       setError("Invalid share link");
       setLoading(false);
       return;
     }
 
+    // Validate token format
+    if (token === 'undefined' || token.includes('undefined')) {
+      console.error("❌ Invalid token format:", token);
+      setError("Invalid share link");
+      setLoading(false);
+      return;
+    }
+
+    console.log("✅ Token validated, loading portfolio...");
     loadSharedPortfolio();
   }, [token]);
 
   const loadSharedPortfolio = async () => {
     try {
+      console.log("🔄 Loading shared portfolio for token:", token);
       setLoading(true);
       
       // Get client info for watermark
@@ -58,42 +72,107 @@ export default function SharedPortfolioPage() {
       const userAgent = navigator.userAgent;
       const timestamp = new Date().toLocaleString();
       setWatermarkText(`Accessed from ${clientIP} at ${timestamp}`);
+      
+      console.log("🌐 Client info:", { clientIP, userAgent });
 
       // Get share data
+      console.log("📡 Fetching share data...");
       const share = await shareService.getShareByToken(token!);
       
+      console.log("📥 Share data response:", share);
+      
       if (!share) {
+        console.error("❌ Share not found or expired for token:", token);
         setError("Share not found or expired");
         setLoading(false);
         return;
       }
 
+      console.log("✅ Share data loaded:", share);
       setShareData(share);
 
-      // Check security requirements
-      if (share.accessLog?.some((log: any) => log.action === 'password_verified')) {
+      // Check security requirements using new response format
+      const hasPasswordRequired = share.passwordRequired;
+      const hasOtpRequired = share.otpEnabled;
+      const accessType = share.accessType;
+      
+      console.log(`🔍 Access type: ${accessType}`);
+      console.log(`🔍 Password required: ${hasPasswordRequired}`);
+      console.log(`🔍 OTP required: ${hasOtpRequired}`);
+      
+      // Handle different access types
+      if (accessType === 'public') {
+        // Public links should open immediately
+        console.log("🌐 Public access - showing portfolio immediately");
         setPasswordRequired(false);
-      } else if (share.securityFlags?.password_hash) {
-        setPasswordRequired(true);
-      }
-
-      if (share.otpEnabled && !share.accessLog?.some((log: any) => log.action === 'otp_verified')) {
-        setOtpRequired(true);
-      }
-
-      // If no security requirements, show portfolio directly
-      if (!passwordRequired && !otpRequired) {
-        // Portfolio data should be included in the response when no auth required
+        setOtpRequired(false);
         setPortfolio(share.portfolio || null);
+        console.log("📊 Portfolio data set (public):", share.portfolio);
+        
         // Log access
+        console.log("� Logging access (public)...");
         await shareService.logAccess(token!, clientIP, userAgent);
+        console.log("✅ Access logged successfully (public)");
+        console.log("✅ Shared portfolio fetched (public)");
+        console.log("✅ Documents rendered (public)");
+        
+      } else if (accessType === 'password-protected' && hasPasswordRequired) {
+        // Password-protected links should only request password
+        console.log("� Password-protected access - requesting password");
+        setPasswordRequired(true);
+        setOtpRequired(false);
+        setPortfolio(null); // Clear portfolio until verified
+        
+      } else if (accessType === 'one-time') {
+        // One-time access should allow valid access once
+        console.log("🎟️ One-time access - checking if already accessed");
+        if (share.views > 0) {
+          console.log("❌ One-time link already accessed");
+          setError("This one-time share has already been accessed");
+          return;
+        }
+        setPasswordRequired(false);
+        setOtpRequired(false);
+        setPortfolio(share.portfolio || null);
+        console.log("� Portfolio data set (one-time):", share.portfolio);
+        
+        // Log access
+        console.log("📝 Logging access (one-time)...");
+        await shareService.logAccess(token!, clientIP, userAgent);
+        console.log("✅ Access logged successfully (one-time)");
+        console.log("✅ Shared portfolio fetched (one-time)");
+        console.log("✅ Documents rendered (one-time)");
+        
+      } else {
+        // Default handling for other cases
+        console.log("🔓 Default access - showing portfolio directly");
+        setPasswordRequired(hasPasswordRequired || false);
+        setOtpRequired(hasOtpRequired || false);
+        
+        if (!hasPasswordRequired && !hasOtpRequired) {
+          setPortfolio(share.portfolio || null);
+          console.log("📊 Portfolio data set (default):", share.portfolio);
+          
+          // Log access
+          console.log("📝 Logging access (default)...");
+          await shareService.logAccess(token!, clientIP, userAgent);
+          console.log("✅ Access logged successfully (default)");
+          console.log("✅ Shared portfolio fetched (default)");
+          console.log("✅ Documents rendered (default)");
+        }
       }
 
     } catch (error) {
-      console.error("Error loading shared portfolio:", error);
+      console.error("❌ Error loading shared portfolio:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack',
+        token: token
+      });
       setError("Failed to load portfolio");
     } finally {
       setLoading(false);
+      console.log("✅ Shared portfolio page loaded successfully");
     }
   };
 
@@ -101,18 +180,31 @@ export default function SharedPortfolioPage() {
     e.preventDefault();
     if (!password || !token) return;
 
+    console.log(`🔐 Frontend password submit: token=${token}, password=${'*'.repeat(password.length)}`);
     setVerifying(true);
+    setError(null);
+    
     try {
       const verified = await shareService.verifyPassword(token, password);
       
+      console.log(`🔐 Frontend password verification result: ${verified}`);
+      
       if (verified) {
+        console.log(`✅ Password verified successfully - setting isAuthorized=true`);
         setPasswordRequired(false);
-        // Reload portfolio data
+        
+        // Reload portfolio data with fresh state
+        console.log(`🔄 Reloading portfolio after successful verification`);
         await loadSharedPortfolio();
+        
+        console.log(`✅ Shared portfolio fetched`);
+        console.log(`✅ Documents rendered`);
       } else {
+        console.log(`❌ Password verification failed - showing error`);
         setError("Invalid password");
       }
     } catch (error) {
+      console.error(`❌ Password verification error:`, error);
       setError("Password verification failed");
     } finally {
       setVerifying(false);
