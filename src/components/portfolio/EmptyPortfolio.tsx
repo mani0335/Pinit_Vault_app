@@ -20,16 +20,6 @@ export default function EmptyPortfolio() {
         Create your first portfolio
       </p>
 
-      {/* Floating Action Button */}
-      <button
-        onClick={() => navigate("/portfolio/create")}
-        className="absolute bottom-24 right-6 w-14 h-14 rounded-full 
-                   bg-gradient-to-r from-blue-500 to-purple-500 
-                   text-white text-2xl shadow-xl 
-                   hover:scale-105 transition-all duration-300"
-      >
-        +
-      </button>
-    </div>
+          </div>
   );
 }

@@ -4,10 +4,13 @@ import { Plus } from "lucide-react";
 import { getPortfolios, deletePortfolio } from "../services/portfolioService";
 import { PortfolioCard } from "../components/portfolio/PortfolioCard";
 import EmptyPortfolio from "../components/portfolio/EmptyPortfolio";
+import PortfolioShareModal from "../components/portfolio/PortfolioShareModal";
 
 export default function PortfolioPage() {
   const navigate = useNavigate();
   const [portfolios, setPortfolios] = useState<any[]>([]);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<any>(null);
 
   useEffect(() => {
     loadPortfolios();
@@ -31,8 +34,8 @@ export default function PortfolioPage() {
   };
 
   const handleShare = (portfolio: any) => {
-    // TODO: implement share functionality
-    alert("Share functionality coming soon!");
+    setSelectedPortfolio(portfolio);
+    setShareModalOpen(true);
   };
 
   const handleDelete = async (portfolio: any) => {
@@ -77,7 +80,7 @@ export default function PortfolioPage() {
       </div>
 
       {/* Floating Action Button */}
-      <div className="fixed bottom-24 right-6 z-50">
+      <div className="fixed bottom-[90px] right-[24px] z-50">
         <button
           onClick={() => navigate("/portfolio/create")}
           className="w-14 h-14 rounded-full bg-gradient-to-r from-blue-500 to-pink-500 text-white text-2xl shadow-lg hover:scale-105 transition-all duration-300"
@@ -87,6 +90,19 @@ export default function PortfolioPage() {
       </div>
 
       {/* KEEP EXISTING BOTTOM NAVBAR */}
+
+      {/* Share Modal */}
+      {shareModalOpen && selectedPortfolio && (
+        <PortfolioShareModal
+          isOpen={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setSelectedPortfolio(null);
+          }}
+          portfolioId={selectedPortfolio.id}
+          portfolioName={selectedPortfolio.name || selectedPortfolio.title || 'Portfolio'}
+        />
+      )}
     </div>
   );
 }
