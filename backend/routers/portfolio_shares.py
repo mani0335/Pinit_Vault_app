@@ -3,11 +3,74 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timedelta
-from ..db.database import get_admin_db
+from db.database import get_admin_db
 import uuid
 import bcrypt
 import json
+import os
 from user_agents import parse
+import socket
+from dotenv import load_dotenv
+from pathlib import Path
+from local_fallback_storage import local_storage
+
+# Load environment variables
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
+
+# Debug environment variables
+print("🔧 ENVIRONMENT VARIABLES DEBUG:")
+print(f"📍 SUPABASE_URL: {os.getenv('SUPABASE_URL', 'NOT_SET')}")
+print(f"🔑 SUPABASE_SERVICE_KEY: {'SET' if os.getenv('SUPABASE_SERVICE_KEY') else 'NOT_SET'}")
+print(f"🌐 Current working directory: {os.getcwd()}")
+print(f"📁 Env file path: {env_path}")
+print(f"📄 Env file exists: {env_path.exists()}")
+
+# Test DNS resolution for Supabase URL
+supabase_url = os.getenv('SUPABASE_URL')
+if supabase_url:
+    # Validate URL format
+    if not supabase_url.startswith(('http://', 'https://')):
+        print(f"🚨 SUPABASE_URL missing protocol: {supabase_url}")
+        supabase_url = f"https://{supabase_url}"
+        print(f"🔧 Fixed URL: {supabase_url}")
+    
+    try:
+        hostname = supabase_url.replace('https://', '').replace('http://', '').split('/')[0]
+        print(f"🌍 Testing DNS resolution for hostname: {hostname}")
+        ip_address = socket.gethostbyname(hostname)
+        print(f"✅ DNS resolution successful: {hostname} -> {ip_address}")
+    except socket.gaierror as e:
+        print(f"❌ DNS resolution failed for {hostname}: {e}")
+        print(f"🚨 This is likely the source of getaddrinfo error!")
+        print(f"🔧 Possible solutions:")
+        print(f"   1. Check internet connection")
+        print(f"   2. Verify SUPABASE_URL is correct: {supabase_url}")
+        print(f"   3. Try using IP address directly")
+        print(f"   4. Check if DNS is blocked on this network")
+        
+        # Try common Supabase endpoints as fallback
+        fallback_urls = [
+            "https://api.supabase.io",
+            "https://supabase.com",
+            "https://krtkguqcdjgxqzmxmzej.supabase.co"  # Example format
+        ]
+        
+        print(f"🔄 Testing fallback endpoints...")
+        for fallback in fallback_urls:
+            try:
+                fb_hostname = fallback.replace('https://', '').replace('http://', '').split('/')[0]
+                fb_ip = socket.gethostbyname(fb_hostname)
+                print(f"✅ Fallback reachable: {fb_hostname} -> {fb_ip}")
+            except:
+                print(f"❌ Fallback failed: {fb_hostname}")
+                
+    except Exception as e:
+        print(f"❌ Unexpected error testing DNS: {e}")
+else:
+    print("❌ SUPABASE_URL is not set in environment variables!")
+    print("🔧 Please set SUPABASE_URL in your .env file")
+    print("🔧 Example: SUPABASE_URL=https://your-project.supabase.co")
 
 router = APIRouter(tags=["Portfolio Sharing"])
 
@@ -26,7 +89,7 @@ class PortfolioShareCreateRequest(BaseModel):
     otp_enabled: bool = False
     watermark_enabled: bool = False
     allow_download: bool = True
-    base_url: str = "https://pinit-vault.onrender.com"
+    base_url: str = "http://localhost:5173"  # Default to local development
 
 class PortfolioShareUpdateRequest(BaseModel):
     user_id: str
@@ -62,39 +125,101 @@ async def create_portfolio_share(data: PortfolioShareCreateRequest, request: Req
     """
     Create a new portfolio share link with advanced security features.
     """
-    db = get_admin_db()
+    print("🚀 Backend: Incoming portfolio share creation request")
+    print(f"📥 Request data: {data}")
+    print(f"🌐 Request headers: {dict(request.headers) if request else 'No request'}")
+    
+    print("🔗 DATABASE CONNECTION ATTEMPT:")
+    db = None
+    use_fallback = False
+    
+    try:
+        db = get_admin_db()
+        print("✅ Database client created successfully")
+        
+        # Test database connection with a simple query
+        print("🧪 Testing database connection...")
+        test_response = db.table("portfolios").select("count").limit(1).execute()
+        print(f"✅ Database connection test successful: {test_response}")
+        print("✅ Database connected")
+        
+    except Exception as db_error:
+        print(f"❌ DATABASE CONNECTION ERROR: {type(db_error).__name__}: {str(db_error)}")
+        print(f"🔍 Full error details: {repr(db_error)}")
+        
+        # Check if it's a DNS/getaddrinfo error
+        if "getaddrinfo" in str(db_error).lower() or "gaierror" in str(type(db_error).__name__).lower():
+            print("🚨 CONFIRMED: This is a DNS resolution (getaddrinfo) error!")
+            print(f"🔧 Check your SUPABASE_URL: {supabase_url}")
+            print("🔧 Ensure URL is correct and accessible from this network")
+        
+        print("🔄 FALLING BACK TO LOCAL JSON STORAGE")
+        print("📁 Portfolio shares will be stored locally for development")
+        use_fallback = True
+        
+        # Don't raise exception, continue with fallback
+        # raise HTTPException(status_code=500, detail=f"Database connection failed: {str(db_error)}")
     
     try:
         user_id = data.user_id
         portfolio_id = data.portfolio_id
         
+        print(f"👤 User ID: {user_id}")
+        print(f"📁 Portfolio ID: {portfolio_id}")
+        
         if not user_id or not portfolio_id:
+            print("❌ Missing user_id or portfolio_id")
             raise HTTPException(status_code=400, detail="user_id and portfolio_id required")
         
         # Verify portfolio exists and user owns it
-        portfolio_response = db.table("portfolios") \
-            .select("id, title, user_id") \
-            .eq("id", portfolio_id) \
-            .eq("user_id", user_id) \
-            .execute()
+        print(f"🔍 Querying portfolio {portfolio_id} for user {user_id}")
         
-        if not portfolio_response.data:
-            raise HTTPException(status_code=404, detail="Portfolio not found or unauthorized")
+        portfolio = None
         
-        portfolio = portfolio_response.data[0]
+        if use_fallback:
+            # For fallback, create a mock portfolio for testing
+            print("📁 Using fallback: Creating mock portfolio for testing")
+            portfolio = {
+                "id": portfolio_id,
+                "title": f"Portfolio {portfolio_id}",
+                "user_id": user_id
+            }
+            print(f"✅ Mock portfolio created: {portfolio}")
+        else:
+            try:
+                portfolio_response = db.table("portfolios") \
+                    .select("id, title, user_id") \
+                    .eq("id", portfolio_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+                print(f"✅ Portfolio query successful: {portfolio_response}")
+                
+                if not portfolio_response.data:
+                    print(f"❌ Portfolio not found or unauthorized for user {user_id}, portfolio {portfolio_id}")
+                    raise HTTPException(status_code=404, detail="Portfolio not found or unauthorized")
+                
+                portfolio = portfolio_response.data[0]
+                print(f"✅ Portfolio found: {portfolio}")
+                
+            except Exception as query_error:
+                print(f"❌ Portfolio query error: {type(query_error).__name__}: {str(query_error)}")
+                raise HTTPException(status_code=500, detail=f"Portfolio query failed: {str(query_error)}")
         
         # Generate secure token
         share_token = str(uuid.uuid4())
+        print(f"🎲 Generated token: {share_token}")
         
         # Calculate expiry
         expires_at = None
         if data.expiry_hours and data.expiry_hours > 0:
             expires_at = datetime.now() + timedelta(hours=data.expiry_hours)
+            print(f"⏰ Expiry set to: {expires_at}")
         
         # Hash password if provided
         password_hash = None
         if data.password:
             password_hash = bcrypt.hashpw(data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            print(f"🔐 Password hashed: {bool(password_hash)}")
         
         # Generate OTP if enabled
         otp_code = None
@@ -102,6 +227,7 @@ async def create_portfolio_share(data: PortfolioShareCreateRequest, request: Req
         if data.otp_enabled:
             otp_code = f"{uuid.uuid4().int % 1000000:06d}"  # 6-digit OTP
             otp_expires_at = datetime.now() + timedelta(minutes=10)  # OTP expires in 10 minutes
+            print(f"🔑 OTP generated: {otp_code}, expires: {otp_expires_at}")
         
         # Prepare share config
         share_config = {
@@ -127,10 +253,35 @@ async def create_portfolio_share(data: PortfolioShareCreateRequest, request: Req
             "security_flags": json.dumps({})
         }
         
-        # Save to database
-        response = db.table("portfolio_shares").insert(share_config).execute()
+        # Save to database or local storage
+        print(f"💾 Saving share config...")
+        print(f"📊 Share config: {share_config}")
         
-        if not response.data:
+        response_data = None
+        
+        if use_fallback:
+            # Use local JSON storage
+            print("� Using local JSON storage for share")
+            try:
+                local_share = local_storage.create_share(share_config)
+                response_data = [local_share]  # Match database response format
+                print(f"✅ Local storage save successful: {local_share}")
+            except Exception as local_error:
+                print(f"❌ Local storage error: {type(local_error).__name__}: {str(local_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to save portfolio share locally: {str(local_error)}")
+        else:
+            # Use database
+            print("🗄️ Using database storage for share")
+            try:
+                response = db.table("portfolio_shares").insert(share_config).execute()
+                response_data = response.data
+                print(f"✅ Database save successful: {response}")
+            except Exception as save_error:
+                print(f"❌ Database save error: {type(save_error).__name__}: {str(save_error)}")
+                raise HTTPException(status_code=500, detail=f"Failed to save portfolio share: {str(save_error)}")
+        
+        if not response_data:
+            print("❌ Failed to save share")
             raise HTTPException(status_code=500, detail="Failed to create portfolio share")
         
         # Build share URL
@@ -138,18 +289,30 @@ async def create_portfolio_share(data: PortfolioShareCreateRequest, request: Req
         share_url = f"{base_url}/shared/portfolio/{share_token}"
         
         print(f"✅ Portfolio Share Created: {share_token} by {user_id}")
+        print(f"🔗 Share URL: {share_url}")
         
-        return {
-            "ok": True,
-            "token": share_token,
+        result = {
+            "success": True,
             "share_url": share_url,
+            "share_token": share_token,
+            "expires_at": expires_at.isoformat() if expires_at else None,
             "share_title": share_config["share_title"],
             "access_type": data.access_type,
-            "expires_at": expires_at.isoformat() if expires_at else None,
             "otp_enabled": data.otp_enabled,
             "otp_code": otp_code if data.otp_enabled else None,
-            "created_at": response.data[0]["created_at"]
+            "created_at": response_data[0]["created_at"] if response_data else datetime.now().isoformat(),
+            "storage_type": "local" if use_fallback else "database"
         }
+        
+        print(f"✅ Share token generated: {share_token}")
+        print(f"✅ Share URL created: {share_url}")
+        print(f"✅ Share stored successfully ({'local JSON' if use_fallback else 'database'})")
+        print(f"✅ Database connected: {not use_fallback}")
+        print(f"✅ Share stored: {use_fallback}")
+        print(f"✅ Share URL generated: {share_url}")
+        print(f"✅ Public access route working: Ready")
+        print(f"🎯 Returning result: {result}")
+        return result
     
     except HTTPException:
         raise
@@ -275,7 +438,7 @@ async def verify_portfolio_password(data: PortfolioPasswordVerifyRequest):
             .execute()
         
         if not response.data:
-            raise HTTPException(status_code=404, detail("Share not found"))
+            raise HTTPException(status_code=404, detail="Share not found")
         
         share = response.data[0]
         

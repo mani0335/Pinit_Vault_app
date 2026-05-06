@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from ..db.database import get_admin_db
-from ..models.schemas import VaultImageCreate, VaultImageResponse
-from ..utils.auth_helpers import log_action
-from ..utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail, download_image
+from db.database import get_admin_db
+from models.schemas import VaultImageCreate, VaultImageResponse
+from utils.auth_helpers import log_action
+from utils.cloudinary_helper import upload_thumbnail_base64, delete_thumbnail, download_image
 
 router = APIRouter(tags=["Vault"])
 

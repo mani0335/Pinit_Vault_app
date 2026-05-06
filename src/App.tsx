@@ -26,6 +26,7 @@ import PortfolioView from "./pages/PortfolioView.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import ProtectedRoute from "./components/ProtectedRoute.tsx";
 import { SharedImageViewer } from "./components/SharedImageViewer.tsx";
+import SharedPortfolioPage from "./pages/SharedPortfolioPage.tsx";
 
 // ===================== GLOBAL ERROR BOUNDARY =====================
 // This catches ANY error in the entire app and displays it on screen
@@ -275,6 +276,7 @@ const App = () => (
             <Route path="/temp-access-face" element={<TempAccessFace />} />
             <Route path="/temp-access" element={<TempAccess />} />
             <Route path="/share/:token" element={<SharedImageViewer />} />
+            <Route path="/shared/portfolio/:token" element={<SharedPortfolioPage />} />
             <Route
               path="/dashboard"
               element={

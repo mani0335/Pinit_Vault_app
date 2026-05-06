@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
-from ..db.database import get_admin_db
-from ..utils.auth_helpers import get_current_user, log_action
+from db.database import get_admin_db
+from utils.auth_helpers import get_current_user, log_action
 import json
 
 router = APIRouter(tags=["Portfolio"])

@@ -101,6 +101,7 @@ export default function PortfolioPage() {
           }}
           portfolioId={selectedPortfolio.id}
           portfolioName={selectedPortfolio.name || selectedPortfolio.title || 'Portfolio'}
+          portfolio={selectedPortfolio}
         />
       )}
     </div>

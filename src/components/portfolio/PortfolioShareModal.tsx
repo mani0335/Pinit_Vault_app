@@ -8,6 +8,7 @@ interface PortfolioShareModalProps {
   onClose: () => void;
   portfolioId: string;
   portfolioName: string;
+  portfolio?: any; // Portfolio data for validation
 }
 
 interface ShareConfig {
@@ -26,8 +27,114 @@ export default function PortfolioShareModal({
   isOpen, 
   onClose, 
   portfolioId, 
-  portfolioName 
+  portfolioName,
+  portfolio 
 }: PortfolioShareModalProps) {
+  console.log("=== SHARE MODAL OPENED ===");
+  console.log("📁 Portfolio ID:", portfolioId);
+  console.log("📊 Portfolio Name:", portfolioName);
+  console.log("📋 Portfolio Data:", portfolio);
+
+  // Helper function to check if portfolio has any shareable content
+  const hasShareableContent = (portfolio: any): { hasContent: boolean; contentCounts: any; reason: string } => {
+    if (!portfolio) {
+      return { hasContent: false, contentCounts: {}, reason: 'No portfolio data available' };
+    }
+
+    const contentCounts = {
+      documents: 0,
+      profile: 0,
+      projects: 0,
+      education: 0,
+      certifications: 0,
+      skills: 0,
+      resume: 0,
+      vaultAttachments: 0,
+      experience: 0,
+      achievements: 0
+    };
+
+    // Check documents (uploaded files)
+    if (portfolio.documents && Array.isArray(portfolio.documents)) {
+      contentCounts.documents = portfolio.documents.length;
+    }
+
+    // Check profile info
+    if (portfolio.profile && typeof portfolio.profile === 'object') {
+      const hasProfileData = Object.keys(portfolio.profile).some(key => {
+        const value = portfolio.profile[key];
+        return value && (typeof value === 'string' ? value.trim() !== '' : true);
+      });
+      contentCounts.profile = hasProfileData ? 1 : 0;
+    }
+
+    // Check projects
+    if (portfolio.projects && Array.isArray(portfolio.projects)) {
+      contentCounts.projects = portfolio.projects.length;
+    }
+
+    // Check education
+    if (portfolio.education && Array.isArray(portfolio.education)) {
+      contentCounts.education = portfolio.education.length;
+    }
+
+    // Check certifications
+    if (portfolio.certifications && Array.isArray(portfolio.certifications)) {
+      contentCounts.certifications = portfolio.certifications.length;
+    }
+
+    // Check skills
+    if (portfolio.skills) {
+      if (Array.isArray(portfolio.skills)) {
+        contentCounts.skills = portfolio.skills.length;
+      } else if (typeof portfolio.skills === 'object' && portfolio.skills.items) {
+        contentCounts.skills = portfolio.skills.items.length;
+      }
+    }
+
+    // Check resume
+    if (portfolio.resume) {
+      if (typeof portfolio.resume === 'string' && portfolio.resume.trim() !== '') {
+        contentCounts.resume = 1;
+      } else if (typeof portfolio.resume === 'object' && portfolio.resume.url) {
+        contentCounts.resume = 1;
+      }
+    }
+
+    // Check vault attachments
+    if (portfolio.vaultDocuments && Array.isArray(portfolio.vaultDocuments)) {
+      contentCounts.vaultAttachments = portfolio.vaultDocuments.length;
+    }
+
+    // Check experience
+    if (portfolio.experience && Array.isArray(portfolio.experience)) {
+      contentCounts.experience = portfolio.experience.length;
+    }
+
+    // Check achievements
+    if (portfolio.achievements && Array.isArray(portfolio.achievements)) {
+      contentCounts.achievements = portfolio.achievements.length;
+    }
+
+    // Calculate total content items
+    const totalContent = Object.values(contentCounts).reduce((sum, count) => sum + count, 0);
+    const hasContent = totalContent > 0;
+
+    // Generate reason for validation result
+    let reason = hasContent 
+      ? `Portfolio has ${totalContent} shareable items` 
+      : 'Portfolio has no shareable content';
+
+    if (!hasContent) {
+      const emptySections = Object.entries(contentCounts)
+        .filter(([_, count]) => count === 0)
+        .map(([section]) => section);
+      reason += ` (empty sections: ${emptySections.join(', ')})`;
+    }
+
+    return { hasContent, contentCounts, reason };
+  };
+  
   const [shareConfig, setShareConfig] = useState<ShareConfig>({
     shareTitle: `${portfolioName} Portfolio`,
     shareDescription: `Check out my ${portfolioName} portfolio`,
@@ -72,12 +179,52 @@ export default function PortfolioShareModal({
   const selectedExpiry = expiryOptions.find(option => option.value === shareConfig.expiryHours);
 
   const handleCreateShare = async () => {
+    console.log("=== START SHARE GENERATION ===");
     setIsCreating(true);
     setError(null);
+    
+    // Validate portfolio has content before sharing
+    if (portfolio) {
+      // Print FULL portfolio object structure for debugging
+      console.log("🔍 FULL PORTFOLIO STRUCTURE:", JSON.stringify(portfolio, null, 2));
+      
+      // Use comprehensive validation
+      const validation = hasShareableContent(portfolio);
+      
+      console.log("📊 Comprehensive Portfolio Validation:", {
+        hasContent: validation.hasContent,
+        contentCounts: validation.contentCounts,
+        reason: validation.reason,
+        totalItems: Object.values(validation.contentCounts).reduce((sum, count) => sum + count, 0)
+      });
+      
+      // Check if portfolio has any shareable content
+      if (!validation.hasContent) {
+        console.error("❌ Portfolio validation failed:", validation.reason);
+        setError('Portfolio must contain at least one item (profile, document, project, education, certification, skill, resume, or vault attachment) before sharing.');
+        setIsCreating(false);
+        return;
+      }
+      
+      console.log("✅ Portfolio validation passed:", validation.reason);
+    } else {
+      console.error("❌ No portfolio data available for validation");
+      setError('No portfolio data available. Please try again.');
+      setIsCreating(false);
+      return;
+    }
+    
+    // SAFETY: Force stop loading after 10 seconds
+    const safetyTimeout = setTimeout(() => {
+      console.error("⏰ SAFETY TIMEOUT: Stopping infinite loading");
+      setIsCreating(false);
+      setError('Share creation timed out. Please try again.');
+    }, 10000);
     
     try {
       // Get current user ID (this should come from auth context)
       const userId = localStorage.getItem('biovault_userId') || 'anonymous';
+      console.log("👤 User ID:", userId);
       
       const shareData = {
         shareTitle: shareConfig.shareTitle,
@@ -89,16 +236,56 @@ export default function PortfolioShareModal({
         watermarkEnabled: shareConfig.watermarkEnabled,
         allowDownload: shareConfig.allowDownload,
       };
+      
+      console.log("=== PAYLOAD ===");
+      console.log("Payload:", shareData);
+      console.log("Portfolio ID:", portfolioId);
 
+      console.log("=== MAKING API CALL ===");
       const createdShareData = await shareService.createShare(portfolioId, shareData, userId);
+      console.log("=== API RESPONSE ===");
+      console.log("API RESPONSE:", createdShareData);
+      
       const url = generateShareUrl(createdShareData.token);
+      console.log("=== SUCCESS ===");
+      console.log("Generated URL:", url);
       
       setCreatedShare(createdShareData);
       setShareUrl(url);
+      console.log("=== UI UPDATED ===");
+      console.log("UI state updated successfully");
     } catch (error) {
-      console.error('Failed to create share:', error);
-      setError('Failed to create share link. Please try again.');
+      console.error("=== SHARE ERROR ===");
+      console.error("SHARE ERROR:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        name: error instanceof Error ? error.name : 'Unknown error type'
+      });
+      
+      // Extract real error message from backend response
+      let errorMessage = 'Failed to create share link. Please try again.';
+      if (error instanceof Error) {
+        const errorStr = error.message;
+        try {
+          const errorData = JSON.parse(errorStr);
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch {
+          // If parsing fails, use original message
+          errorMessage = errorStr;
+        }
+      }
+      
+      setError(errorMessage);
+      // CRITICAL: Ensure loading stops on error
+      setIsCreating(false);
     } finally {
+      console.log("=== SHARE PROCESS COMPLETED ===");
+      clearTimeout(safetyTimeout); // Clear safety timeout
       setIsCreating(false);
     }
   };

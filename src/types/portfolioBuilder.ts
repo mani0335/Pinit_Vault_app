@@ -42,3 +42,46 @@ export interface VaultDocument {
   };
   createdAt: string;
 }
+
+// Sharing-related types
+export interface PortfolioShareConfig {
+  shareTitle: string;
+  shareDescription: string;
+  accessType: 'public' | 'password' | 'otp';
+  expiryHours: number;
+  password?: string;
+  otpEnabled: boolean;
+  watermarkEnabled: boolean;
+  allowDownload: boolean;
+}
+
+export interface SharedPortfolioLink {
+  id: string;
+  portfolioId: string;
+  token: string;
+  shareTitle: string;
+  shareDescription: string;
+  accessType: string;
+  expiresAt: string;
+  otpEnabled: boolean;
+  watermarkEnabled: boolean;
+  allowDownload: boolean;
+  active: boolean;
+  createdAt: string;
+  views: number;
+  portfolio?: any; // Optional portfolio data for display
+}
+
+export interface ShareAnalytics {
+  totalViews: number;
+  uniqueVisitors: number;
+  averageViewDuration: number;
+  devices: Array<{ device: string; count: number }>;
+  browsers: Array<{ browser: string; count: number }>;
+  accessLog: Array<{
+    timestamp: string;
+    ipAddress: string;
+    userAgent: string;
+    success: boolean;
+  }>;
+}

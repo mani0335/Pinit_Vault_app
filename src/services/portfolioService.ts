@@ -13,15 +13,28 @@ export const getPortfolios = async (): Promise<Portfolio[]> => {
 };
 
 export const savePortfolio = async (portfolio: Portfolio): Promise<void> => {
+  console.log("=== STEP 1: SAVING PORTFOLIO ===");
+  console.log("📁 Portfolio to save:", portfolio);
+  console.log("📊 Portfolio type:", typeof portfolio);
+  console.log("📊 Portfolio keys:", Object.keys(portfolio));
+  
   const key = await getKey();
   const existing = await getPortfolios();
+  console.log("📚 Existing portfolios:", existing);
 
   const updated = [...existing, portfolio];
+  console.log("➕ Updated portfolios list:", updated);
+  console.log("📄 Portfolio documents count:", portfolio.documents?.length || 0);
+  console.log("📄 Portfolio education count:", (portfolio as any).education?.length || 0);
+  console.log("📄 Portfolio projects count:", (portfolio as any).projects?.length || 0);
+  console.log("👤 Portfolio profile:", !!(portfolio as any).profile);
 
   await Preferences.set({
     key,
     value: JSON.stringify(updated),
   });
+  
+  console.log("✅ Portfolio saved successfully");
 };
 
 export const updatePortfolio = async (updatedPortfolio: Portfolio): Promise<void> => {

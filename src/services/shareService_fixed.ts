@@ -1,6 +1,5 @@
 import { Preferences } from "@capacitor/preferences";
 import { PortfolioShareConfig, SharedPortfolioLink, ShareAnalytics } from "../types/portfolioBuilder";
-import { API_CONFIG, buildApiUrl, buildPublicUrl } from "../config/api";
 
 export interface ShareService {
   createShare(portfolioId: string, config: PortfolioShareConfig, userId: string): Promise<SharedPortfolioLink>;
@@ -16,28 +15,8 @@ export interface ShareService {
 }
 
 export const generateShareUrl = (token: string): string => {
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080';
+  const baseUrl = window.location.origin;
   return `${baseUrl}/shared/portfolio/${token}`;
-};
-
-export const getClientIP = async (): Promise<string> => {
-  try {
-    // Try to get IP from a public API
-    const response = await fetch('https://api.ipify.org?format=json');
-    const data = await response.json();
-    return data.ip || 'unknown';
-  } catch (error) {
-    console.warn('Failed to get client IP:', error);
-    // Fallback to a default value or try alternative method
-    try {
-      const response = await fetch('https://ipapi.co/json/');
-      const data = await response.json();
-      return data.ip || 'unknown';
-    } catch (fallbackError) {
-      console.warn('Fallback IP detection also failed:', fallbackError);
-      return 'unknown';
-    }
-  }
 };
 
 // Portfolio storage key helper
@@ -47,11 +26,31 @@ const getKey = async (): Promise<string> => {
 };
 
 class ShareServiceImpl implements ShareService {
-  private readonly API_BASE = 'http://127.0.0.1:8000';
-  private readonly SHARE_API = `${this.API_BASE}/portfolio-shares/portfolio`;
+  private readonly API_BASE = this.getApiBase();
 
-  private async apiCall(url: string, options: RequestInit = {}): Promise<any> {
-    const fullUrl = url.startsWith('http') ? url : `${this.SHARE_API}${url}`;
+  private getApiBase(): string {
+    // Try multiple sources for the API base URL
+    if (typeof window !== 'undefined') {
+      // Check for environment variable in window (if set by build process)
+      if ((window as any).__ENV__?.REACT_APP_API_URL) {
+        return (window as any).__ENV__.REACT_APP_API_URL;
+      }
+      
+      // Derive from current origin for development
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:8000'; // Default backend port for local development
+      }
+      
+      // Use current origin for production
+      return window.location.origin;
+    }
+    
+    // Fallback for SSR or other environments
+    return 'https://pinit-vault.onrender.com';
+  }
+
+  private async apiCall(endpoint: string, options: RequestInit = {}): Promise<any> {
+    const fullUrl = `${this.API_BASE}/portfolio-shares${endpoint}`;
     console.log(`🌐 Making API call to: ${fullUrl}`);
     console.log(`🔧 Request options:`, options);
     
@@ -77,7 +76,7 @@ class ShareServiceImpl implements ShareService {
       console.log(`✅ API Response Data:`, data);
       return data;
     } catch (error) {
-      console.error(`💥 API Error (${url}):`, error);
+      console.error(`💥 API Error (${endpoint}):`, error);
       console.error(`💥 Full error details:`, {
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : 'No stack',
@@ -113,10 +112,11 @@ class ShareServiceImpl implements ShareService {
       base_url: window.location.origin
     };
 
-    console.log("📤 Sending request to:", `${this.SHARE_API}/create`);
+    console.log("📤 Sending request to:", `${this.API_BASE}/portfolio-shares/portfolio/create`);
     console.log("📤 Request payload:", payload);
 
-    const response = await this.apiCall('/create', {
+    // FIXED: Remove leading slash from endpoint
+    const response = await this.apiCall('portfolio/create', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -144,9 +144,9 @@ class ShareServiceImpl implements ShareService {
   }
 
   async getShares(userId: string, portfolioId?: string): Promise<SharedPortfolioLink[]> {
-    const endpoint = portfolioId
-      ? `/user/${userId}?portfolio_id=${portfolioId}`
-      : `/user/${userId}`;
+    const endpoint = portfolioId 
+      ? `/portfolio/user/${userId}?portfolio_id=${portfolioId}`
+      : `/portfolio/user/${userId}`;
     
     const response = await this.apiCall(endpoint);
 
@@ -168,7 +168,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async getShareByToken(token: string): Promise<SharedPortfolioLink | null> {
-    const response = await this.apiCall(`/${token}`);
+    const response = await this.apiCall(`/portfolio/${token}`);
     
     if (!response) {
       return null;
@@ -193,7 +193,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async verifyPassword(token: string, password: string): Promise<boolean> {
-    const response = await this.apiCall('/verify-password', {
+    const response = await this.apiCall('/portfolio/verify-password', {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     });
@@ -202,7 +202,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async sendOTP(token: string): Promise<{ otpCode?: string; expiresAt: string }> {
-    const response = await this.apiCall('/send-otp', {
+    const response = await this.apiCall('/portfolio/send-otp', {
       method: 'POST',
       body: JSON.stringify({ token }),
     });
@@ -214,7 +214,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async verifyOTP(token: string, otpCode: string): Promise<boolean> {
-    const response = await this.apiCall('/verify-otp', {
+    const response = await this.apiCall('/portfolio/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ token, otpCode }),
     });
@@ -223,8 +223,8 @@ class ShareServiceImpl implements ShareService {
   }
 
   async revokeShare(token: string, userId: string): Promise<boolean> {
-    const response = await this.apiCall(`/${token}/revoke`, {
-      method: 'POST',
+    const response = await this.apiCall(`/portfolio/${token}`, {
+      method: 'DELETE',
       body: JSON.stringify({ user_id: userId }),
     });
 
@@ -232,7 +232,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async updateShare(token: string, userId: string, updates: Partial<PortfolioShareConfig>): Promise<SharedPortfolioLink | null> {
-    const response = await this.apiCall(`/${token}`, {
+    const response = await this.apiCall(`/portfolio/${token}`, {
       method: 'PUT',
       body: JSON.stringify({ user_id: userId, ...updates }),
     });
@@ -259,7 +259,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async logAccess(token: string, ipAddress: string, userAgent: string): Promise<void> {
-    await this.apiCall('/log-access', {
+    await this.apiCall('/portfolio/log-access', {
       method: 'POST',
       body: JSON.stringify({ 
         token, 
@@ -270,7 +270,7 @@ class ShareServiceImpl implements ShareService {
   }
 
   async getShareAnalytics(token: string): Promise<ShareAnalytics | null> {
-    const response = await this.apiCall(`/${token}/analytics`);
+    const response = await this.apiCall(`/portfolio/${token}/analytics`);
     
     if (!response) {
       return null;

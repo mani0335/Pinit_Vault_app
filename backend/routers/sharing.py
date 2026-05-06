@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
-from ..db.database import get_admin_db
+from db.database import get_admin_db
 import uuid
 
 router = APIRouter(tags=["Sharing"])
