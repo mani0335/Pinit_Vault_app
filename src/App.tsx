@@ -20,6 +20,9 @@ import ScanDocumentFlow from "./pages/ScanDocumentFlow.tsx";
 import ReviewPage from "./pages/ReviewPage.tsx";
 import UploadFromDevice from "./pages/UploadFromDevice.tsx";
 import VaultPage from "./pages/VaultPage.tsx";
+import PortfolioCreate from "./pages/PortfolioCreate.tsx";
+import PortfolioPage from "./pages/PortfolioPage.tsx";
+import PortfolioView from "./pages/PortfolioView.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import ProtectedRoute from "./components/ProtectedRoute.tsx";
 import { SharedImageViewer } from "./components/SharedImageViewer.tsx";
@@ -309,6 +312,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ProfileModern />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio"
+              element={
+                <ProtectedRoute>
+                  <PortfolioPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio/create"
+              element={
+                <ProtectedRoute>
+                  <PortfolioCreate />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio/view/:id"
+              element={
+                <ProtectedRoute>
+                  <PortfolioView />
                 </ProtectedRoute>
               }
             />

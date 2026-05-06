@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Camera, X } from "lucide-react";
-import { CameraPlugin, CameraResultType, CameraSource } from "@capacitor/camera";
+import { ArrowLeft, Camera as CameraIcon, X } from "lucide-react";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 interface ScannedImage {
   id: string;
@@ -22,7 +22,7 @@ export default function ScanPage() {
       setIsCapturing(true);
       setError(null);
 
-      const photo = await CameraPlugin.getPhoto({
+      const photo = await Camera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.Base64,
@@ -110,7 +110,7 @@ export default function ScanPage() {
             disabled={isCapturing}
             className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:opacity-50 text-white font-bold py-4 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
           >
-            <Camera className="w-6 h-6" />
+            <CameraIcon className="w-6 h-6" />
             {isCapturing ? "Capturing..." : "📸 Capture Page"}
           </button>
 

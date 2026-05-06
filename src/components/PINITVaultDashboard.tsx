@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera as CameraPlugin, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import jsPDF from "jspdf";
 import {
@@ -2838,12 +2838,12 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
       console.log('Opening camera...');
       
       // Check camera permissions first
-      const permissions = await Camera.checkPermissions();
+      const permissions = await CameraPlugin.checkPermissions();
       console.log('Camera permissions:', permissions);
       
       if (permissions.camera !== 'granted') {
         console.log('Requesting camera permissions...');
-        const permissionResult = await Camera.requestPermissions();
+        const permissionResult = await CameraPlugin.requestPermissions();
         console.log('Permission request result:', permissionResult);
         
         if (permissionResult.camera !== 'granted') {
@@ -2852,7 +2852,7 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
         }
       }
       
-      const photo = await Camera.getPhoto({
+      const photo = await CameraPlugin.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.Base64,
@@ -3406,12 +3406,12 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
       console.log('Opening camera for category:', category.name);
       
       // Check camera permissions
-      const permissions = await Camera.checkPermissions();
+      const permissions = await CameraPlugin.checkPermissions();
       console.log('Camera permissions:', permissions);
       
       if (permissions.camera !== 'granted') {
         console.log('Requesting camera permissions...');
-        const permissionResult = await Camera.requestPermissions();
+        const permissionResult = await CameraPlugin.requestPermissions();
         console.log('Permission request result:', permissionResult);
         
         if (permissionResult.camera !== 'granted') {
@@ -3421,7 +3421,7 @@ function CategoryDetailPage({ category, onBack, onDocumentUploaded }: CategoryDe
         }
       }
       
-      const photo = await Camera.getPhoto({
+      const photo = await CameraPlugin.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.Base64,
