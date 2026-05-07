@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { shareService, getClientIP } from "../services/shareService";
 import { SharedPortfolioLink } from "../services/shareService";
+import DocumentViewer from "../components/shared/DocumentViewer";
+import DocumentViewerModal from "../components/portfolio/DocumentViewerModal";
+import { getVaultDocuments, VaultDocument } from "../lib/vaultService";
+import { Preferences } from "@capacitor/preferences";
 
 export default function SharedPortfolioPage() {
   const { token } = useParams<{ token: string }>();
@@ -28,6 +32,9 @@ export default function SharedPortfolioPage() {
   const [error, setError] = useState<string | null>(null);
   const [shareData, setShareData] = useState<SharedPortfolioLink | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
+  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
   
   // Security states
   const [passwordRequired, setPasswordRequired] = useState(false);
@@ -60,7 +67,118 @@ export default function SharedPortfolioPage() {
 
     console.log("✅ Token validated, loading portfolio...");
     loadSharedPortfolio();
+    loadVaultDocuments();
   }, [token]);
+
+  const handleViewDocument = (vaultDoc: VaultDocument) => {
+    console.log("👁️ Opening document viewer for:", vaultDoc);
+    
+    // Detect file type from filename
+    const filename = vaultDoc.metadata.original_name || vaultDoc.name;
+    const extension = filename?.split('.').pop()?.toLowerCase();
+    let mimeType = 'application/octet-stream';
+    
+    if (extension) {
+      const typeMap: { [key: string]: string } = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg', 
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'txt': 'text/plain'
+      };
+      mimeType = typeMap[extension] || 'application/octet-stream';
+    }
+    
+    // Convert VaultDocument to PortfolioDocument format for DocumentViewerModal
+    const portfolioDoc = {
+      id: vaultDoc.id,
+      name: filename,
+      type: mimeType,
+      size: vaultDoc.metadata.size,
+      file_url: vaultDoc.cloudinaryUrl || '', // Use cloudinaryUrl if available
+      uploaded_at: new Date(vaultDoc.metadata.timestamp).toISOString(),
+      user_id: vaultDoc.metadata.ownerId || ''
+    };
+    setSelectedDocument(portfolioDoc);
+    setShowDocumentModal(true);
+  };
+
+  const handleDownloadDocument = async (vaultDoc: VaultDocument) => {
+    if (!shareData?.allowDownload) {
+      console.log("🚫 Download not allowed for this share");
+      return;
+    }
+
+    try {
+      console.log("📥 Downloading document:", vaultDoc.name);
+      
+      // Create download link
+      const link = window.document.createElement("a");
+      link.href = vaultDoc.cloudinaryUrl || '';
+      link.download = vaultDoc.metadata.original_name || vaultDoc.name;
+      link.target = "_blank";
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
+      
+      console.log("✅ Document download started");
+    } catch (error) {
+      console.error("❌ Document download failed:", error);
+      setError("Document download failed");
+    }
+  };
+
+  const loadVaultDocuments = async () => {
+    try {
+      const { value: userId } = await Preferences.get({ key: "biovault_userId" });
+      if (userId) {
+        const docs = await getVaultDocuments(userId);
+        setVaultDocuments(docs);
+      }
+    } catch (error) {
+      console.error("Failed to load vault documents:", error);
+    }
+  };
+
+  const handleDownloadPortfolio = async () => {
+    if (!shareData?.allowDownload) {
+      setError("Download not allowed for this portfolio");
+      return;
+    }
+
+    try {
+      console.log("📥 Starting portfolio download...");
+      
+      // Create a downloadable package with all documents
+      const downloadData = {
+        portfolio: portfolio,
+        share: shareData,
+        documents: portfolio.documents,
+        downloadedAt: new Date().toISOString()
+      };
+
+      // Convert to JSON and create download
+      const jsonString = JSON.stringify(downloadData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${portfolio.name || "portfolio"}_${shareData.token}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log("✅ Portfolio download completed");
+    } catch (error) {
+      console.error("❌ Portfolio download failed:", error);
+      setError("Failed to download portfolio");
+    }
+  };
 
   const loadSharedPortfolio = async () => {
     try {
@@ -127,14 +245,19 @@ export default function SharedPortfolioPage() {
         // One-time access should allow valid access once
         console.log("🎟️ One-time access - checking if already accessed");
         if (share.views > 0) {
-          console.log("❌ One-time link already accessed");
+          console.error("❌ One-time link already accessed");
           setError("This one-time share has already been accessed");
           return;
         }
         setPasswordRequired(false);
         setOtpRequired(false);
+        console.log("📄 Loading shared portfolio:", share);
+        console.log("📄 Share data:", share);
+        console.log("📄 Portfolio data:", share.portfolio);
+        console.log("📄 Portfolio documents count:", share.portfolio?.documents?.length || 0);
+        console.log("📄 Portfolio documents structure:", JSON.stringify(share.portfolio?.documents, null, 2));
         setPortfolio(share.portfolio || null);
-        console.log("� Portfolio data set (one-time):", share.portfolio);
+        console.log("📊 Portfolio data set (one-time):", share.portfolio);
         
         // Log access
         console.log("📝 Logging access (one-time)...");
@@ -492,29 +615,68 @@ export default function SharedPortfolioPage() {
             {/* Documents Section */}
             {portfolio.documents && portfolio.documents.length > 0 && (
               <div className="bg-gradient-to-br from-slate-900/90 via-purple-900/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border border-purple-500/30 p-6 shadow-xl">
-                <div className="flex items-center gap-4 mb-4">
+                <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center">
                     <FileText className="w-6 h-6 text-purple-400" />
                   </div>
-                  <h2 className="text-xl font-bold text-white">Documents</h2>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Documents</h2>
+                    <p className="text-purple-300 text-sm">
+                      {portfolio.documents.length} file{portfolio.documents.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  {portfolio.documents.map((doc: any, index: number) => (
-                    <div key={index} className="flex items-center justify-between bg-purple-500/10 rounded-xl p-3 border border-purple-500/30">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-purple-400" />
-                        <span className="text-white">{doc.name || `Document ${index + 1}`}</span>
+                
+                <div className="space-y-4">
+                  {portfolio.documents.map((docId, index) => {
+                    const vaultDoc = vaultDocuments.find(doc => doc.id === docId);
+                    console.log(`📄 Processing document ${index + 1}:`, { docId, vaultDoc });
+                    
+                    return (
+                      <div key={docId} className="bg-purple-500/10 rounded-xl p-4 border border-purple-500/30">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-purple-400" />
+                            <div>
+                              <h3 className="text-white font-medium">
+                                {vaultDoc ? vaultDoc.name : `Document ${index + 1}`}
+                              </h3>
+                              <p className="text-purple-300 text-sm">
+                                {vaultDoc ? vaultDoc.metadata.original_name : `Document ID: ${docId}`}
+                              </p>
+                              {vaultDoc && (
+                                <p className="text-purple-400 text-xs">
+                                  Size: {Math.round(vaultDoc.metadata.size / 1024)} KB • 
+                                  {new Date(vaultDoc.metadata.timestamp).toLocaleDateString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            {vaultDoc && (
+                              <button
+                                onClick={() => handleViewDocument(vaultDoc)}
+                                className="px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors text-sm font-medium"
+                              >
+                                View
+                              </button>
+                            )}
+                            
+                            {shareData?.allowDownload && vaultDoc && (
+                              <button
+                                onClick={() => handleDownloadDocument(vaultDoc)}
+                                className="p-2 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg transition-colors"
+                                title="Download document"
+                              >
+                                <Download className="w-4 h-4 text-purple-300" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      {shareData?.allowDownload && (
-                        <button
-                          onClick={() => console.log("Download document:", doc)}
-                          className="p-2 bg-purple-500/20 hover:bg-purple-500/30 rounded-lg transition-colors"
-                        >
-                          <Download className="w-4 h-4 text-purple-300" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -525,7 +687,7 @@ export default function SharedPortfolioPage() {
         {shareData?.allowDownload && (
           <div className="mt-8 text-center">
             <button
-              onClick={handleDownload}
+              onClick={handleDownloadPortfolio}
               className="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-medium transition-all duration-200 shadow-lg"
             >
               <Download className="w-5 h-5 inline mr-2" />
@@ -576,21 +738,36 @@ export default function SharedPortfolioPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
-      <div className="container mx-auto px-4 py-8">
-        {/* Error messages */}
-        {error && (
-          <div className="mb-6 text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300">
-              <AlertCircle className="w-4 h-4" />
-              {error}
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
+        <div className="container mx-auto px-4 py-8">
+          {/* Error messages */}
+          {error && (
+            <div className="mb-6 text-center">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Security gates or portfolio content */}
-        {(passwordRequired || otpRequired) ? renderSecurityGate() : renderPortfolio()}
+          {/* Security gates or portfolio content */}
+          {(passwordRequired || otpRequired) ? renderSecurityGate() : renderPortfolio()}
+        </div>
       </div>
-    </div>
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal
+        isOpen={showDocumentModal}
+        onClose={() => {
+          setShowDocumentModal(false);
+          setSelectedDocument(null);
+        }}
+        fileDocument={selectedDocument}
+        allowDownload={shareData?.allowDownload || false}
+        watermarkEnabled={shareData?.watermarkEnabled || false}
+        watermarkText={`PINIT Vault Protected • ${shareData?.shareTitle || 'Shared Portfolio'}`}
+      />
+    </>
   );
 }

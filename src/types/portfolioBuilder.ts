@@ -1,5 +1,12 @@
 export type PortfolioType = "Personal" | "Academic" | "Masters";
 
+export interface PortfolioTypeConfig {
+  type: PortfolioType;
+  sections: string[];
+  title: string;
+  description: string;
+}
+
 export interface PortfolioProfile {
   name: string;
   role: string;

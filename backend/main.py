@@ -10,7 +10,7 @@ import os
 env_path = Path(__file__).parent / ".env"
 load_dotenv(env_path)
 
-from routers import auth, vault, compare, admin, certificates, sharing, profile, portfolio, portfolio_shares
+from routers import auth, vault, compare, admin, certificates, sharing, profile, portfolio, portfolio_shares, secure_files
 
 app = FastAPI(
     title       = "PINIT API",
@@ -51,6 +51,7 @@ app.include_router(sharing.router, prefix="/share")
 app.include_router(profile.router, prefix="/profile")
 app.include_router(portfolio.router, prefix="/portfolio")
 app.include_router(portfolio_shares.router, prefix="/portfolio-shares")
+app.include_router(secure_files.router, prefix="/secure-files")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

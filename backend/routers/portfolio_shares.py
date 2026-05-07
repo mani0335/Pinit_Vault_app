@@ -429,31 +429,12 @@ async def get_portfolio_share(token: str, request: Request = None):
         print(f"🔍 Fetching portfolio data for portfolio_id: {share['portfolio_id']}")
         
         if use_fallback:
-            # For fallback, create a mock portfolio for testing
-            print("📁 Using fallback: Creating mock portfolio for testing")
-            portfolio = {
-                "id": share["portfolio_id"],
-                "title": f"Portfolio {share['portfolio_id']}",
-                "user_id": share["user_id"],
-                "profile": {
-                    "name": "Test User",
-                    "title": "Developer",
-                    "email": "test@example.com"
-                },
-                "projects": [
-                    {
-                        "id": "proj1",
-                        "title": "Sample Project",
-                        "description": "This is a sample project for testing",
-                        "technologies": ["React", "TypeScript", "Node.js"]
-                    }
-                ],
-                "documents": [],
-                "education": [],
-                "certifications": [],
-                "skills": ["JavaScript", "React", "Node.js", "Python"]
-            }
-            print(f"✅ Mock portfolio created: {portfolio['id']}")
+            # For fallback, return error instead of mock data
+            print("📁 Using fallback: No database connection available")
+            raise HTTPException(
+                status_code=503, 
+                detail="Service temporarily unavailable - database connection required"
+            )
         else:
             # Use database
             print("🗄️ Using database for portfolio retrieval")

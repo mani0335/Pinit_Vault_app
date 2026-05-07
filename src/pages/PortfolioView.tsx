@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, Calendar, User, Mail } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Mail, Eye } from "lucide-react";
 import { getPortfolioById, updatePortfolio } from "../services/portfolioService";
 import { Portfolio } from "../types/portfolio";
 import { getVaultDocuments, VaultDocument } from "../lib/vaultService";
 import { Preferences } from "@capacitor/preferences";
+import DocumentViewerModal from "../components/portfolio/DocumentViewerModal";
 
 export default function PortfolioView() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,8 @@ export default function PortfolioView() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", role: "", email: "" });
   const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -93,6 +96,21 @@ export default function PortfolioView() {
       });
     }
     setEditing(false);
+  };
+
+  const handleViewDocument = (vaultDoc: VaultDocument) => {
+    // Convert VaultDocument to PortfolioDocument format for DocumentViewerModal
+    const portfolioDoc = {
+      id: vaultDoc.id,
+      name: vaultDoc.metadata.original_name || vaultDoc.name,
+      type: 'application/octet-stream', // Default type since it's not in VaultDocument
+      size: vaultDoc.metadata.size,
+      file_url: vaultDoc.cloudinaryUrl || '', // Use cloudinaryUrl if available
+      uploaded_at: new Date(vaultDoc.metadata.timestamp).toISOString(),
+      user_id: vaultDoc.metadata.ownerId || ''
+    };
+    setSelectedDocument(portfolioDoc);
+    setShowDocumentModal(true);
   };
 
   const formatDate = (dateString: string) => {
@@ -243,18 +261,31 @@ export default function PortfolioView() {
                   const vaultDoc = vaultDocuments.find(doc => doc.id === docId);
                   return (
                     <div key={docId} className="bg-slate-900 rounded-lg p-3 border border-slate-600">
-                      <p className="text-white font-medium">
-                        {vaultDoc ? vaultDoc.name : `Document ${index + 1}`}
-                      </p>
-                      <p className="text-gray-400 text-sm">
-                        {vaultDoc ? vaultDoc.metadata.original_name : `Document ID: ${docId}`}
-                      </p>
-                      {vaultDoc && (
-                        <p className="text-gray-500 text-xs">
-                          Size: {Math.round(vaultDoc.metadata.size / 1024)} KB • 
-                          {new Date(vaultDoc.metadata.timestamp).toLocaleDateString()}
-                        </p>
-                      )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-white font-medium">
+                            {vaultDoc ? vaultDoc.name : `Document ${index + 1}`}
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            {vaultDoc ? vaultDoc.metadata.original_name : `Document ID: ${docId}`}
+                          </p>
+                          {vaultDoc && (
+                            <p className="text-gray-500 text-xs">
+                              Size: {Math.round(vaultDoc.metadata.size / 1024)} KB • 
+                              {new Date(vaultDoc.metadata.timestamp).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        {vaultDoc && (
+                          <button
+                            onClick={() => handleViewDocument(vaultDoc)}
+                            className="ml-3 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-all flex items-center gap-1"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -263,6 +294,21 @@ export default function PortfolioView() {
           </div>
         </div>
       </div>
+
+      {/* Document Viewer Modal */}
+      {showDocumentModal && selectedDocument && (
+        <DocumentViewerModal
+          isOpen={showDocumentModal}
+          onClose={() => {
+            setShowDocumentModal(false);
+            setSelectedDocument(null);
+          }}
+          fileDocument={selectedDocument}
+          allowDownload={true}
+          watermarkEnabled={false}
+          watermarkText={""}
+        />
+      )}
     </div>
   );
 }
