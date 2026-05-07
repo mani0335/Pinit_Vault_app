@@ -454,14 +454,14 @@ export async function saveImageToGallery(
     const folderPath = "PINIT Vault";
 
     try {
-      // Try to create "PINIT Vault" folder in Pictures directory
+      // Try to create "PINIT Vault" folder in Documents directory (Pictures doesn't exist in Capacitor)
       try {
         await Filesystem.mkdir({
           path: folderPath,
-          directory: Directory.Pictures,
+          directory: Directory.Documents,
           recursive: true,
         });
-        console.log(`✅ PINIT Vault folder ready at Pictures`);
+        console.log(`✅ PINIT Vault folder ready at Documents`);
       } catch (mkdirErr) {
         console.log("ℹ️ Folder creation info (may already exist):", mkdirErr);
       }
@@ -474,7 +474,7 @@ export async function saveImageToGallery(
       const result = await Filesystem.writeFile({
         path: fullPath,
         data: cleanBase64,  // Raw base64 string
-        directory: Directory.Pictures,
+        directory: Directory.Documents,
         // Don't specify encoding for base64 - Capacitor should handle it automatically
       });
 
@@ -485,24 +485,24 @@ export async function saveImageToGallery(
         path: result.uri,
       };
     } catch (e) {
-      console.warn("⚠️ PINIT Vault subfolder save failed, trying direct Pictures...", e);
+      console.warn("⚠️ PINIT Vault subfolder save failed, trying direct Documents...", e);
       
-      // Fallback: Try saving directly to Pictures root
+      // Fallback: Try saving directly to Documents root
       try {
         const fallbackResult = await Filesystem.writeFile({
           path: uniqueName,
           data: cleanBase64,
-          directory: Directory.Pictures,
+          directory: Directory.Documents,
         });
         
-        console.log(`✅ Image saved to Pictures root (fallback): ${uniqueName}`);
+        console.log(`✅ Image saved to Documents root (fallback): ${uniqueName}`);
         console.log(`📂 Full path: ${fallbackResult.uri}`);
         return {
           success: true,
           path: fallbackResult.uri,
         };
       } catch (fallbackErr) {
-        console.warn("⚠️ Direct Pictures save also failed:", fallbackErr);
+        console.warn("⚠️ Direct Documents save also failed:", fallbackErr);
         
         // Final fallback: Try Documents directory
         try {
@@ -519,10 +519,30 @@ export async function saveImageToGallery(
           };
         } catch (docErr) {
           console.error("❌ All filesystem save attempts failed:", docErr);
-          return {
-            success: false,
-            error: `Filesystem save failed: ${String(docErr)}`,
-          };
+          
+          // Final fallback: Try browser download
+          try {
+            console.log("🌐 Trying browser download as final fallback...");
+            const dataUrl = `data:image/jpeg;base64,${cleanBase64}`;
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = uniqueName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            console.log("✅ Browser download initiated");
+            return {
+              success: true,
+              path: "Browser download initiated",
+            };
+          } catch (browserErr) {
+            console.error("❌ Browser download also failed:", browserErr);
+            return {
+              success: false,
+              error: `All download methods failed. Please check storage permissions.`,
+            };
+          }
         }
       }
     }
