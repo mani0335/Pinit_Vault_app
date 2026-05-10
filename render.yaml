@@ -44,7 +44,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: mkdir -p dist && cp public/index.html dist/ && cp -r public/assets dist/ 2>/dev/null || echo "Static copy completed"
+    buildCommand: mkdir -p dist && cp public/index.html dist/index.html && echo "Static file copied successfully"
     startCommand: npm start
     envVars:
       - key: PORT
