@@ -44,7 +44,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: mkdir -p dist && cp public/index.html dist/index.html && echo "Static file copied successfully"
+    buildCommand: echo "Dist folder already exists, skipping build"
     startCommand: npm start
     envVars:
       - key: PORT
