@@ -43,8 +43,8 @@ services:
     runtime: node
     region: oregon
     plan: free
-    rootDir: .
-    buildCommand: npm install --legacy-peer-deps --force && npm run build && ls -la dist/
+    rootDir: ./dist
+    buildCommand: npm install --legacy-peer-deps --force && npm run build
     startCommand: npm start
     envVars:
       - key: PORT
