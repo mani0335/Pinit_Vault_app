@@ -179,9 +179,9 @@ export async function initializeBiometric(): Promise<{ success: boolean; error?:
     // Stage 3: Load Capacitor Biometric plugin
     console.log('🔍 Stage 3: Loading Capacitor Biometric plugin...');
     try {
-      const { Biometric } = await import('@capacitor/biometric');
+      const { NativeBiometric } = await import('@capgo/capacitor-native-biometric');
       
-      if (!Biometric) {
+      if (!NativeBiometric) {
         throw new Error('Biometric plugin not available');
       }
       
@@ -189,7 +189,7 @@ export async function initializeBiometric(): Promise<{ success: boolean; error?:
       
       // Stage 4: Check if biometric is available
       console.log('🧪 Stage 4: Checking if biometric is available on device...');
-      const result = await Biometric.isAvailable();
+      const result = await NativeBiometric.isAvailable();
       
       if (result.isAvailable) {
         console.log('✅ Biometric is available on device');
