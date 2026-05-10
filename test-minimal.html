@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test - PINIT Vault</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            text-align: center;
+            background: rgba(0,0,0,0.3);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+        .status {
+            font-size: 1.2em;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        .success { border-left: 4px solid #4CAF50; }
+        .info { border-left: 4px solid #2196F3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 PINIT Vault</h1>
+        <div class="status success">✅ Web View Working!</div>
+        <div class="status info">📱 Running in Capacitor</div>
+        <div class="status info">🚀 Ready for React App</div>
+        <div id="capacitor-status" class="status">Checking Capacitor...</div>
+    </div>
+
+    <script>
+        // Test if Capacitor is available
+        document.addEventListener('DOMContentLoaded', function() {
+            const capacitorStatus = document.getElementById('capacitor-status');
+            
+            if (window.Capacitor) {
+                capacitorStatus.innerHTML = '✅ Capacitor Detected - Native Environment';
+                capacitorStatus.className = 'status success';
+                console.log('✅ Capacitor is available');
+            } else {
+                capacitorStatus.innerHTML = '❌ No Capacitor - Web Environment';
+                capacitorStatus.className = 'status';
+                console.log('❌ Capacitor not available');
+            }
+        });
+    </script>
+</body>
+</html>
