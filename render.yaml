@@ -44,7 +44,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: node build-script.js
+    buildCommand: node build-script.js || cp public/index.html dist/index.html
     startCommand: npm start
     envVars:
       - key: PORT
