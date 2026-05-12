@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ArrowLeft, Camera, Upload, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { extractUUIDAdvanced } from '@/lib/cryptoUtils';
 
 interface ImageAnalyzerProps {
   userId: string;
@@ -38,47 +39,66 @@ export const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ userId, onBack }) 
     }
   };
 
-  // Analyze image
+  // Analyze image — extracts embedded PINIT ID using LSB steganography
   const analyzeImage = async (imageData: string, file: File) => {
     setIsAnalyzing(true);
     try {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx) {
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+              setAnalysisResult({ success: false, error: 'Canvas not supported' });
+              resolve();
+              return;
+            }
+
             ctx.drawImage(img, 0, 0);
-            
-            // Generate simple asset ID from file
-            const assetId = `AST-${Date.now().toString(36).toUpperCase()}`;
-            const certId = `CERT-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-            
-            setAnalysisResult({
-              detected: 'Image Analyzed',
-              assetId: assetId,
-              authorshipCertificateId: certId,
-              userId: userId,
-              timestamp: new Date().toISOString(),
-              fileName: file.name,
-              fileSize: file.size,
-              imageDimensions: `${canvas.width}x${canvas.height}`,
-              success: true
-            });
+            const rawImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // Extract embedded PINIT ID from LSBs
+            const extracted = extractUUIDAdvanced(rawImageData);
+
+            if (extracted.found && extracted.userId) {
+              setAnalysisResult({
+                success: true,
+                pinitIdFound: true,
+                extractedPinitId: extracted.userId,
+                fileName: file.name,
+                fileSize: file.size,
+                imageDimensions: `${canvas.width}x${canvas.height}`,
+                timestamp: new Date().toISOString(),
+              });
+            } else {
+              // No PINIT ID found — image was not encrypted by this app
+              setAnalysisResult({
+                success: true,
+                pinitIdFound: false,
+                extractedPinitId: null,
+                fileName: file.name,
+                fileSize: file.size,
+                imageDimensions: `${canvas.width}x${canvas.height}`,
+                timestamp: new Date().toISOString(),
+              });
+            }
+            resolve();
+          } catch (err) {
+            console.error('❌ Canvas error:', err);
+            setAnalysisResult({ success: false, error: 'Failed to analyze image' });
+            resolve();
           }
-        } catch (err) {
-          console.error('❌ Canvas error:', err);
-          setAnalysisResult({ success: false, error: 'Failed to analyze image' });
-        }
-      };
-      img.onerror = () => {
-        console.error('❌ Image load error');
-        setAnalysisResult({ success: false, error: 'Failed to load image' });
-      };
-      img.src = imageData;
+        };
+        img.onerror = () => {
+          setAnalysisResult({ success: false, error: 'Failed to load image' });
+          resolve();
+        };
+        img.src = imageData;
+      });
     } catch (error) {
       console.error('❌ Analysis error:', error);
       setAnalysisResult({ success: false, error: String(error) });
@@ -108,9 +128,8 @@ export const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ userId, onBack }) 
       <body>
         <div class="report">
           <h1>Image Analysis Report</h1>
-          <div class="field"><div class="label">Asset ID:</div><div class="value">${analysisResult.assetId}</div></div>
-          <div class="field"><div class="label">Certificate:</div><div class="value">${analysisResult.authorshipCertificateId}</div></div>
-          <div class="field"><div class="label">User ID:</div><div class="value">${analysisResult.userId}</div></div>
+          <div class="field"><div class="label">PINIT ID Detected:</div><div class="value">${analysisResult.pinitIdFound ? '✅ YES' : '⚠️ NO'}</div></div>
+          <div class="field"><div class="label">Extracted PINIT ID:</div><div class="value">${analysisResult.extractedPinitId || 'Not found'}</div></div>
           <div class="field"><div class="label">File:</div><div class="value">${analysisResult.fileName}</div></div>
           <div class="field"><div class="label">Size:</div><div class="value">${(analysisResult.fileSize / 1024).toFixed(2)} KB</div></div>
           <div class="field"><div class="label">Dimensions:</div><div class="value">${analysisResult.imageDimensions}</div></div>
@@ -238,35 +257,39 @@ export const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ userId, onBack }) 
         >
           {analysisResult.success ? (
             <>
-              {/* Success Result */}
-              <div className="rounded-xl p-4 border bg-emerald-500/10 border-emerald-500/30">
-                <div className="font-bold text-white text-lg mb-1">✅ Image Analyzed Successfully</div>
-                <div className="text-sm text-slate-300">
-                  File: <span className="font-mono text-cyan-400">{analysisResult.fileName}</span>
+              {/* PINIT ID Detection Result */}
+              {analysisResult.pinitIdFound ? (
+                <div className="rounded-xl p-5 border bg-emerald-500/10 border-emerald-500/40">
+                  <div className="font-bold text-emerald-400 text-lg mb-3">✅ PINIT ID Detected</div>
+                  <p className="text-slate-400 text-xs mb-2">Embedded PINIT ID extracted from image:</p>
+                  <div className="bg-black/40 rounded-lg p-3 break-all">
+                    <span className="font-mono text-cyan-300 text-sm font-bold">{analysisResult.extractedPinitId}</span>
+                  </div>
+                  <p className="text-slate-500 text-xs mt-3">This image was encrypted and ownership-stamped by PINIT Vault.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl p-5 border bg-amber-500/10 border-amber-500/40">
+                  <div className="font-bold text-amber-400 text-lg mb-2">⚠️ No PINIT ID Found</div>
+                  <p className="text-slate-400 text-sm">
+                    This image does not contain an embedded PINIT ID.
+                    It was either not encrypted by PINIT Vault, or it was re-saved as JPEG (which destroys the hidden data).
+                  </p>
+                  <p className="text-slate-500 text-xs mt-2">Only PNG images encrypted by PINIT Vault can be verified.</p>
+                </div>
+              )}
 
-              {/* Ownership Section */}
+              {/* Technical Details */}
               <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-xl p-4 border border-slate-700/50">
-                <h3 className="text-cyan-400 font-semibold mb-3">Ownership Information</h3>
+                <h3 className="text-cyan-400 font-semibold mb-3">Image Details</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Asset ID:</span><span className="text-white font-mono text-xs">{analysisResult.assetId}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Certificate:</span><span className="text-white font-mono text-xs">{analysisResult.authorshipCertificateId}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">User ID:</span><span className="text-white font-mono">{analysisResult.userId}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">File:</span><span className="text-white font-mono text-xs">{analysisResult.fileName}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Dimensions:</span><span className="text-white">{analysisResult.imageDimensions}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Size:</span><span className="text-white">{(analysisResult.fileSize / 1024).toFixed(2)} KB</span></div>
                   <div className="flex justify-between"><span className="text-slate-400">Analyzed:</span><span className="text-white">{new Date(analysisResult.timestamp).toLocaleString()}</span></div>
                 </div>
               </div>
 
-              {/* Technical Details */}
-              <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-xl p-4 border border-slate-700/50">
-                <h3 className="text-cyan-400 font-semibold mb-3">Technical Details</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Dimensions:</span><span className="text-white">{analysisResult.imageDimensions}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">File Size:</span><span className="text-white">{(analysisResult.fileSize / 1024).toFixed(2)} KB</span></div>
-                </div>
-              </div>
-
-              {/* Download Button */}
+              {/* Download Report */}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}

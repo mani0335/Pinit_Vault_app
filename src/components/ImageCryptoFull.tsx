@@ -129,7 +129,8 @@ export const ImageCryptoFull: React.FC<ImageCryptoFullProps> = ({ userId = 'user
           canvas.width = width;
           canvas.height = height;
           ctx.putImageData(embeddedImageData, 0, 0);
-          const encryptedImageData = canvas.toDataURL('image/jpeg', 0.9);
+          // PNG is mandatory — JPEG lossy compression destroys the embedded LSBs
+          const encryptedImageData = canvas.toDataURL('image/png');
 
           setResult({
             success: true,
