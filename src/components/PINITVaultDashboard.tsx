@@ -420,7 +420,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
       
       try {
         const token = localStorage.getItem("biovault_token");
-        const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+        const API_BASE = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
         
         // Try to load from backend first
         const response = await fetch(`${API_BASE}/profile/get-profile`, {
@@ -494,7 +494,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
     if (userId) {
       try {
         const token = localStorage.getItem("biovault_token");
-        const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+        const API_BASE = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
         
         const response = await fetch(`${API_BASE}/profile/save-profile-item`, {
           method: "POST",
@@ -530,7 +530,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
       if (userId) {
         try {
           const token = localStorage.getItem("biovault_token");
-          const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+          const API_BASE = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
           
           const response = await fetch(`${API_BASE}/profile/save-profile-item`, {
             method: "POST",
@@ -750,12 +750,12 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
       console.error("Error clearing appStorage:", e);
     }
     
-    // Clear authentication tokens from localStorage
+    // Clear auth tokens — keep userId and profile data so it loads on next login
     localStorage.removeItem("biovault_token");
     localStorage.removeItem("biovault_refresh_token");
-    
-    // Keep userId and profile data in storage for next login
-    // This ensures data persistence across sessions
+    localStorage.removeItem("sessionToken");
+    localStorage.removeItem("sessionExpiryTime");
+
     navigate("/login", { replace: true });
   };
 

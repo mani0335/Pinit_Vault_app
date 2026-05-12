@@ -63,17 +63,17 @@ const Dashboard = () => {
   }
 
   const handleLogout = () => {
-    // 🔐 Clear from BOTH storage systems (mobile + web)
+    // Clear auth tokens only — keep userId so vault data persists on next login
     localStorage.removeItem("biovault_token");
     localStorage.removeItem("biovault_refresh_token");
-    localStorage.removeItem("biovault_userId");
-    
-    // CRITICAL: Also clear from appStorage (Capacitor Preferences for Android)
+    localStorage.removeItem("sessionToken");
+    localStorage.removeItem("sessionExpiryTime");
+
     appStorage.removeItem("biovault_token");
     appStorage.removeItem("biovault_refresh_token");
-    appStorage.removeItem("biovault_userId");
-    
-    console.log('🚪 Dashboard: Logout complete - all storage cleared');
+    appStorage.removeItem("sessionToken");
+    appStorage.removeItem("sessionExpiryTime");
+
     navigate("/login");
   };
 
