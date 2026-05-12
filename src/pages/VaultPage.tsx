@@ -10,7 +10,7 @@ import {
   FileText,
   AlertCircle,
   Shield,
-  Badge,
+  Share2,
 } from "lucide-react";
 import {
   getAllDocuments,
@@ -20,6 +20,7 @@ import {
   VaultDocument,
 } from "@/lib/vaultManager";
 import { decryptFile } from "@/lib/encryptionUtils";
+import { Share } from "@capacitor/share";
 
 interface VaultPageProps {
   onBack: () => void;
@@ -33,6 +34,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
   const [message, setMessage] = useState<string>("");
   const [autoDeleteMessage, setAutoDeleteMessage] = useState<string>("");
   const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   // Load documents on mount
   useEffect(() => {
@@ -65,6 +67,29 @@ export default function VaultPage({ onBack }: VaultPageProps) {
   // Handle Digital Identity button click
   const handleDigitalIdentitiesClick = () => {
     setShowDigitalIdentities(!showDigitalIdentities);
+  };
+
+  // Share document
+  const handleShareDocument = async (doc: VaultDocument) => {
+    setIsSharing(true);
+    setMessage("📤 Preparing share...");
+    try {
+      await Share.share({
+        title: doc.fileName,
+        text: `Sharing encrypted document: ${doc.fileName} from PINIT Vault`,
+        dialogTitle: "Share document",
+      });
+      setMessage("✅ Share dialog opened");
+    } catch (err: any) {
+      if (err?.message?.includes("cancel") || err?.message?.includes("Cancel")) {
+        setMessage("");
+      } else {
+        setMessage("❌ Sharing not supported on this device");
+      }
+    } finally {
+      setIsSharing(false);
+      setTimeout(() => setMessage(""), 3000);
+    }
   };
 
   // Delete document
@@ -179,7 +204,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
             >
               <Shield className="w-5 h-5" />
               <span>Digital Identities</span>
-              <Badge className="bg-white text-purple-600">{digitalIdentityCount}</Badge>
+              <span className="bg-white text-purple-600 text-xs font-bold rounded-full px-2 py-0.5">{digitalIdentityCount}</span>
             </button>
             <div className="text-right">
               <p className="text-sm text-gray-400">Documents stored</p>
@@ -412,13 +437,22 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                   )}
 
                   {/* Actions */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <button
                       onClick={() => handleDownloadDocument(selectedDoc)}
                       className="py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
                     >
                       <Download className="w-5 h-5" />
                       Download
+                    </button>
+
+                    <button
+                      onClick={() => handleShareDocument(selectedDoc)}
+                      disabled={isSharing}
+                      className="py-3 px-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
+                    >
+                      <Share2 className="w-5 h-5" />
+                      Share
                     </button>
 
                     <button

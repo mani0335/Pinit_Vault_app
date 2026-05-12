@@ -20,7 +20,7 @@ interface VaultDocument {
   createdAt: string;
 }
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
 
 /**
  * Calculate page count for documents (simplified approach)
