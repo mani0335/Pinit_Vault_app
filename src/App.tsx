@@ -22,6 +22,7 @@ const UploadFromDevice = lazy(() => import("@/pages/UploadFromDevice"));
 const DocumentHub      = lazy(() => import("@/pages/DocumentHub"));
 const ReviewPage       = lazy(() => import("@/pages/ReviewPage"));
 const NotFound         = lazy(() => import("@/pages/NotFound"));
+const SharedImageViewer = lazy(() => import("@/components/SharedImageViewer").then(m => ({ default: m.SharedImageViewer })));
 
 // Portfolio pages
 const PortfolioHome        = lazy(() => import("@/pages/portfolio/PortfolioHome"));
@@ -212,6 +213,9 @@ const App = () => (
           } />
 
           {/* 404 */}
+          {/* ─── Public share route — no login required ─── */}
+          <Route path="/share/:token" element={<SharedImageViewer />} />
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
