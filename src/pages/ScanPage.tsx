@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Camera, X } from "lucide-react";
-import { CameraPlugin, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 interface ScannedImage {
   id: string;
@@ -22,7 +22,7 @@ export default function ScanPage() {
       setIsCapturing(true);
       setError(null);
 
-      const photo = await CameraPlugin.getPhoto({
+      const photo = await Camera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.Base64,

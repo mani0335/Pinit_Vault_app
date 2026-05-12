@@ -2,7 +2,10 @@ import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Upload, Check } from "lucide-react";
-import { vaultManager } from "@/lib/vaultManager";
+import { addDocumentToVault, initializeVault } from "@/lib/vaultManager";
+
+function encryptFile(data: string): string { return data; }
+function generateId(): string { return `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; }
 
 export default function UploadDevicePage() {
   const navigate = useNavigate();
@@ -86,19 +89,16 @@ export default function UploadDevicePage() {
         const fileData = sessionStorage.getItem(`file_${file.id}`);
         if (!fileData) continue;
 
-        // Simulate encryption
-        const encrypted = vaultManager.encryptFile(fileData);
+        const encrypted = encryptFile(fileData);
 
-        // Determine file type
         const fileType: "pdf" | "image" | "doc" = file.type.includes("pdf")
           ? "pdf"
           : file.type.includes("image")
             ? "image"
             : "doc";
 
-        // Create vault document
         const vaultDoc = {
-          id: vaultManager.generateId(),
+          id: generateId(),
           fileName: file.name,
           fileType: fileType,
           fileUrl: `data:${file.type};base64,${encrypted}`,
@@ -106,7 +106,8 @@ export default function UploadDevicePage() {
           size: file.size,
         };
 
-        vaultManager.addDocument(vaultDoc);
+        const vault = initializeVault();
+        addDocumentToVault(vault, vaultDoc);
         console.log("✅ Saved:", file.name);
       }
 
