@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'PINIT',
   webDir: 'dist',
   server: {
+    androidScheme: 'https',
     cleartext: true,
   },
   plugins: {

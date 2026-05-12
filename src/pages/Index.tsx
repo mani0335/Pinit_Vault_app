@@ -45,17 +45,16 @@ const Index = () => {
             
             if (refreshToken) {
               try {
-                const response = await fetch(`${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/refresh-token`, {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://biovault-backend-d13a.onrender.com'}/api/refresh-token`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ refreshToken, userId })
                 });
-                
+
                 if (response.ok) {
                   const data = await response.json();
                   await appStorage.setItem('sessionToken', data.token);
                   await appStorage.setItem('sessionExpiryTime', (Date.now() + 3600000).toString());
-                  console.log('✅ Index [TIER 1]: Token refreshed → DASHBOARD');
                   navigate('/dashboard', { replace: true });
                   return;
                 }

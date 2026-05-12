@@ -236,35 +236,15 @@ export async function requestBiometricPermission(): Promise<boolean> {
       return true;
     }
     
-    // Import Capacitor Permissions plugin
+    // Request permissions via NativeBiometric plugin (correct Capacitor approach)
     try {
-      const { PermissionStatus, Permissions } = await import('@capacitor/core');
-      
-      console.log('🔐 [PERMISSIONS] Capacitor Permissions plugin loaded');
-      
-      // Request BIOMETRIC permission (Android 28+)
-      console.log('📱 [PERMISSIONS] Requesting BIOMETRIC permission...');
-      const bioPermResult = await Permissions.request({ alias: 'biometric' });
-      console.log('✅ [PERMISSIONS] BIOMETRIC permission result:', bioPermResult.biometric);
-      
-      // Also request CAMERA permission (for face recognition)
-      console.log('📱 [PERMISSIONS] Requesting CAMERA permission...');
-      const cameraPermResult = await Permissions.request({ alias: 'camera' });
-      console.log('✅ [PERMISSIONS] CAMERA permission result:', cameraPermResult.camera);
-      
-      const bioGranted = bioPermResult.biometric === 'granted' || bioPermResult.biometric === 'prompt';
-      const cameraGranted = cameraPermResult.camera === 'granted' || cameraPermResult.camera === 'prompt';
-      
-      if (bioGranted) {
-        console.log('✅ [PERMISSIONS] Biometric permission granted/prompt');
-        return true;
-      } else {
-        console.error('❌ [PERMISSIONS] Biometric permission DENIED');
-        return false;
-      }
+      const { NativeBiometric } = await import('@capgo/capacitor-native-biometric');
+      const available = await NativeBiometric.isAvailable();
+      console.log('✅ [PERMISSIONS] Biometric availability:', available.isAvailable);
+      return available.isAvailable;
     } catch (permErr: any) {
-      console.warn('⚠️ [PERMISSIONS] Permissions plugin error (may not be available):', permErr?.message);
-      // Continue anyway - Capacitor may handle it automatically
+      console.warn('⚠️ [PERMISSIONS] Permission check error:', permErr?.message);
+      // Android handles permissions via manifest — return true to let the OS prompt
       return true;
     }
   } catch (error: any) {
