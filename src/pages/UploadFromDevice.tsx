@@ -8,11 +8,8 @@ import {
   Loader,
 } from "lucide-react";
 import { encryptFile } from "@/lib/encryptionUtils";
-import {
-  addDocumentToVault,
-  saveVaultState,
-  initializeVault,
-} from "@/lib/vaultManager";
+import { addDocumentToVault } from "@/lib/vaultService";
+import { appStorage } from "@/lib/storage";
 
 interface UploadFromDeviceProps {
   onBack: () => void;
@@ -119,29 +116,33 @@ export default function UploadFromDevice({
 
           setMessage("💾 Saving to vault...");
 
-          // Add to vault
-          const vault = initializeVault();
+          // Get userId so document goes to the right user's vault
+          let userId: string | null = null;
+          try { userId = await appStorage.getItem("biovault_userId"); } catch {}
+          if (!userId) userId = localStorage.getItem("biovault_userId");
 
-          // Determine file type
-          const fileType = document.type.startsWith("image")
-            ? ("image" as const)
-            : document.type === "application/pdf"
-            ? ("pdf" as const)
-            : ("document" as const);
+          if (!userId) {
+            setMessage("❌ Not logged in. Please login first.");
+            setIsProcessing(false);
+            return;
+          }
 
           const newDocument = {
             id: `doc_${Date.now()}`,
-            fileName: document.name,
-            fileType,
-            fileSize: `${(document.size / 1024 / 1024).toFixed(2)} MB`,
-            fileData: encrypted,
-            createdAt: new Date(),
-            isEncrypted: true,
-            encryptionKey: key,
+            name: document.name,
+            encryptedData: encrypted,
+            metadata: {
+              timestamp: Date.now(),
+              original_name: document.name,
+              size: document.size,
+              checksum: key,
+              encrypted: true,
+              ownerId: userId,
+            },
+            createdAt: new Date().toISOString(),
           };
 
-          const updatedVault = addDocumentToVault(vault, newDocument);
-          saveVaultState(updatedVault);
+          await addDocumentToVault(userId, newDocument);
 
           setMessage(`✅ File uploaded and encrypted: ${document.name}`);
 

@@ -2,8 +2,9 @@ import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Upload, Check } from "lucide-react";
-import { addDocumentToVault, initializeVault, saveVaultState } from "@/lib/vaultManager";
 import { encryptFile } from "@/lib/encryptionUtils";
+import { addDocumentToVault as addToVaultService } from "@/lib/vaultService";
+import { appStorage } from "@/lib/storage";
 
 function generateId(): string { return `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; }
 
@@ -83,7 +84,16 @@ export default function UploadDevicePage() {
 
     try {
       setIsUploading(true);
-      console.log("💾 Saving", uploadedFiles.length, "files to vault...");
+
+      // Get current userId so documents go to the right user's vault
+      let userId: string | null = null;
+      try { userId = await appStorage.getItem("biovault_userId"); } catch {}
+      if (!userId) userId = localStorage.getItem("biovault_userId");
+
+      if (!userId) {
+        setError("Not logged in. Please login first.");
+        return;
+      }
 
       for (const file of uploadedFiles) {
         const fileData = sessionStorage.getItem(`file_${file.id}`);
@@ -91,27 +101,22 @@ export default function UploadDevicePage() {
 
         const { encrypted, key } = encryptFile(fileData);
 
-        const fileType: "pdf" | "image" | "document" = file.type.includes("pdf")
-          ? "pdf"
-          : file.type.includes("image")
-            ? "image"
-            : "document";
-
         const vaultDoc = {
           id: generateId(),
-          fileName: file.name,
-          fileType: fileType,
-          fileData: encrypted,
-          fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-          createdAt: new Date(),
-          isEncrypted: true,
-          encryptionKey: key,
+          name: file.name,
+          encryptedData: encrypted,
+          metadata: {
+            timestamp: Date.now(),
+            original_name: file.name,
+            size: file.size,
+            checksum: key,
+            encrypted: true,
+            ownerId: userId,
+          },
+          createdAt: new Date().toISOString(),
         };
 
-        const vault = initializeVault();
-        const updatedVault = addDocumentToVault(vault, vaultDoc);
-        saveVaultState(updatedVault);
-        console.log("✅ Saved:", file.name);
+        await addToVaultService(userId, vaultDoc);
       }
 
       // Clear session storage
