@@ -148,9 +148,8 @@ export default function UploadFromDevice({
 
           console.log("✅ Document saved:", {
             id: newDocument.id,
-            fileName: newDocument.fileName,
-            fileType,
-            encrypted: newDocument.isEncrypted,
+            name: newDocument.name,
+            encrypted: newDocument.metadata.encrypted,
           });
 
           // Navigate to vault

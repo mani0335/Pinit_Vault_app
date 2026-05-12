@@ -13,70 +13,92 @@ import {
   Share2,
 } from "lucide-react";
 import {
-  getAllDocuments,
+  getVaultDocuments,
   deleteDocumentFromVault,
-  saveVaultState,
-  initializeVault,
-  VaultDocument,
-} from "@/lib/vaultManager";
+} from "@/lib/vaultService";
 import { decryptFile } from "@/lib/encryptionUtils";
+import { appStorage } from "@/lib/storage";
 import { Share } from "@capacitor/share";
+
+interface VaultDoc {
+  id: string;
+  name: string;
+  encryptedData: string;
+  metadata: {
+    timestamp: number;
+    original_name: string;
+    size: number;
+    checksum: string;
+    encrypted?: boolean;
+    ownerId?: string;
+  };
+  createdAt: string;
+}
 
 interface VaultPageProps {
   onBack: () => void;
 }
 
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function getFileType(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  if (ext === "pdf") return "pdf";
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) return "image";
+  return "document";
+}
+
+const ID_KEYWORDS = ["aadhaar", "pan", "passport", "license", "voter", "id"];
+
 export default function VaultPage({ onBack }: VaultPageProps) {
-  const [documents, setDocuments] = useState<VaultDocument[]>([]);
-  const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
+  const [documents, setDocuments] = useState<VaultDoc[]>([]);
+  const [userId, setUserId] = useState<string>("");
+  const [selectedDoc, setSelectedDoc] = useState<VaultDoc | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
-  const [decryptedContent, setDecryptedContent] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [autoDeleteMessage, setAutoDeleteMessage] = useState<string>("");
   const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
 
-  // Load documents on mount
   useEffect(() => {
-    const vault = initializeVault();
-    const docs = getAllDocuments(vault);
-    setDocuments(docs);
-    console.log(`📦 Loaded ${docs.length} documents from vault`);
+    const load = async () => {
+      let uid: string | null = null;
+      try { uid = await appStorage.getItem("biovault_userId"); } catch {}
+      if (!uid) uid = localStorage.getItem("biovault_userId");
+
+      if (!uid) {
+        console.warn("⚠️ No userId found, vault will be empty");
+        return;
+      }
+
+      setUserId(uid);
+      const docs = await getVaultDocuments(uid);
+      setDocuments(docs);
+      console.log(`📦 Loaded ${docs.length} documents from vault for user: ${uid}`);
+    };
+
+    load();
   }, []);
 
-  // Count digital identity documents
-  const digitalIdentityCount = documents.filter(doc => 
-    doc.fileName.toLowerCase().includes('aadhaar') ||
-    doc.fileName.toLowerCase().includes('pan') ||
-    doc.fileName.toLowerCase().includes('passport') ||
-    doc.fileName.toLowerCase().includes('license') ||
-    doc.fileName.toLowerCase().includes('voter') ||
-    doc.fileName.toLowerCase().includes('id')
+  const digitalIdentityCount = documents.filter((doc) =>
+    ID_KEYWORDS.some((kw) => doc.name.toLowerCase().includes(kw))
   ).length;
 
-  // Filter digital identity documents
-  const digitalIdentityDocuments = documents.filter(doc => 
-    doc.fileName.toLowerCase().includes('aadhaar') ||
-    doc.fileName.toLowerCase().includes('pan') ||
-    doc.fileName.toLowerCase().includes('passport') ||
-    doc.fileName.toLowerCase().includes('license') ||
-    doc.fileName.toLowerCase().includes('voter') ||
-    doc.fileName.toLowerCase().includes('id')
+  const digitalIdentityDocuments = documents.filter((doc) =>
+    ID_KEYWORDS.some((kw) => doc.name.toLowerCase().includes(kw))
   );
 
-  // Handle Digital Identity button click
-  const handleDigitalIdentitiesClick = () => {
-    setShowDigitalIdentities(!showDigitalIdentities);
-  };
-
-  // Share document
-  const handleShareDocument = async (doc: VaultDocument) => {
+  const handleShareDocument = async (doc: VaultDoc) => {
     setIsSharing(true);
     setMessage("📤 Preparing share...");
     try {
       await Share.share({
-        title: doc.fileName,
-        text: `Sharing encrypted document: ${doc.fileName} from PINIT Vault`,
+        title: doc.name,
+        text: `Sharing encrypted document: ${doc.name} from PINIT Vault`,
         dialogTitle: "Share document",
       });
       setMessage("✅ Share dialog opened");
@@ -92,69 +114,62 @@ export default function VaultPage({ onBack }: VaultPageProps) {
     }
   };
 
-  // Delete document
-  const handleDeleteDocument = (doc: VaultDocument) => {
-    if (!window.confirm(`Delete "${doc.fileName}"?`)) return;
+  const handleDeleteDocument = async (doc: VaultDoc) => {
+    if (!window.confirm(`Delete "${doc.name}"?`)) return;
 
-    const vault = initializeVault();
-    const updatedVault = deleteDocumentFromVault(vault, doc.id);
-    saveVaultState(updatedVault);
-
+    await deleteDocumentFromVault(userId, doc.id);
     setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+
     if (selectedDoc?.id === doc.id) {
       setSelectedDoc(null);
       setPreviewMode(false);
     }
 
-    setAutoDeleteMessage(`✅ "${doc.fileName}" deleted from vault`);
+    setAutoDeleteMessage(`✅ "${doc.name}" deleted from vault`);
     setTimeout(() => setAutoDeleteMessage(""), 3000);
   };
 
-  // Preview document
-  const handlePreviewDocument = async (doc: VaultDocument) => {
+  const handlePreviewDocument = (doc: VaultDoc) => {
     setSelectedDoc(doc);
-    setMessage("🔓 Decrypting...");
-
-    try {
-      if (doc.isEncrypted && doc.encryptionKey) {
-        const decrypted = decryptFile(doc.fileData, doc.encryptionKey);
-        setDecryptedContent(decrypted);
-        console.log("✅ Document decrypted");
-      } else {
-        setDecryptedContent(doc.fileData);
-      }
-
-      setMessage("✅ Ready to preview");
-      setPreviewMode(true);
-    } catch (err) {
-      setMessage("❌ Failed to decrypt document");
-      console.error("Decrypt error:", err);
-    }
+    setPreviewMode(true);
+    setMessage("✅ Ready to preview");
   };
 
-  // Download document
-  const handleDownloadDocument = async (doc: VaultDocument) => {
+  const handleDownloadDocument = async (doc: VaultDoc) => {
     try {
       setMessage("📥 Preparing download...");
 
-      let dataToDownload = doc.fileData;
+      let data = doc.encryptedData;
 
-      if (doc.isEncrypted && doc.encryptionKey) {
+      if (doc.metadata.encrypted && doc.metadata.checksum) {
         setMessage("🔓 Decrypting...");
-        dataToDownload = decryptFile(doc.fileData, doc.encryptionKey);
+        data = decryptFile(doc.encryptedData, doc.metadata.checksum);
       }
 
-      // Create downloadable link
+      const ext = doc.name.split(".").pop()?.toLowerCase() || "bin";
+      const mimeMap: Record<string, string> = {
+        pdf: "application/pdf",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      };
+      const mime = mimeMap[ext] || "application/octet-stream";
+
+      const href = data.startsWith("data:")
+        ? data
+        : `data:${mime};base64,${data}`;
+
       const link = document.createElement("a");
-      link.href = dataToDownload.includes(",")
-        ? dataToDownload
-        : `data:application/pdf;base64,${dataToDownload}`;
-      link.download = doc.fileName;
+      link.href = href;
+      link.download = doc.name;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      setMessage(`✅ Downloaded: ${doc.fileName}`);
+      setMessage(`✅ Downloaded: ${doc.name}`);
       setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       setMessage("❌ Download failed");
@@ -164,12 +179,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
   const containerVariants = {
     hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
+    visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
   };
 
   const itemVariants = {
@@ -199,12 +209,14 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
           <div className="flex gap-4">
             <button
-              onClick={handleDigitalIdentitiesClick}
+              onClick={() => setShowDigitalIdentities(!showDigitalIdentities)}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white hover:from-purple-700 hover:to-pink-700 transition"
             >
               <Shield className="w-5 h-5" />
               <span>Digital Identities</span>
-              <span className="bg-white text-purple-600 text-xs font-bold rounded-full px-2 py-0.5">{digitalIdentityCount}</span>
+              <span className="bg-white text-purple-600 text-xs font-bold rounded-full px-2 py-0.5">
+                {digitalIdentityCount}
+              </span>
             </button>
             <div className="text-right">
               <p className="text-sm text-gray-400">Documents stored</p>
@@ -217,7 +229,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
         {showDigitalIdentities && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
+            animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             className="mb-6 p-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl"
           >
@@ -238,25 +250,21 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                     <div className="flex items-center gap-3">
                       <FileText className="w-5 h-5 text-purple-400" />
                       <div>
-                        <p className="text-white font-medium">{doc.fileName}</p>
-                        <p className="text-gray-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
+                        <p className="text-white font-medium">{doc.name}</p>
+                        <p className="text-gray-400 text-xs">
+                          {new Date(doc.createdAt).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePreviewDocument(doc);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handlePreviewDocument(doc); }}
                         className="p-2 hover:bg-slate-600 rounded-lg transition"
                       >
                         <Eye className="w-4 h-4 text-cyan-400" />
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDocument(doc);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc); }}
                         className="p-2 hover:bg-slate-600 rounded-lg transition"
                       >
                         <Trash2 className="w-4 h-4 text-red-400" />
@@ -274,7 +282,6 @@ export default function VaultPage({ onBack }: VaultPageProps) {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="mb-6 p-4 bg-green-900/30 border border-green-500/50 rounded-lg text-green-300"
           >
             {autoDeleteMessage}
@@ -283,7 +290,6 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
         {/* Content */}
         {documents.length === 0 ? (
-          // Empty State
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -334,18 +340,19 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white truncate text-sm">
-                          {doc.fileName}
+                          {doc.name}
                         </p>
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-                          {doc.isEncrypted && (
+                          {doc.metadata.encrypted && (
                             <span className="flex items-center gap-1 bg-purple-900/50 px-2 py-1 rounded">
                               <Lock className="w-3 h-3" />
                               Encrypted
                             </span>
                           )}
-
-                          <span className="text-gray-500">{doc.fileSize}</span>
+                          <span className="text-gray-500">
+                            {formatSize(doc.metadata.size)}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
@@ -366,10 +373,9 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                 animate={{ opacity: 1, x: 0 }}
                 className="lg:col-span-2 space-y-6"
               >
-                {/* Preview Section */}
                 <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 border border-purple-500/50 rounded-xl p-6">
                   <h3 className="text-xl font-bold text-white mb-4">
-                    📄 {selectedDoc.fileName}
+                    📄 {selectedDoc.name}
                   </h3>
 
                   {message && (
@@ -398,14 +404,14 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                     <div>
                       <p className="text-gray-400">File Type</p>
                       <p className="text-white font-semibold capitalize">
-                        {selectedDoc.fileType}
+                        {getFileType(selectedDoc.name)}
                       </p>
                     </div>
 
                     <div>
                       <p className="text-gray-400">File Size</p>
                       <p className="text-white font-semibold">
-                        {selectedDoc.fileSize}
+                        {formatSize(selectedDoc.metadata.size)}
                       </p>
                     </div>
 
@@ -419,13 +425,13 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                     <div>
                       <p className="text-gray-400">Encryption</p>
                       <p className="text-white font-semibold">
-                        {selectedDoc.isEncrypted ? "🔒 Encrypted" : "🔓 Open"}
+                        {selectedDoc.metadata.encrypted ? "🔒 Encrypted" : "🔓 Open"}
                       </p>
                     </div>
                   </div>
 
-                  {/* Preview */}
-                  {previewMode && selectedDoc.fileType === "pdf" && (
+                  {/* Preview placeholder for PDF */}
+                  {previewMode && getFileType(selectedDoc.name) === "pdf" && (
                     <div className="mb-6 max-h-96 overflow-auto bg-black/30 rounded-lg p-4">
                       <p className="text-gray-400 text-center">
                         📄 PDF Preview (Encrypted)
