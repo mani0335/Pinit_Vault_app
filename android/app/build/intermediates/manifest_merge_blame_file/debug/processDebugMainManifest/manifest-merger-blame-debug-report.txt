@@ -1,0 +1,229 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.biovault.app"
+4    android:versionCode="11"
+5    android:versionName="2.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="24"
+9        android:targetSdkVersion="36" />
+10
+11    <!-- Features -->
+12    <uses-feature
+12-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:5:5-7:36
+13        android:name="android.hardware.camera"
+13-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:6:9-47
+14        android:required="false" />
+14-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:7:9-33
+15    <uses-feature
+15-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:8:5-10:36
+16        android:name="android.hardware.fingerprint"
+16-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:9:9-52
+17        android:required="false" />
+17-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:10:9-33
+18
+19    <!-- Permissions -->
+20
+21
+22    <!-- Permissions -->
+23    <uses-permission android:name="android.permission.INTERNET" />
+23-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:49:5-67
+23-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:49:22-64
+24    <uses-permission android:name="android.permission.CAMERA" />
+24-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:50:5-65
+24-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:50:22-62
+25    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+25-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:51:5-74
+25-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:51:22-71
+26    <!-- ✅ CRITICAL: Biometric permission for API 28+ (required for fingerprint/face) -->
+27    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+27-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:53:5-72
+27-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:53:22-69
+28    <!-- Alternative biometric permission for newer Android versions -->
+29    <uses-permission android:name="android.permission.USE_BIOMETRIC_INTERNAL" />
+29-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:55:5-81
+29-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:55:22-78
+30    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+30-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:56:5-80
+30-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:56:22-77
+31    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+31-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:57:5-81
+31-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:57:22-78
+32    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+32-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:58:5-82
+32-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:58:22-79
+33
+34    <queries>
+34-->[:capacitor-camera] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capacitor\camera\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:7:5-11:15
+35        <intent>
+35-->[:capacitor-camera] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capacitor\camera\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:8:9-10:18
+36            <action android:name="android.media.action.IMAGE_CAPTURE" />
+36-->[:capacitor-camera] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capacitor\camera\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:9:13-73
+36-->[:capacitor-camera] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capacitor\camera\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:9:21-70
+37        </intent>
+38    </queries>
+39
+40    <permission
+40-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:22:5-24:47
+41        android:name="com.biovault.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+41-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:23:9-81
+42        android:protectionLevel="signature" />
+42-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:24:9-44
+43
+44    <uses-permission android:name="com.biovault.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+44-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:26:5-97
+44-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:26:22-94
+45
+46    <application
+46-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:12:5-44:19
+47        android:allowBackup="true"
+47-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:13:9-35
+48        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+48-->[androidx.core:core:1.17.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\6e3a0f938438e4b9ffba6a2cd1f9bbaf\transformed\core-1.17.0\AndroidManifest.xml:28:18-86
+49        android:debuggable="true"
+50        android:extractNativeLibs="false"
+51        android:icon="@mipmap/ic_launcher"
+51-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:14:9-43
+52        android:label="@string/app_name"
+52-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:15:9-41
+53        android:roundIcon="@mipmap/ic_launcher_round"
+53-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:16:9-54
+54        android:supportsRtl="true"
+54-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:17:9-35
+55        android:theme="@style/AppTheme"
+55-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:18:9-40
+56        android:usesCleartextTraffic="true" >
+56-->[:capacitor-cordova-android-plugins] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\capacitor-cordova-android-plugins\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:8:18-53
+57        <activity
+57-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:20:9-33:20
+58            android:name="com.biovault.app.MainActivity"
+58-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:22:13-41
+59            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+59-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:21:13-148
+60            android:exported="true"
+60-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:26:13-36
+61            android:label="@string/title_activity_main"
+61-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:23:13-56
+62            android:launchMode="singleTask"
+62-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:25:13-44
+63            android:theme="@style/AppTheme.NoActionBarLaunch" >
+63-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:24:13-62
+64            <intent-filter>
+64-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:28:13-31:29
+65                <action android:name="android.intent.action.MAIN" />
+65-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:29:17-69
+65-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:29:25-66
+66
+67                <category android:name="android.intent.category.LAUNCHER" />
+67-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:30:17-77
+67-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:30:27-74
+68            </intent-filter>
+69        </activity>
+70
+71        <provider
+72            android:name="androidx.core.content.FileProvider"
+72-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:36:13-62
+73            android:authorities="com.biovault.app.fileprovider"
+73-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:37:13-64
+74            android:exported="false"
+74-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:38:13-37
+75            android:grantUriPermissions="true" >
+75-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:39:13-47
+76            <meta-data
+76-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:40:13-42:64
+77                android:name="android.support.FILE_PROVIDER_PATHS"
+77-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:41:17-67
+78                android:resource="@xml/file_paths" />
+78-->C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\.claude\worktrees\condescending-black-36d795\android\app\src\main\AndroidManifest.xml:42:17-51
+79        </provider>
+80
+81        <activity
+81-->[:capgo-capacitor-native-biometric] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capgo\capacitor-native-biometric\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:8:9-11:59
+82            android:name="ee.forgr.biometric.AuthActivity"
+82-->[:capgo-capacitor-native-biometric] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capgo\capacitor-native-biometric\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:9:13-59
+83            android:label="@string/title_activity_auth_activity"
+83-->[:capgo-capacitor-native-biometric] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capgo\capacitor-native-biometric\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:10:13-65
+84            android:theme="@style/AppTheme.Transparent" />
+84-->[:capgo-capacitor-native-biometric] C:\Users\manish\Desktop\secure-sweet-access-main\secure-sweet-access-main\node_modules\@capgo\capacitor-native-biometric\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:11:13-56
+85
+86        <provider
+86-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:24:9-32:20
+87            android:name="androidx.startup.InitializationProvider"
+87-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:25:13-67
+88            android:authorities="com.biovault.app.androidx-startup"
+88-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:26:13-68
+89            android:exported="false" >
+89-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:27:13-37
+90            <meta-data
+90-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+91                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+91-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:30:17-75
+92                android:value="androidx.startup" />
+92-->[androidx.emoji2:emoji2:1.3.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\7fb420281e59b776db2e3330a8fd8a85\transformed\emoji2-1.3.0\AndroidManifest.xml:31:17-49
+93            <meta-data
+93-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\manish\.gradle\caches\8.14.1\transforms\1b04e58986d1d8725e9c890316fe8b2c\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:29:13-31:52
+94                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+94-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\manish\.gradle\caches\8.14.1\transforms\1b04e58986d1d8725e9c890316fe8b2c\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:30:17-78
+95                android:value="androidx.startup" />
+95-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\manish\.gradle\caches\8.14.1\transforms\1b04e58986d1d8725e9c890316fe8b2c\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:31:17-49
+96            <meta-data
+96-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:29:13-31:52
+97                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+97-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:30:17-85
+98                android:value="androidx.startup" />
+98-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:31:17-49
+99        </provider>
+100
+101        <uses-library
+101-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:25:9-27:40
+102            android:name="androidx.window.extensions"
+102-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:26:13-54
+103            android:required="false" />
+103-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:27:13-37
+104        <uses-library
+104-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:28:9-30:40
+105            android:name="androidx.window.sidecar"
+105-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:29:13-51
+106            android:required="false" />
+106-->[androidx.window:window:1.0.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\58018eb5f23882184cb8112fd138fe47\transformed\window-1.0.0\AndroidManifest.xml:30:13-37
+107
+108        <receiver
+108-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:34:9-52:20
+109            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+109-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:35:13-76
+110            android:directBootAware="false"
+110-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:36:13-44
+111            android:enabled="true"
+111-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:37:13-35
+112            android:exported="true"
+112-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:38:13-36
+113            android:permission="android.permission.DUMP" >
+113-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:39:13-57
+114            <intent-filter>
+114-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:40:13-42:29
+115                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+115-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:41:17-91
+115-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:41:25-88
+116            </intent-filter>
+117            <intent-filter>
+117-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:43:13-45:29
+118                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+118-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:44:17-85
+118-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:44:25-82
+119            </intent-filter>
+120            <intent-filter>
+120-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:46:13-48:29
+121                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+121-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:47:17-88
+121-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:47:25-85
+122            </intent-filter>
+123            <intent-filter>
+123-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:49:13-51:29
+124                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+124-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:50:17-95
+124-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\manish\.gradle\caches\8.14.1\transforms\61271f159b329d2787c08656ae1aed27\transformed\profileinstaller-1.4.0\AndroidManifest.xml:50:25-92
+125            </intent-filter>
+126        </receiver>
+127    </application>
+128
+129</manifest>
