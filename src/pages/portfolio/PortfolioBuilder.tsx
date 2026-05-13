@@ -24,29 +24,18 @@ export default function PortfolioBuilder() {
         try {
           const docs = await loadVaultDocuments(storedUserId);
           setVaultDocuments(docs);
-          
-          // Build portfolio structure
+
           if (type) {
-            const selectedFiles = docs; // Use all vault documents
-            const organized = autoOrganizeDocuments(selectedFiles, type as Portfolio['type']);
-            
+            const organized = autoOrganizeDocuments(docs, type as Portfolio['type']);
             const portfolio = {
-              id: Date.now().toString(),
-              name: 'My Portfolio',
+              name: `My ${type.charAt(0).toUpperCase() + type.slice(1)} Portfolio`,
               type: type,
-              profile: {
-                name: "User",
-                role: "Professional",
-                location: "India"
-              },
               sections: Object.entries(organized).map(([title, documents]) => ({
                 title,
-                documents: documents as string[]
+                documents: documents as string[],
               })),
-              createdAt: new Date().toISOString(),
-              status: 'active' as const
+              status: 'active' as const,
             };
-            
             setStructuredPortfolio(portfolio);
             setIsLoading(false);
           }
@@ -93,27 +82,17 @@ export default function PortfolioBuilder() {
   };
 
   const handleGeneratePortfolio = async () => {
-    console.log('Generate Portfolio clicked, structuredPortfolio:', structuredPortfolio);
-    if (structuredPortfolio && userId) {
-      try {
-        console.log('Creating portfolio:', structuredPortfolio);
-        const newPortfolio = await createPortfolio(userId, {
-          name: structuredPortfolio.name,
-          type: structuredPortfolio.type,
-          sections: structuredPortfolio.sections,
-          status: 'active'
-        });
-        
-        console.log('Portfolio created successfully:', newPortfolio);
-        alert('Portfolio created successfully!');
-        navigate('/portfolio');
-      } catch (err) {
-        console.error('Failed to create portfolio:', err);
-        alert('Failed to create portfolio. Please try again.');
-      }
-    } else {
-      console.error('No structured portfolio available or no userId');
-      alert('Unable to generate portfolio. Please try again.');
+    if (!structuredPortfolio || !userId) return;
+    try {
+      await createPortfolio(userId, {
+        name: structuredPortfolio.name,
+        type: structuredPortfolio.type,
+        sections: structuredPortfolio.sections,
+        status: 'active',
+      });
+      navigate('/portfolio');
+    } catch (err) {
+      console.error('Failed to create portfolio:', err);
     }
   };
 
@@ -169,12 +148,8 @@ export default function PortfolioBuilder() {
                     <User className="w-8 h-8 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">
-                      {structuredPortfolio.profile.name}
-                    </h3>
-                    <p className="text-slate-400">
-                      {structuredPortfolio.profile.role}
-                    </p>
+                    <h3 className="text-xl font-bold text-white">{structuredPortfolio.name}</h3>
+                    <p className="text-slate-400 capitalize">{structuredPortfolio.type} Portfolio</p>
                   </div>
                 </div>
               </div>

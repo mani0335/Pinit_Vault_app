@@ -1,21 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, FolderOpen, RefreshCw, Search, Filter } from 'lucide-react';
+import { Plus, FolderOpen, Search } from 'lucide-react';
 import PortfolioCard from '../../components/portfolio/PortfolioCard';
-import { loadPortfolios, deletePortfolio, createPortfolio } from '../../lib/portfolioService';
-import { loadVaultDocuments } from '../../lib/vaultService';
-import type { Portfolio, VaultDocument } from '../../types/Portfolio';
+import { loadPortfolios, deletePortfolio } from '../../lib/portfolioService';
+import type { Portfolio } from '../../types/Portfolio';
 
 interface PortfolioHomeProps {
   userId?: string | null;
 }
 
 export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps) {
-  console.log('🚀 PortfolioHome: Component MOUNTED with userId:', propUserId);
   const navigate = useNavigate();
   const [userId, setUserId] = useState<string | null>(propUserId || null);
-  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +28,7 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
     try {
       setLoading(true);
       setError(null);
-      console.log('📦 Loading portfolios for userId:', userId);
       const loaded = await loadPortfolios(userId);
-      console.log('✅ Portfolios loaded:', loaded.length);
       setPortfolios(loaded);
     } catch (err) {
       console.error('❌ Failed to load portfolios:', err);
@@ -46,21 +41,12 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
   useEffect(() => {
     if (hasFetched.current) return;
 
-    console.log('🚀 PortfolioHome: useEffect triggered');
-    console.log('🚀 PortfolioHome: Current userId state:', userId);
-    console.log('🚀 PortfolioHome: Prop userId:', propUserId);
-
-    // Use prop userId if available, otherwise try localStorage
     const effectiveUserId = propUserId || localStorage.getItem('biovault_userId');
-    console.log('🚀 PortfolioHome: Effective userId:', effectiveUserId);
 
     if (effectiveUserId) {
-      console.log('✅ PortfolioHome: userId found, setting state and fetching');
       setUserId(effectiveUserId);
       fetchPortfolios();
     } else {
-      console.log('❌ PortfolioHome: No userId found, stopping loading');
-      // No userId found, stop loading
       setLoading(false);
       setError('Please login to view portfolios');
     }
@@ -69,18 +55,15 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
   }, [propUserId]);
 
   const handleView = (id: string) => {
-    console.log('View portfolio:', id);
-    // Navigate to portfolio view
+    navigate(`/portfolio/view/${id}`);
   };
 
   const handleEdit = (id: string) => {
-    console.log('Edit portfolio:', id);
-    // Navigate to portfolio edit
+    navigate(`/portfolio/edit/${id}`);
   };
 
   const handleShare = (id: string) => {
-    console.log('Share portfolio:', id);
-    // Open share modal
+    navigate(`/portfolio/share/${id}`);
   };
 
   const handleDelete = async (id: string) => {
@@ -138,7 +121,7 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Portfolio ✅ UPDATED</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">My Portfolios</h1>
           <p className="text-slate-400">Manage and share your professional portfolios</p>
         </div>
 

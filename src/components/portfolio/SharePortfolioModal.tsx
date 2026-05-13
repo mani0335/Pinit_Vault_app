@@ -16,7 +16,8 @@ const SharePortfolioModal: React.FC<Props> = ({ isOpen, onClose, portfolioName, 
 
   const handleGenerate = () => {
     const token = btoa(`${Date.now()}:${expiryHours}`);
-    const link = `${window.location.origin}/portfolio/share/${token}`;
+    const baseUrl = import.meta.env.VITE_PUBLIC_URL || window.location.origin;
+    const link = `${baseUrl}/portfolio/share/${token}`;
     setShareLink(link);
     onGenerateLink(expiryHours);
   };

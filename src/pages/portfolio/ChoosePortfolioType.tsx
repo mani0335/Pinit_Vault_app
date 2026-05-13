@@ -3,51 +3,50 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, User, GraduationCap, Briefcase, Award, Star } from 'lucide-react';
 
-interface PortfolioType {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ComponentType<any>;
-  recommended?: string;
-  color: string;
-}
+const PORTFOLIO_TYPES = [
+  {
+    id: 'personal' as const,
+    name: 'Personal',
+    description: 'Showcase your personal achievements and documents',
+    icon: User,
+    color: 'from-blue-500 to-cyan-500',
+    recommended: 'Most popular',
+  },
+  {
+    id: 'academic' as const,
+    name: 'Academic',
+    description: 'Display educational qualifications and achievements',
+    icon: GraduationCap,
+    color: 'from-purple-500 to-pink-500',
+  },
+  {
+    id: 'professional' as const,
+    name: 'Professional',
+    description: 'Highlight work experience and professional skills',
+    icon: Briefcase,
+    color: 'from-green-500 to-emerald-500',
+  },
+  {
+    id: 'placement' as const,
+    name: 'Placement',
+    description: 'Job placement and campus recruitment documents',
+    icon: Star,
+    color: 'from-yellow-500 to-orange-500',
+    recommended: 'For job seekers',
+  },
+  {
+    id: 'masters' as const,
+    name: 'Masters',
+    description: 'Advanced academic and research portfolio',
+    icon: Award,
+    color: 'from-orange-500 to-red-500',
+    recommended: 'For higher studies',
+  },
+];
 
 export default function ChoosePortfolioType() {
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState<string>('');
-
-  const portfolioTypes: PortfolioType[] = [
-    {
-      id: 'personal',
-      name: 'Personal',
-      description: 'Showcase your personal achievements and documents',
-      icon: User,
-      color: 'from-blue-500 to-cyan-500',
-      recommended: 'Most popular'
-    },
-    {
-      id: 'academic',
-      name: 'Academic',
-      description: 'Display educational qualifications and achievements',
-      icon: GraduationCap,
-      color: 'from-purple-500 to-pink-500'
-    },
-    {
-      id: 'professional',
-      name: 'Professional',
-      description: 'Highlight work experience and skills',
-      icon: Briefcase,
-      color: 'from-green-500 to-emerald-500'
-    },
-    {
-      id: 'masters',
-      name: 'Masters',
-      description: 'Advanced academic and research portfolio',
-      icon: Award,
-      color: 'from-orange-500 to-red-500',
-      recommended: 'For advanced applications'
-    }
-  ];
 
   const handleTypeSelect = (typeId: string) => {
     setSelectedType(typeId);
@@ -95,7 +94,7 @@ export default function ChoosePortfolioType() {
 
         {/* Portfolio Type Cards */}
         <div className="space-y-4">
-          {portfolioTypes.map((type) => {
+          {PORTFOLIO_TYPES.map((type) => {
             const Icon = type.icon;
             const isSelected = selectedType === type.id;
             

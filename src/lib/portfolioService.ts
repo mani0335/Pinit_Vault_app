@@ -1,6 +1,6 @@
-import type { Portfolio, CreatePortfolioInput, PortfolioAccessLog } from "../types/Portfolio";
+import type { Portfolio, CreatePortfolioInput } from "../types/Portfolio";
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || "https://biovault-backend-d13a.onrender.com";
+const API_BASE = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
 
 /**
  * Get auth token from storage
@@ -176,100 +176,3 @@ export async function incrementPortfolioViews(userId: string, id: string): Promi
   }
 }
 
-/**
- * Generate share token for portfolio
- */
-export async function generateShareToken(userId: string, portfolioId: string, expiryHours: number = 24): Promise<string> {
-  try {
-    const token = await getAuthToken();
-    const response = await fetch(`${API_BASE}/portfolio/generate-share-token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-        user_id: userId,
-        expiry_hours: expiryHours
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to generate share token: ${response.status}`);
-    }
-
-    const result = await response.json();
-    return result.shareToken;
-  } catch (e) {
-    console.error("Failed to generate share token:", e);
-    throw e;
-  }
-}
-
-/**
- * Log portfolio access
- */
-export async function logPortfolioAccess(userId: string, portfolioId: string, action: PortfolioAccessLog['action']): Promise<void> {
-  try {
-    const token = await getAuthToken();
-    const response = await fetch(`${API_BASE}/portfolio/log-access`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-        user_id: userId,
-        action,
-        device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop',
-        user_agent: navigator.userAgent
-      })
-    });
-
-    if (!response.ok) {
-      console.warn("Failed to log access:", response.status);
-    }
-  } catch (e) {
-    console.error("Failed to log access:", e);
-  }
-}
-
-/**
- * Get portfolio access logs
- */
-export async function getPortfolioAccessLogs(userId: string, portfolioId: string): Promise<PortfolioAccessLog[]> {
-  try {
-    const token = await getAuthToken();
-    const response = await fetch(`${API_BASE}/portfolio/get-access-logs`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        portfolio_id: portfolioId,
-        user_id: userId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to get access logs: ${response.status}`);
-    }
-
-    const result = await response.json();
-    return result.logs || [];
-  } catch (e) {
-    console.error("Failed to get access logs:", e);
-    return [];
-  }
-}
-
-/**
- * Clear all portfolios for a user (local cache only)
- */
-export async function clearPortfolios(userId: string): Promise<void> {
-  // Portfolios are stored in backend, no local clearing needed
-  console.log("ℹ️ Portfolios stored in backend, no local cache to clear");
-}
