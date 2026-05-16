@@ -28,6 +28,7 @@ const SharedImageViewer = lazy(() => import("@/components/SharedImageViewer").th
 const PortfolioHome        = lazy(() => import("@/pages/portfolio/PortfolioHome"));
 const PortfolioBuilder     = lazy(() => import("@/pages/portfolio/PortfolioBuilder"));
 const ChoosePortfolioType  = lazy(() => import("@/pages/portfolio/ChoosePortfolioType"));
+const SharedPortfolioPage  = lazy(() => import("@/pages/portfolio/SharedPortfolioPage"));
 
 // Profile sub-pages
 const PersonalPage        = lazy(() => import("@/pages/profile/PersonalPage"));
@@ -212,9 +213,9 @@ const App = () => (
             <ProtectedRoute><ProjectsPage /></ProtectedRoute>
           } />
 
-          {/* 404 */}
-          {/* ─── Public share route — no login required ─── */}
+          {/* ─── Public share routes — no login required ─── */}
           <Route path="/share/:token" element={<SharedImageViewer />} />
+          <Route path="/shared/portfolio/:token" element={<SharedPortfolioPage />} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

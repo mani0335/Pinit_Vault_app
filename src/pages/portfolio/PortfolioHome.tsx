@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, FolderOpen, RefreshCw, Search, Filter } from 'lucide-react';
+import { Plus, FolderOpen, Search } from 'lucide-react';
 import PortfolioCard from '../../components/portfolio/PortfolioCard';
-import { loadPortfolios, deletePortfolio, createPortfolio } from '../../lib/portfolioService';
-import { loadVaultDocuments } from '../../lib/vaultService';
-import type { Portfolio, VaultDocument } from '../../types/Portfolio';
+import SharePortfolioModal from '../../components/portfolio/SharePortfolioModal';
+import { loadPortfolios, deletePortfolio } from '../../lib/portfolioService';
+import type { Portfolio } from '../../types/Portfolio';
 
 interface PortfolioHomeProps {
   userId?: string | null;
@@ -15,17 +15,17 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
   console.log('🚀 PortfolioHome: Component MOUNTED with userId:', propUserId);
   const navigate = useNavigate();
   const [userId, setUserId] = useState<string | null>(propUserId || null);
-  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState<Portfolio | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
 
   const hasFetched = useRef(false);
 
-  const fetchPortfolios = async () => {
+  async function fetchPortfolios() {
     if (!userId) return;
 
     try {
@@ -41,7 +41,7 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     if (hasFetched.current) return;
@@ -79,8 +79,8 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
   };
 
   const handleShare = (id: string) => {
-    console.log('Share portfolio:', id);
-    // Open share modal
+    const portfolio = portfolios.find(p => p.id === id);
+    if (portfolio) setShowShareModal(portfolio);
   };
 
   const handleDelete = async (id: string) => {
@@ -213,6 +213,17 @@ export default function PortfolioHome({ userId: propUserId }: PortfolioHomeProps
         >
           <Plus className="w-6 h-6" />
         </button>
+
+        {/* Share Portfolio Modal */}
+        {showShareModal && (
+          <SharePortfolioModal
+            isOpen={!!showShareModal}
+            onClose={() => setShowShareModal(null)}
+            portfolioId={showShareModal.id}
+            portfolioName={showShareModal.name}
+            sections={showShareModal.sections ?? []}
+          />
+        )}
 
         {/* Delete Confirmation Modal */}
         <AnimatePresence>
