@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import BottomNav from "../components/BottomNav";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -21,6 +23,8 @@ import {
 } from "@/lib/vaultManager";
 import { decryptFile } from "@/lib/encryptionUtils";
 import { Share } from "@capacitor/share";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Capacitor } from "@capacitor/core";
 
 interface VaultPageProps {
   onBack: () => void;
@@ -31,6 +35,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [decryptedContent, setDecryptedContent] = useState<string>("");
+  const [fullscreenPreview, setFullscreenPreview] = useState<{ dataUrl: string; name: string } | null>(null);
   const [message, setMessage] = useState<string>("");
   const [autoDeleteMessage, setAutoDeleteMessage] = useState<string>("");
   const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
@@ -44,47 +49,71 @@ export default function VaultPage({ onBack }: VaultPageProps) {
     console.log(`📦 Loaded ${docs.length} documents from vault`);
   }, []);
 
+  // Safe helper — handles both 'fileName' (vaultManager) and legacy 'name' field
+  const getDocName = (doc: VaultDocument): string =>
+    (doc as any).fileName || (doc as any).name || 'Unknown Document';
+
+  const safeDate = (val: unknown): Date => {
+    try { return new Date(val as any); } catch { return new Date(); }
+  };
+
   // Count digital identity documents
-  const digitalIdentityCount = documents.filter(doc => 
-    doc.fileName.toLowerCase().includes('aadhaar') ||
-    doc.fileName.toLowerCase().includes('pan') ||
-    doc.fileName.toLowerCase().includes('passport') ||
-    doc.fileName.toLowerCase().includes('license') ||
-    doc.fileName.toLowerCase().includes('voter') ||
-    doc.fileName.toLowerCase().includes('id')
-  ).length;
+  const digitalIdentityCount = documents.filter(doc => {
+    const n = getDocName(doc).toLowerCase();
+    return n.includes('aadhaar') || n.includes('pan') || n.includes('passport') ||
+           n.includes('license') || n.includes('voter') || n.includes('id');
+  }).length;
 
   // Filter digital identity documents
-  const digitalIdentityDocuments = documents.filter(doc => 
-    doc.fileName.toLowerCase().includes('aadhaar') ||
-    doc.fileName.toLowerCase().includes('pan') ||
-    doc.fileName.toLowerCase().includes('passport') ||
-    doc.fileName.toLowerCase().includes('license') ||
-    doc.fileName.toLowerCase().includes('voter') ||
-    doc.fileName.toLowerCase().includes('id')
-  );
+  const digitalIdentityDocuments = documents.filter(doc => {
+    const n = getDocName(doc).toLowerCase();
+    return n.includes('aadhaar') || n.includes('pan') || n.includes('passport') ||
+           n.includes('license') || n.includes('voter') || n.includes('id');
+  });
 
   // Handle Digital Identity button click
   const handleDigitalIdentitiesClick = () => {
     setShowDigitalIdentities(!showDigitalIdentities);
   };
 
-  // Share document
+  // Share document — write to temp file then share via native sheet
   const handleShareDocument = async (doc: VaultDocument) => {
     setIsSharing(true);
     setMessage("📤 Preparing share...");
     try {
-      await Share.share({
-        title: doc.fileName,
-        text: `Sharing encrypted document: ${doc.fileName} from PINIT Vault`,
-        dialogTitle: "Share document",
-      });
+      let dataToShare = doc.fileData;
+      if (doc.isEncrypted && doc.encryptionKey) {
+        setMessage("🔓 Decrypting for share...");
+        dataToShare = decryptFile(doc.fileData, doc.encryptionKey);
+      }
+
+      if (Capacitor.isNativePlatform()) {
+        // Extract base64 payload (strip data URI prefix if present)
+        const base64 = dataToShare.includes(",") ? dataToShare.split(",")[1] : dataToShare;
+        const written = await Filesystem.writeFile({
+          path: doc.fileName,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: doc.fileName,
+          url: written.uri,
+          dialogTitle: "Share document",
+        });
+      } else {
+        await Share.share({
+          title: doc.fileName,
+          text: `Sharing: ${doc.fileName} from PINIT Vault`,
+          dialogTitle: "Share document",
+        });
+      }
       setMessage("✅ Share dialog opened");
     } catch (err: any) {
       if (err?.message?.includes("cancel") || err?.message?.includes("Cancel")) {
         setMessage("");
       } else {
         setMessage("❌ Sharing not supported on this device");
+        console.error("Share error:", err);
       }
     } finally {
       setIsSharing(false);
@@ -132,7 +161,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
     }
   };
 
-  // Download document
+  // Download document — write to Cache then share so user can save anywhere
   const handleDownloadDocument = async (doc: VaultDocument) => {
     try {
       setMessage("📥 Preparing download...");
@@ -144,21 +173,51 @@ export default function VaultPage({ onBack }: VaultPageProps) {
         dataToDownload = decryptFile(doc.fileData, doc.encryptionKey);
       }
 
-      // Create downloadable link
-      const link = document.createElement("a");
-      link.href = dataToDownload.includes(",")
-        ? dataToDownload
-        : `data:application/pdf;base64,${dataToDownload}`;
-      link.download = doc.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (Capacitor.isNativePlatform()) {
+        // Strip data URI prefix to get raw base64
+        const base64 = dataToDownload.includes(",")
+          ? dataToDownload.split(",")[1]
+          : dataToDownload;
 
-      setMessage(`✅ Downloaded: ${doc.fileName}`);
-      setTimeout(() => setMessage(""), 3000);
-    } catch (err) {
-      setMessage("❌ Download failed");
-      console.error("Download error:", err);
+        // Write to Cache (no permissions needed) then share → user saves to Downloads/Files
+        setMessage("📤 Opening save dialog...");
+        const written = await Filesystem.writeFile({
+          path: doc.fileName,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        await Share.share({
+          title: doc.fileName,
+          url: written.uri,
+          dialogTitle: `Save "${doc.fileName}" to your device`,
+        });
+        setMessage(`✅ Share dialog opened — choose Save to Files/Downloads`);
+      } else {
+        // Web: blob download
+        const mime = dataToDownload.startsWith("data:")
+          ? dataToDownload.split(";")[0].slice(5)
+          : "application/octet-stream";
+        const base64Part = dataToDownload.includes(",")
+          ? dataToDownload
+          : `data:${mime};base64,${dataToDownload}`;
+        const link = document.createElement("a");
+        link.href = base64Part;
+        link.download = doc.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setMessage(`✅ Downloaded: ${doc.fileName}`);
+      }
+
+      setTimeout(() => setMessage(""), 5000);
+    } catch (err: any) {
+      if (err?.message?.includes("cancel") || err?.message?.includes("Cancel")) {
+        setMessage(""); // user cancelled share sheet — not an error
+      } else {
+        setMessage("❌ Download failed");
+        console.error("Download error:", err);
+      }
     }
   };
 
@@ -178,8 +237,86 @@ export default function VaultPage({ onBack }: VaultPageProps) {
     exit: { opacity: 0, y: -10 },
   };
 
+  // ── Open PDF natively (Android) or in new tab (web) ───────────────────────
+  const openPdfNatively = async (dataUrl: string, name: string) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+        const written = await Filesystem.writeFile({
+          path: name,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        await Share.share({ title: name, url: written.uri, dialogTitle: 'Open PDF with…' });
+      } else {
+        const blob = await fetch(dataUrl).then(r => r.blob());
+        window.open(URL.createObjectURL(blob), '_blank');
+      }
+    } catch (err) {
+      console.error('PDF open error:', err);
+    }
+  };
+
+  // ── Full-screen document preview portal ────────────────────────────────────
+  const FullscreenPreview = fullscreenPreview
+    ? createPortal(
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.97)', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setFullscreenPreview(null)}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', gap: 12 }} onClick={e => e.stopPropagation()}>
+            <p style={{ color: 'white', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullscreenPreview.name}</p>
+            <button
+              onClick={() => setFullscreenPreview(null)}
+              style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <span style={{ color: 'white', fontSize: 18 }}>✕</span>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            {fullscreenPreview.dataUrl.startsWith('data:image') ? (
+              /* ── Image ── */
+              <img
+                src={fullscreenPreview.dataUrl}
+                alt={fullscreenPreview.name}
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 12, boxShadow: '0 0 60px rgba(0,0,0,0.9)' }}
+              />
+            ) : (
+              /* ── PDF / document — open natively ── */
+              <div style={{ textAlign: 'center', color: 'white', maxWidth: 320 }}>
+                <div style={{ fontSize: 72, marginBottom: 16, lineHeight: 1 }}>📄</div>
+                <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, wordBreak: 'break-all' }}>{fullscreenPreview.name}</p>
+                <p style={{ color: 'rgba(148,163,184,1)', fontSize: 13, marginBottom: 28 }}>
+                  PDF documents cannot be displayed inline on Android.
+                  Tap below to open with your PDF viewer app.
+                </p>
+                <button
+                  onClick={() => openPdfNatively(fullscreenPreview.dataUrl, fullscreenPreview.name)}
+                  style={{
+                    background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)',
+                    color: 'white', border: 'none', borderRadius: 14,
+                    padding: '14px 32px', fontSize: 15, fontWeight: 700,
+                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+                  }}
+                >
+                  📂 Open PDF
+                </button>
+              </div>
+            )}
+          </div>
+        </motion.div>,
+        document.body
+      )
+    : null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6" style={{ paddingBottom: 72 }}>
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.div
@@ -238,8 +375,8 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                     <div className="flex items-center gap-3">
                       <FileText className="w-5 h-5 text-purple-400" />
                       <div>
-                        <p className="text-white font-medium">{doc.fileName}</p>
-                        <p className="text-gray-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
+                        <p className="text-white font-medium">{getDocName(doc)}</p>
+                        <p className="text-gray-400 text-xs">{safeDate(doc.createdAt).toLocaleDateString()}</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -334,7 +471,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
 
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white truncate text-sm">
-                          {doc.fileName}
+                          {getDocName(doc)}
                         </p>
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
@@ -345,12 +482,12 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                             </span>
                           )}
 
-                          <span className="text-gray-500">{doc.fileSize}</span>
+                          <span className="text-gray-500">{doc.fileSize || 'unknown'}</span>
                         </div>
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
                           <Clock className="w-3 h-3" />
-                          {new Date(doc.createdAt).toLocaleDateString()}
+                          {safeDate(doc.createdAt).toLocaleDateString()}
                         </div>
                       </div>
                     </div>
@@ -369,7 +506,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                 {/* Preview Section */}
                 <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 border border-purple-500/50 rounded-xl p-6">
                   <h3 className="text-xl font-bold text-white mb-4">
-                    📄 {selectedDoc.fileName}
+                    📄 {getDocName(selectedDoc)}
                   </h3>
 
                   {message && (
@@ -412,7 +549,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                     <div>
                       <p className="text-gray-400">Created</p>
                       <p className="text-white font-semibold">
-                        {new Date(selectedDoc.createdAt).toLocaleDateString()}
+                        {safeDate(selectedDoc.createdAt).toLocaleDateString()}
                       </p>
                     </div>
 
@@ -425,25 +562,66 @@ export default function VaultPage({ onBack }: VaultPageProps) {
                   </div>
 
                   {/* Preview */}
-                  {previewMode && selectedDoc.fileType === "pdf" && (
-                    <div className="mb-6 max-h-96 overflow-auto bg-black/30 rounded-lg p-4">
-                      <p className="text-gray-400 text-center">
-                        📄 PDF Preview (Encrypted)
-                      </p>
-                      <p className="text-gray-500 text-xs text-center mt-2">
-                        Content is encrypted for security
-                      </p>
+                  {previewMode && (
+                    <div className="mb-6 bg-black/30 rounded-lg overflow-hidden">
+                      {/* Determine if content is an image */}
+                      {(selectedDoc.fileType === "image" || decryptedContent?.startsWith('data:image')) && decryptedContent ? (
+                        <div className="relative">
+                          <img
+                            src={decryptedContent}
+                            alt={getDocName(selectedDoc)}
+                            className="w-full h-auto rounded-lg cursor-pointer"
+                            style={{ maxHeight: 300, objectFit: 'contain' }}
+                            onClick={() => setFullscreenPreview({ dataUrl: decryptedContent, name: getDocName(selectedDoc) })}
+                          />
+                          <button
+                            onClick={() => setFullscreenPreview({ dataUrl: decryptedContent, name: getDocName(selectedDoc) })}
+                            className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/20"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Full Preview
+                          </button>
+                        </div>
+                      ) : (selectedDoc.fileType === "pdf" || decryptedContent?.startsWith('data:application/pdf') || decryptedContent) ? (
+                        <div className="p-6 text-center">
+                          <p className="text-4xl mb-2">📄</p>
+                          <p className="text-gray-300 font-medium">{getDocName(selectedDoc)}</p>
+                          <p className="text-gray-500 text-xs mt-1 mb-3">
+                            {selectedDoc.fileType === "pdf" || decryptedContent?.startsWith('data:application/pdf')
+                              ? 'PDF — tap Preview to open with your PDF app'
+                              : 'Tap Preview to open this file'}
+                          </p>
+                          <button
+                            onClick={() => decryptedContent && openPdfNatively(decryptedContent, getDocName(selectedDoc))}
+                            className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-purple-600 text-white text-sm font-semibold rounded-lg hover:opacity-90 transition"
+                          >
+                            📂 Open with device app
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
                   {/* Actions */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => handleDownloadDocument(selectedDoc)}
                       className="py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
                     >
                       <Download className="w-5 h-5" />
                       Download
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (decryptedContent) {
+                          setFullscreenPreview({ dataUrl: decryptedContent, name: getDocName(selectedDoc) });
+                        }
+                      }}
+                      disabled={!decryptedContent}
+                      className="py-3 px-4 bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 disabled:opacity-40 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
+                    >
+                      <Eye className="w-5 h-5" />
+                      Preview
                     </button>
 
                     <button
@@ -495,6 +673,9 @@ export default function VaultPage({ onBack }: VaultPageProps) {
           </div>
         )}
       </div>
+      <BottomNav />
+      {/* Full-screen image preview portal — renders above everything */}
+      {FullscreenPreview}
     </div>
   );
 }

@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Capacitor } from "@capacitor/core";
+import { Share } from "@capacitor/share";
 import jsPDF from "jspdf";
 import {
   loadVaultDocuments,
@@ -66,7 +69,7 @@ import {
   Globe,
   Zap,
   Database,
-  Share,
+  Share as ShareIcon,
   QrCode,
   Mail as FileMail,
   Phone,
@@ -86,6 +89,7 @@ import { ImageCryptoFull } from "@/components/ImageCryptoFull";
 import { VaultManager } from "@/components/VaultManager";
 import { ActivityLogger } from "@/components/ActivityLogger";
 import Profile from "@/pages/Profile";
+import DigitalIdentityDashboard from "@/components/DigitalIdentityDashboard";
 import { ImageAnalyzer } from "@/components/ImageAnalyzer";
 import type { Portfolio } from "@/types/Portfolio";
 import PortfolioHome from "@/pages/portfolio/PortfolioHome";
@@ -560,30 +564,48 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
     }
   };
 
-  const handleDocumentUploaded = async (document: VaultDocument) => {
-    console.log('📤 handleDocumentUploaded called with document:', document.name);
-    console.log('📤 Current userId:', userId);
-    console.log('📤 Current vaultDocuments count:', vaultDocuments.length);
+  const handleDocumentUploaded = async (incomingDoc: any) => {
+    // Normalize: DigitalIdentityDashboard uses vaultManager format (fileName/fileData fields)
+    // while PINITVaultDashboard uses vaultService format (name/encryptedData fields).
+    const docName: string = incomingDoc.name || incomingDoc.fileName || 'Unknown Document';
+    const rawData: string = incomingDoc.encryptedData || incomingDoc.fileData || '';
+
+    // Build a full data URL for preview: raw base64 → prefix it; already prefixed → use as-is
+    const dataUrl: string = rawData.startsWith('data:')
+      ? rawData
+      : rawData ? `data:image/jpeg;base64,${rawData}` : '';
+
+    const normalized: VaultDocument = {
+      id: incomingDoc.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: docName,
+      encryptedData: rawData,
+      // encryptedImage stores a preview-ready data URL for images
+      encryptedImage: dataUrl.startsWith('data:image') ? dataUrl : undefined,
+      cloudinaryUrl: incomingDoc.cloudinaryUrl,
+      metadata: incomingDoc.metadata || {
+        timestamp: Date.now(),
+        original_name: docName,
+        size: 0,
+        checksum: docName,
+        encrypted: false,
+        ownerId: userId || undefined,
+      },
+      createdAt: incomingDoc.createdAt
+        ? new Date(incomingDoc.createdAt).toISOString()
+        : new Date().toISOString(),
+    };
 
     // Add to vault documents
-    const updated = [...vaultDocuments, document];
-    console.log('📤 Updated vaultDocuments count:', updated.length);
+    const updated = [...vaultDocuments, normalized];
     setVaultDocuments(updated);
-    console.log('📤 setVaultDocuments called');
 
     // Save to vault service for persistence
     if (userId) {
       try {
-        console.log('💾 Attempting to save to vault service with userId:', userId);
         await saveVaultDocuments(userId, updated);
-        console.log('✅ Document saved to vault service:', document.name);
       } catch (error) {
         console.error('❌ Failed to save document to vault service:', error);
-        alert('Failed to save document to vault. Please try again.');
       }
-    } else {
-      console.error('❌ No userId available, document not persisted to vault service');
-      alert('Error: No user ID available. Please login again.');
     }
   };
 
@@ -876,7 +898,18 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
         {currentPage === "crypto" && <ImageCryptoFull key="crypto" userId={userId || undefined} />}
         {currentPage === "vault-advanced" && <VaultManager key="vault-advanced" userId={userId || undefined} />}
         {currentPage === "activity" && <ActivityLogger key="activity" userId={userId || undefined} />}
-        {currentPage === "profile" && <DigitalIdentityDashboard key="profile" onBack={() => setCurrentPage("home")} userName={userName} setUserName={handleSetUserName} profileImage={profileImage} setProfileImage={handleSetProfileImage} userId={userId} onDocumentUploaded={handleDocumentUploaded} />}
+        {currentPage === "profile" && (
+          <DigitalIdentityDashboard
+            key="profile"
+            onBack={() => setCurrentPage("home")}
+            userName={userName}
+            setUserName={handleSetUserName}
+            profileImage={profileImage}
+            setProfileImage={(img: string) => handleSetProfileImage(img)}
+            userId={userId}
+            onDocumentUploaded={handleDocumentUploaded}
+          />
+        )}
         {currentPage === "upload-document" && (
           <DocumentUploadPage
             key="upload-document"
@@ -916,29 +949,69 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
               const updated = scannedPages.filter((_, i) => i !== index);
               setScannedPages(updated);
             }}
-            onSaveToPDF={async (pdfData: string) => {
+            onSaveToPDF={async (pdfData: string, userFileName: string) => {
+              // ── Encrypt the PDF using XOR cipher ──────────────────────────
+              // Generate a random key
+              const encKey = Math.random().toString(36).slice(2, 15) +
+                             Math.random().toString(36).slice(2, 15);
+
+              // XOR-encrypt the data URL (same algorithm as encryptionUtils.ts)
+              const xorEncrypt = (data: string, key: string): string => {
+                const encoded = btoa(data);
+                let result = '';
+                for (let i = 0; i < encoded.length; i++) {
+                  result += String.fromCharCode(
+                    encoded.charCodeAt(i) ^ key.charCodeAt(i % key.length)
+                  );
+                }
+                return btoa(result);
+              };
+
+              const encryptedPdf = xorEncrypt(pdfData, encKey);
+              const fileName = userFileName || `Scanned_Doc_${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.pdf`;
+              const docId = `pdf_${Date.now()}`;
+
+              // ── Save to PINITVaultDashboard (vaultService) ────────────────
               const newDoc: VaultDocument = {
-                id: `pdf_${Date.now()}`,
-                name: `Document_${new Date().toLocaleDateString()}.pdf`,
-                encryptedData: pdfData,
+                id: docId,
+                name: fileName,
+                encryptedData: encryptedPdf,           // encrypted payload
+                encryptedImage: undefined,             // no image preview for PDF
                 metadata: {
                   timestamp: Date.now(),
-                  original_name: `Document_${new Date().toLocaleDateString()}.pdf`,
+                  original_name: fileName,
                   size: pdfData.length,
-                  checksum: Math.random().toString(36).substring(7),
+                  checksum: encKey,                    // store key in checksum for decryption
                   encrypted: true,
                   ownerId: userId || undefined,
                 },
                 createdAt: new Date().toISOString(),
               };
-              const updated = [...vaultDocuments, newDoc];
-              setVaultDocuments(updated);
+              const updatedDocs = [...vaultDocuments, newDoc];
+              setVaultDocuments(updatedDocs);
               if (userId) {
-                await saveVaultDocuments(userId, updated);
+                try { await saveVaultDocuments(userId, updatedDocs); } catch (_) { /* non-fatal */ }
               }
-              alert(`?? PDF saved to vault!`);
+
+              // ── Also save to vaultManager (for /vault route) ──────────────
+              try {
+                const VM_KEY = 'pinit_vault_documents';
+                const existing = JSON.parse(localStorage.getItem(VM_KEY) || '{"documents":[]}');
+                existing.documents.push({
+                  id: docId,
+                  fileName,
+                  fileType: 'pdf',
+                  fileSize: `${Math.round(pdfData.length / 1024)} KB`,
+                  fileData: pdfData,          // store full data URL for preview
+                  createdAt: new Date().toISOString(),
+                  isEncrypted: false,         // stored as-is in vaultManager path
+                });
+                localStorage.setItem(VM_KEY, JSON.stringify(existing));
+              } catch (_) { /* non-fatal */ }
+
               setScannedPages([]);
-              setCurrentPage("vault");
+              // Brief delay so the success banner shows, then navigate to vault
+              setTimeout(() => setCurrentPage("vault"), 1200);
             }}
             onBack={() => setCurrentPage("scan-document")}
           />
@@ -1304,7 +1377,7 @@ function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage
         <input
           ref={quickActionFileRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.pdf,.doc,.docx"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file && onVerifyProofImageSelected) {
@@ -1349,33 +1422,30 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
   const [embeddedMetadata, setEmbeddedMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
   const [showDigitalIdentities, setShowDigitalIdentities] = useState(false);
+  const [fullscreenPreview, setFullscreenPreview] = useState<{ dataUrl: string; name: string } | null>(null);
+
+  // Safe name accessor — handles both vaultService format (name) and vaultManager format (fileName)
+  const getSafeName = (doc: VaultDocument): string =>
+    (doc as any).name || (doc as any).fileName || 'Unknown Document';
 
   // Filter digital identity documents
   const digitalIdentityDocuments = vaultDocs.filter(doc => {
-    const name = doc.name.toLowerCase();
-    console.log('🔍 Checking document:', doc.name);
-    const isDigitalIdentity =
-      name.includes('personal') ||
-      name.includes('academic') ||
-      name.includes('projects') ||
-      name.includes('internships') ||
-      name.includes('certifications') ||
-      name.includes('entrance') ||
-      name.includes('exams') ||
-      name.includes('docs');
-    console.log('  Is digital identity:', isDigitalIdentity);
-    return isDigitalIdentity;
+    const name = getSafeName(doc).toLowerCase();
+    return (
+      name.includes('personal') || name.includes('academic') ||
+      name.includes('projects') || name.includes('internships') ||
+      name.includes('certifications') || name.includes('entrance') ||
+      name.includes('exams') || name.includes('docs')
+    );
   });
 
   // Sync documents when prop changes
   useEffect(() => {
-    console.log('📦 VaultPage: Documents prop changed:', documents.length);
-    console.log('📦 VaultPage: Document names:', documents.map(d => d.name));
     setVaultDocs(documents);
   }, [documents]);
 
   const filteredDocs = vaultDocs.filter((doc) =>
-    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+    getSafeName(doc).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getFileSize = (bytes: number): string => {
@@ -1389,62 +1459,97 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
   const handleDownload = async (doc: VaultDocument) => {
     try {
       if (!doc) {
-        alert("❌ No image selected to download");
+        alert("❌ No document selected to download");
         return;
       }
-      
-      console.log("⬇️ Downloading image from vault:", doc.name);
-      
-      // Get user ID from props or storage if not available
-      let currentUserId = userId || null;
-      if (!currentUserId) {
-        currentUserId = await appStorage.getItem('biovault_userId');
-      }
-      
-      if (!currentUserId) {
-        alert("❌ Unable to identify user");
-        return;
-      }
-      
-      // Get base64 data from multiple sources - prioritize encryptedImage (watermarked)
+
+      // Gather raw base64 data
       let base64Data = doc.encryptedImage || doc.encryptedData;
-      
-      console.log("🔍 Using image data:", base64Data === doc.encryptedImage ? "Watermarked (encryptedImage)" : "Original (encryptedData)");
-      
+
       if (!base64Data && doc.cloudinaryUrl) {
-        // Try to fetch from Cloudinary if local data not available
-        console.log("📥 Fetching image from cloud...");
         try {
           const response = await fetch(doc.cloudinaryUrl);
           const blob = await response.blob();
           const arrayBuffer = await blob.arrayBuffer();
           base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-        } catch (fetchErr) {
-          console.warn("⚠️ Failed to fetch from cloud:", fetchErr);
-          alert("❌ Unable to download image. Please try again.");
+        } catch {
+          alert("❌ Unable to fetch document data. Please try again.");
           return;
         }
       }
-      
+
       if (!base64Data) {
-        alert("❌ No image data available to download");
+        alert("❌ No document data available to download");
         return;
       }
-      
-      // Save to device gallery in PINIT Vault folder
-      console.log("💾 Saving to PINIT Vault...");
-      const fileName = doc.metadata.original_name || doc.name;
-      const result = await saveImageToGallery(base64Data, fileName, currentUserId);
-      
-      if (result.success) {
-        console.log("✅ Image downloaded and saved to PINIT Vault");
-        alert(`✅ Image Downloaded!\n\n📁 Saved to: PINIT Vault\n\n📸 ${fileName}\n\nCheck your phone's gallery.`);
-      } else {
-        console.warn("⚠️ Failed to save to gallery:", result.error);
-        alert(`⚠️ Download partially successful.\n\nCould not save to gallery:\n${result.error}`);
+
+      // Decrypt if needed (skip encryptedImage — already watermarked/plain)
+      let finalData = base64Data;
+      if (
+        base64Data === doc.encryptedData &&
+        doc.metadata?.encrypted &&
+        doc.metadata?.checksum
+      ) {
+        try {
+          const { decryptFile } = await import('@/lib/encryptionUtils');
+          finalData = decryptFile(base64Data, doc.metadata.checksum);
+        } catch {
+          // Use raw data if decryption fails
+        }
+      }
+
+      const fileName = (doc.metadata?.original_name || getSafeName(doc)).replace(/[/\\?%*:|"<>]/g, '_');
+      const folderName = 'PINIT Vault Documents';
+
+      // Try saving directly to Directory.External (visible in file manager)
+      try {
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+
+        // Create folder if needed
+        try {
+          await Filesystem.mkdir({
+            path: folderName,
+            directory: Directory.External,
+            recursive: true,
+          });
+        } catch {
+          // Folder may already exist — ignore
+        }
+
+        await Filesystem.writeFile({
+          path: `${folderName}/${fileName}`,
+          data: finalData,
+          directory: Directory.External,
+          recursive: true,
+        });
+
+        alert(`✅ Saved!\n\n📁 Android/data/com.biovault.app/files/${folderName}/${fileName}\n\nOpen your file manager to access it.`);
+        return;
+      } catch (extErr) {
+        console.warn('External storage write failed, falling back to share sheet:', extErr);
+      }
+
+      // Fallback: write to Cache then open share sheet
+      try {
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+
+        const cacheResult = await Filesystem.writeFile({
+          path: fileName,
+          data: finalData,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+
+        await Share.share({
+          title: fileName,
+          url: cacheResult.uri,
+          dialogTitle: `Save ${fileName}`,
+        });
+      } catch (shareErr) {
+        alert(`❌ Could not save file:\n\n${shareErr}`);
       }
     } catch (err) {
-      console.error("❌ Download error:", err);
       alert(`❌ Download failed:\n\n${err}`);
     }
   };
@@ -1465,11 +1570,55 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
   };
 
   const handleDocumentClick = async (doc: VaultDocument) => {
-    // Display encrypted image (preview) or encrypted data if not available
+    // Display the best available preview URL for this document
     try {
-      // Use encrypted image if available, otherwise fall back to encrypted data
-      const imageUrl = doc.encryptedImage || ("data:image/jpeg;base64," + doc.encryptedData);
-      setPreviewImage(imageUrl);
+      // ── 1. Collect raw data ────────────────────────────────────────────────
+      let rawData: string = doc.encryptedData || (doc as any).fileData || '';
+
+      // ── 1a. Decrypt if this document was encrypted via UploadFromDevice ────
+      // UploadFromDevice stores XOR-encrypted data and the key in metadata.checksum.
+      // We must decrypt before the data can be used as a data URL.
+      if (rawData && doc.metadata?.encrypted && doc.metadata?.checksum && !doc.encryptedImage) {
+        try {
+          const { decryptFile } = await import('@/lib/encryptionUtils');
+          rawData = decryptFile(rawData, doc.metadata.checksum);
+          console.log('🔓 Decrypted document for preview');
+        } catch (decErr) {
+          console.warn('⚠️ Could not decrypt document, will try raw data:', decErr);
+        }
+      }
+
+      // ── 2. Build a display-ready URL ──────────────────────────────────────
+      let imageUrl = '';
+
+      if (doc.encryptedImage) {
+        // encryptedImage may come from backend WITHOUT the data: prefix — normalise it
+        const img = doc.encryptedImage.trim();
+        imageUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
+      } else if (rawData) {
+        if (rawData.startsWith('data:')) {
+          // Already a valid data URL (image or PDF) — use as-is
+          imageUrl = rawData;
+        } else if (doc.cloudinaryUrl) {
+          // Cloudinary URL is always a valid display URL
+          imageUrl = doc.cloudinaryUrl;
+        } else {
+          // Raw base64 — detect content type via magic bytes
+          try {
+            const sample = atob(rawData.substring(0, 8));
+            const isPdf = sample.startsWith('%PDF');
+            imageUrl = isPdf
+              ? `data:application/pdf;base64,${rawData}`
+              : `data:image/jpeg;base64,${rawData}`;
+          } catch {
+            imageUrl = `data:image/jpeg;base64,${rawData}`;
+          }
+        }
+      } else if (doc.cloudinaryUrl) {
+        imageUrl = doc.cloudinaryUrl;
+      }
+
+      setPreviewImage(imageUrl || null);
       setSelectedDoc(doc);
 
       // Only try to extract metadata if we have the encrypted image
@@ -1491,7 +1640,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
         }
       } else {
         // For old documents without encryptedImage, extract from metadata
-        if (doc.metadata.ownerId) {
+        if (doc.metadata?.ownerId) {
           console.log(`📋 Document owner: ${doc.metadata.ownerId}`);
         }
         setEmbeddedMetadata(null);
@@ -1552,9 +1701,94 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
     );
   }
 
+  // ── Open PDF natively on Android, fallback to browser tab on web ─────────
+  const openPdfPreview = async (dataUrl: string, name: string) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Extract base64 payload (strip data URI prefix)
+        const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+        const written = await Filesystem.writeFile({
+          path: name,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: name,
+          url: written.uri,
+          dialogTitle: 'Open PDF with…',
+        });
+      } else {
+        // Web: open in new tab
+        const blob = await fetch(dataUrl).then(r => r.blob());
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      }
+    } catch (err) {
+      console.error('PDF open error:', err);
+    }
+  };
+
+  // ── Fullscreen preview portal ─────────────────────────────────────────────
+  const FullscreenPreviewPortal = fullscreenPreview
+    ? createPortal(
+        <div
+          onClick={() => setFullscreenPreview(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.97)', display: 'flex', flexDirection: 'column' }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', gap: 12 }} onClick={e => e.stopPropagation()}>
+            <p style={{ color: 'white', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullscreenPreview.name}</p>
+            <button
+              onClick={() => setFullscreenPreview(null)}
+              style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <span style={{ color: 'white', fontSize: 18 }}>✕</span>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            {fullscreenPreview.dataUrl.startsWith('data:image') || fullscreenPreview.dataUrl.startsWith('http') ? (
+              /* ── Image (data URL or Cloudinary URL) ── */
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, minHeight: '100%' }}>
+                <img
+                  src={fullscreenPreview.dataUrl}
+                  alt={fullscreenPreview.name}
+                  style={{ maxWidth: '100%', objectFit: 'contain', borderRadius: 12, boxShadow: '0 0 60px rgba(0,0,0,0.9)' }}
+                />
+              </div>
+            ) : (
+              /* ── PDF / document — iframe first, "Open" fallback ── */
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {/* iframe handles PDFs natively in Chrome WebView */}
+                <iframe
+                  src={fullscreenPreview.dataUrl}
+                  title={fullscreenPreview.name}
+                  style={{ flex: 1, border: 'none', width: '100%', minHeight: '70vh' }}
+                />
+                {/* Always show "Open with app" as secondary action for Android */}
+                <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: 10, alignItems: 'center', background: 'rgba(0,0,0,0.6)' }}>
+                  <span style={{ color: '#94a3b8', fontSize: 12, flex: 1 }}>If the PDF doesn't display, tap Open to use a PDF viewer app.</span>
+                  <button
+                    onClick={() => openPdfPreview(fullscreenPreview.dataUrl, fullscreenPreview.name)}
+                    style={{ background: 'linear-gradient(135deg,#06b6d4,#8b5cf6)', color: 'white', border: 'none', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    📂 Open
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
   // Full-screen preview modal
   if (selectedDoc && previewImage) {
     return (
+      <>
+      {FullscreenPreviewPortal}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -1572,13 +1806,52 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
           <X size={24} className="text-white" />
         </button>
 
-        {/* Image preview with thumbnail */}
+        {/* Document preview — image inline, PDF via native open */}
         <div className="flex-1 flex items-center justify-center w-full max-w-2xl py-8">
-          <img
-            src={previewImage}
-            alt="Preview"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-          />
+          {previewImage.startsWith('data:application/pdf') ||
+           previewImage.startsWith('blob:') ||
+           (selectedDoc.metadata?.original_name || getSafeName(selectedDoc)).toLowerCase().endsWith('.pdf') ? (
+            <div style={{ textAlign: 'center', color: 'white', maxWidth: 320, padding: 24 }}>
+              <div style={{ fontSize: 80, marginBottom: 20, lineHeight: 1 }}>📄</div>
+              <p style={{ fontWeight: 700, fontSize: 18, marginBottom: 10, wordBreak: 'break-all' }}>
+                {selectedDoc.metadata?.original_name || getSafeName(selectedDoc)}
+              </p>
+              <p style={{ color: 'rgba(148,163,184,1)', fontSize: 14, marginBottom: 28, lineHeight: 1.5 }}>
+                PDF documents cannot be displayed inline.{'\n'}
+                Tap below to open with your PDF viewer app.
+              </p>
+              <button
+                onClick={() => openPdfPreview(previewImage, selectedDoc.metadata?.original_name || getSafeName(selectedDoc))}
+                style={{
+                  background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)',
+                  color: 'white', border: 'none', borderRadius: 14,
+                  padding: '14px 32px', fontSize: 15, fontWeight: 700,
+                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                📂 Open PDF
+              </button>
+            </div>
+          ) : (
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onError={(e) => {
+                // If image fails to load, show a "cannot preview" message instead of broken icon
+                const target = e.currentTarget as HTMLImageElement;
+                target.style.display = 'none';
+                const parent = target.parentElement;
+                if (parent && !parent.querySelector('.preview-error')) {
+                  const msg = document.createElement('div');
+                  msg.className = 'preview-error';
+                  msg.style.cssText = 'text-align:center;color:white;padding:32px';
+                  msg.innerHTML = '<div style="font-size:60px;margin-bottom:16px">📄</div><p style="font-size:16px;font-weight:600">' + (selectedDoc.metadata?.original_name || getSafeName(selectedDoc)) + '</p><p style="color:rgba(148,163,184,1);font-size:13px;margin-top:8px">Preview unavailable — use Download to open this file</p>';
+                  parent.appendChild(msg);
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Enhanced metadata and actions */}
@@ -1597,19 +1870,19 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">FILE NAME</p>
-                  <p className="text-sm text-slate-200 font-mono break-all">{selectedDoc.metadata.original_name}</p>
+                  <p className="text-sm text-slate-200 font-mono break-all">{selectedDoc.metadata?.original_name || getSafeName(selectedDoc)}</p>
                 </div>
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">SIZE</p>
-                  <p className="text-sm text-slate-200 font-mono">{getFileSize(selectedDoc.metadata.size)}</p>
+                  <p className="text-sm text-slate-200 font-mono">{getFileSize(selectedDoc.metadata?.size || 0)}</p>
                 </div>
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">SAVED</p>
-                  <p className="text-sm text-slate-200 font-mono">{new Date(selectedDoc.metadata.timestamp).toLocaleString()}</p>
+                  <p className="text-sm text-slate-200 font-mono">{selectedDoc.metadata?.timestamp ? new Date(selectedDoc.metadata.timestamp).toLocaleString() : new Date(selectedDoc.createdAt).toLocaleString()}</p>
                 </div>
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">CHECKSUM</p>
-                  <p className="text-sm text-slate-200 font-mono">{selectedDoc.metadata.checksum}</p>
+                  <p className="text-sm text-slate-200 font-mono">{selectedDoc.metadata?.checksum || '—'}</p>
                 </div>
               </div>
             </div>
@@ -1718,7 +1991,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
           </motion.div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {/* Download Button */}
             <motion.button
               onClick={() => handleDownload(selectedDoc)}
@@ -1728,6 +2001,22 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
             >
               <Download size={18} />
               Download
+            </motion.button>
+
+            {/* Preview Button */}
+            <motion.button
+              onClick={() => {
+                if (previewImage) {
+                  setFullscreenPreview({ dataUrl: previewImage, name: getSafeName(selectedDoc) });
+                }
+              }}
+              disabled={!previewImage}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 disabled:opacity-40 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all"
+            >
+              <Eye size={18} />
+              Preview
             </motion.button>
 
             {/* Share Button */}
@@ -1755,6 +2044,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
               className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all"
             >
               <Trash2 size={18} />
+              Delete
             </motion.button>
           </div>
 
@@ -1773,6 +2063,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
           </motion.button>
         </div>
       </motion.div>
+      </>
     );
   }
 
@@ -1832,7 +2123,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-purple-400" />
                     <div>
-                      <p className="text-white font-medium">{doc.name}</p>
+                      <p className="text-white font-medium">{getSafeName(doc)}</p>
                       <p className="text-gray-400 text-xs">{new Date(doc.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
@@ -1881,8 +2172,8 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
                   <FileText size={20} className="text-white" />
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm text-white">{doc.name}</p>
-                  <p className="text-purple-300/70 text-xs">{getFileSize(doc.metadata.size)} • {doc.createdAt}</p>
+                  <p className="font-semibold text-sm text-white">{getSafeName(doc)}</p>
+                  <p className="text-purple-300/70 text-xs">{getFileSize((doc.metadata?.size) || 0)} • {doc.createdAt}</p>
                 </div>
               </div>
               <motion.button
@@ -3280,13 +3571,27 @@ function VerifyProofPage({ image, onBack }: { image: string; onBack: () => void 
         </button>
       </div>
 
-      {/* Image Preview */}
+      {/* File Preview */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="rounded-2xl overflow-hidden border border-purple-500/30 shadow-2xl"
       >
-        <img src={image} alt="Verification" className="w-full h-auto" />
+        {image.startsWith('data:image/') || image.startsWith('http') ? (
+          <img src={image} alt="Verification" className="w-full h-auto" />
+        ) : (
+          <div className="p-8 text-center bg-gradient-to-br from-slate-800 to-slate-900">
+            <div className="text-5xl mb-3">
+              {image.includes('pdf') ? '📄' : '📝'}
+            </div>
+            <p className="text-slate-300 font-semibold">
+              {image.includes('pdf') ? 'PDF Document' : 'Document File'}
+            </p>
+            <p className="text-slate-500 text-sm mt-1">
+              Preview not available for this file type
+            </p>
+          </div>
+        )}
       </motion.div>
 
       {/* Analysis Loading State */}
@@ -3490,25 +3795,33 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
   const [scannedPages, setScannedPages] = useState<string[]>([]);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleOpenCamera = async () => {
     try {
       console.log('Opening camera...');
-      
-      // Check camera permissions first
-      const permissions = await Camera.checkPermissions();
-      console.log('Camera permissions:', permissions);
-      
-      if (permissions.camera !== 'granted') {
-        console.log('Requesting camera permissions...');
-        const permissionResult = await Camera.requestPermissions();
-        console.log('Permission request result:', permissionResult);
-        
-        if (permissionResult.camera !== 'granted') {
-          alert('Camera permission is required to scan documents. Please enable camera permissions in your device settings.');
-          return;
+
+      // Try Capacitor camera (native)
+      let permGranted = false;
+      try {
+        const permissions = await Camera.checkPermissions();
+        if (permissions.camera !== 'granted') {
+          const req = await Camera.requestPermissions();
+          permGranted = req.camera === 'granted';
+        } else {
+          permGranted = true;
         }
+      } catch {
+        // checkPermissions may throw on web — attempt anyway
+        permGranted = true;
       }
-      
+
+      if (!permGranted) {
+        // Fall back to file input with capture
+        fileInputRef.current?.click();
+        return;
+      }
+
       const photo = await Camera.getPhoto({
         quality: 90,
         allowEditing: false,
@@ -3517,27 +3830,38 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
       });
 
       if (photo.base64String) {
-        console.log('Photo captured successfully');
         setLastCapture(photo.base64String);
-        // Add to scanned pages array
         const updatedPages = [...scannedPages, photo.base64String];
         setScannedPages(updatedPages);
-        // Add to pocket
         onPageScanned(photo.base64String);
-      } else {
-        console.error('No photo data received');
-        alert('Failed to capture photo. Please try again.');
       }
-    } catch (error) {
-      console.error("Camera error:", error);
-      if (error.message && error.message.includes('permission')) {
-        alert('Camera permission is required. Please enable camera permissions in your device settings and try again.');
-      } else if (error.message && error.message.includes('cancelled')) {
-        console.log('Camera cancelled by user');
-      } else {
-        alert("Failed to open camera. Please check camera permissions and try again.");
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (msg.includes('cancel') || msg.includes('Cancel') || msg.includes('User cancelled')) {
+        return; // user cancelled — no alert
       }
+      console.warn('Capacitor camera unavailable, using file fallback:', msg);
+      // Fall back to <input capture> for web / permission denied
+      fileInputRef.current?.click();
     }
+  };
+
+  const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      // Strip data URI prefix to get bare base64
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      setLastCapture(base64);
+      const updatedPages = [...scannedPages, base64];
+      setScannedPages(updatedPages);
+      onPageScanned(base64);
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be chosen again
+    e.target.value = '';
   };
 
   const generatePDF = async () => {
@@ -3687,6 +4011,16 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
         </motion.div>
       )}
 
+      {/* Hidden file input — camera fallback */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileCapture}
+      />
+
       {/* Action Buttons - Compact */}
       <div className="space-y-2 fixed bottom-20 left-4 right-4">
         <motion.button
@@ -3717,23 +4051,32 @@ function ScanDocumentPage({ onPageScanned, onDone, onBack, pageCount }: ScanDocu
 // 3. REVIEW SCAN PAGE - Gallery and PDF generation
 interface ReviewScanPageProps {
   scannedPages: string[];
-  onSavePDF: (pdfData: string, fileName: string) => void;
+  onSaveToPDF: (pdfData: string, fileName: string) => void;
+  onDeletePage: (index: number) => void;
   onBack: () => void;
-  onRescan: () => void;
 }
 
-function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan }: ReviewScanPageProps) {
+function ReviewScanPage({ scannedPages, onSaveToPDF, onDeletePage, onBack }: ReviewScanPageProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isSavingPDF, setIsSavingPDF] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+  const defaultName = `Scanned_Doc_${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.pdf`;
+  const [pdfName, setPdfName] = useState(defaultName);
 
   const handleSaveAsPDF = async () => {
+    if (scannedPages.length === 0) {
+      alert('No pages scanned. Please scan at least one page first.');
+      return;
+    }
     setIsSavingPDF(true);
     try {
       const pdfDataUrl = await convertImagesToPDF(scannedPages);
-      const fileName = `Document_${new Date().getTime()}.pdf`;
-      onSavePDF(pdfDataUrl, fileName);
+      const finalName = pdfName.trim() || defaultName;
+      onSaveToPDF(pdfDataUrl, finalName.endsWith('.pdf') ? finalName : `${finalName}.pdf`);
+      setSavedOk(true);
     } catch (error) {
       console.error("PDF generation error:", error);
+      alert('Failed to generate PDF. Please try again.');
     } finally {
       setIsSavingPDF(false);
     }
@@ -3758,85 +4101,138 @@ function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan }: ReviewSca
         </button>
       </div>
 
-      <div className="bg-gradient-to-r from-emerald-900/40 to-cyan-900/40 border border-emerald-500/30 rounded-xl p-4 text-center">
-        <p className="text-slate-300">Total Pages</p>
-        <p className="text-4xl font-bold text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text">
-          {scannedPages.length}
-        </p>
+      {/* Stats row */}
+      <div className="bg-gradient-to-r from-emerald-900/40 to-cyan-900/40 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between">
+        <div className="text-center flex-1">
+          <p className="text-xs text-slate-400 uppercase tracking-wide">Pages</p>
+          <p className="text-3xl font-bold text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text">{scannedPages.length}</p>
+        </div>
+        <div className="text-center flex-1">
+          <p className="text-xs text-slate-400 uppercase tracking-wide">Status</p>
+          <p className="text-sm font-semibold text-emerald-400">Ready to save</p>
+        </div>
+        <div className="text-center flex-1">
+          <p className="text-xs text-slate-400 uppercase tracking-wide">Encryption</p>
+          <p className="text-sm font-semibold text-cyan-400">🔒 AES-XOR</p>
+        </div>
       </div>
 
       {/* Pages Grid Gallery */}
       <div className="grid grid-cols-2 gap-3">
         {scannedPages.map((page, idx) => (
-          <motion.div
-            key={idx}
-            whileHover={{ scale: 1.05 }}
-            onClick={() => setSelectedIndex(idx)}
-            className="relative rounded-lg overflow-hidden border-2 border-slate-600/50 hover:border-emerald-400 cursor-pointer shadow-lg transition-all"
-          >
+          <div key={idx} className="relative rounded-lg overflow-hidden border-2 border-slate-600/50 shadow-lg">
             <img
               src={`data:image/jpeg;base64,${page}`}
               alt={`Page ${idx + 1}`}
-              className="w-full aspect-[3/4] object-cover"
+              className="w-full aspect-[3/4] object-cover cursor-pointer"
+              onClick={() => setSelectedIndex(idx)}
             />
-            <div className="absolute top-2 right-2 bg-emerald-600 text-white px-2 py-1 rounded text-xs font-bold">
-              Page {idx + 1}
+            <div className="absolute top-2 left-2 bg-emerald-600 text-white px-2 py-0.5 rounded text-xs font-bold">
+              {idx + 1}
             </div>
-          </motion.div>
+            {/* Delete page button */}
+            <button
+              onClick={() => onDeletePage(idx)}
+              className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-700 text-white p-1 rounded-md"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         ))}
       </div>
 
-      {/* Preview Modal */}
+      {/* Success banner */}
+      <AnimatePresence>
+        {savedOk && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-3 p-4 bg-green-900/40 border border-green-500/50 rounded-xl"
+          >
+            <CheckCircle className="w-5 h-5 text-green-400 shrink-0" />
+            <p className="text-green-300 text-sm font-medium">PDF encrypted &amp; saved to Vault!</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Full-screen page preview */}
       <AnimatePresence>
         {selectedIndex !== null && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
             onClick={() => setSelectedIndex(null)}
           >
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-              className="relative rounded-2xl overflow-hidden max-w-full max-h-[80vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
               <img
                 src={`data:image/jpeg;base64,${scannedPages[selectedIndex]}`}
-                alt={`Full Page ${selectedIndex + 1}`}
-                className="w-auto h-auto max-h-[80vh]"
+                alt={`Page ${selectedIndex + 1}`}
+                style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: 12, objectFit: 'contain' }}
               />
               <button
                 onClick={() => setSelectedIndex(null)}
-                className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg"
+                style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(239,68,68,0.9)', border: 'none', borderRadius: 8, padding: '6px 10px', color: 'white', cursor: 'pointer' }}
               >
-                <X size={24} />
+                ✕
               </button>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* PDF File Name Input */}
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold flex items-center gap-1.5">
+          <FileText size={12} />
+          PDF File Name
+        </label>
+        <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-600/60 rounded-xl px-4 py-2.5">
+          <input
+            type="text"
+            value={pdfName}
+            onChange={e => setPdfName(e.target.value)}
+            placeholder={defaultName}
+            disabled={isSavingPDF || savedOk}
+            className="bg-transparent outline-none flex-1 text-sm text-white placeholder-slate-500 disabled:opacity-50"
+          />
+          {pdfName !== defaultName && (
+            <button
+              onClick={() => setPdfName(defaultName)}
+              className="text-slate-400 hover:text-slate-200 text-xs shrink-0"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 pl-1">You can rename the file before saving</p>
+      </div>
+
       {/* Action Buttons */}
-      <div className="space-y-3 fixed bottom-20 left-4 right-4">
+      <div className="space-y-3 pb-4">
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleSaveAsPDF}
-          disabled={isSavingPDF}
-          className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          disabled={isSavingPDF || savedOk || scannedPages.length === 0}
+          className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {isSavingPDF ? (
             <>
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Generating...
+              Encrypting &amp; Saving...
+            </>
+          ) : savedOk ? (
+            <>
+              <CheckCircle size={20} />
+              Saved to Vault ✓
             </>
           ) : (
             <>
-              <FileText size={20} />
-              Save as PDF ({scannedPages.length} pages)
+              <Lock size={20} />
+              Encrypt &amp; Save as PDF ({scannedPages.length} {scannedPages.length === 1 ? 'page' : 'pages'})
             </>
           )}
         </motion.button>
@@ -3844,10 +4240,10 @@ function ReviewScanPage({ scannedPages, onSavePDF, onBack, onRescan }: ReviewSca
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={onRescan}
+          onClick={onBack}
           className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all"
         >
-          Rescan
+          ← Back to Scan
         </motion.button>
       </div>
     </motion.div>
@@ -3898,25 +4294,22 @@ function DocumentUploadPage({ onBack, onScanClick, onDocumentUploaded }: Documen
             const reader = new FileReader();
             reader.onload = async (e) => {
               try {
-                const result = e.target?.result as string;
-                const base64 = result?.split(',')[1] || '';
-                
-                if (!base64) {
+                // result is a complete data URL: "data:application/pdf;base64,..."
+                const dataUrl = e.target?.result as string;
+
+                if (!dataUrl) {
                   throw new Error('Failed to read file data');
                 }
-                
+
                 // Calculate page count for documents
                 const pageCount = await calculatePageCount(file);
                 console.log(`Document ${file.name} page count: ${pageCount}`);
-                
-                // Encrypt file data
-                const encryptedData = await encryptFile(base64);
-                
-                // Create vault document
+
+                // Create vault document — store the full data URL so preview works
                 const newDoc: VaultDocument = {
                   id: `doc_${Date.now()}`,
                   name: file.name,
-                  encryptedData: encryptedData,
+                  encryptedData: dataUrl,  // full data URL (e.g. data:application/pdf;base64,...)
                   pageCount: pageCount, // Add page count
                   metadata: {
                     timestamp: Date.now(),

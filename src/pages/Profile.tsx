@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './Profile.css';
 import PersonalPage from './profile/PersonalPage';
 import AcademicPage from './profile/AcademicPage';
@@ -9,6 +10,7 @@ import InternshipsPage from './profile/InternshipsPage';
 import CertificationsPage from './profile/CertificationsPage';
 import ExamsPage from './profile/ExamsPage';
 import FinancialPage from './profile/FinancialPage';
+import BottomNav from '../components/BottomNav';
 
 const CATEGORIES = [
   {
@@ -80,6 +82,7 @@ const pageComponents: { [key: string]: any } = {
 };
 
 export default function Profile() {
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const handleCategoryClick = (id: string) => {
@@ -110,8 +113,24 @@ export default function Profile() {
   // Main Profile page with category selection
   return (
     <div className="profile-container">
+      {/* Back to Dashboard */}
+      <motion.button
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        onClick={() => navigate('/dashboard')}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          color: '#94a3b8', background: 'none', border: 'none',
+          cursor: 'pointer', fontSize: 14, marginBottom: 12,
+          padding: '4px 0',
+        }}
+      >
+        <ArrowLeft size={18} />
+        <span>Back to Dashboard</span>
+      </motion.button>
+
       {/* Header */}
-      <motion.div 
+      <motion.div
         className="profile-main-header"
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -231,6 +250,8 @@ export default function Profile() {
 
       {/* Spacing for bottom navigation */}
       <div className="bottom-spacing"></div>
+
+      <BottomNav />
     </div>
   );
 }

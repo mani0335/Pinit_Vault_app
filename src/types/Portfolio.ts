@@ -19,6 +19,7 @@ export interface VaultDocument {
 
 export interface PortfolioSection {
   title: string;
+  content?: string;    // text body or '\n'-joined list items
   documents: string[]; // vault document IDs
 }
 
@@ -54,6 +55,7 @@ export interface CreatePortfolioInput {
   type: "academic" | "placement" | "masters" | "personal" | "professional";
   sections: {
     title: string;
+    content?: string;
     documents: string[];
   }[];
   template?: string;

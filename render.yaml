@@ -1,12 +1,19 @@
 services:
-  # FastAPI Backend Service (Python)
+  # FastAPI Backend Service (Python) — also serves React SPA for share links
   - type: web
     name: biovault-backend
     runtime: python
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: >-
+      npm ci &&
+      VITE_BACKEND_URL=https://biovault-backend-d13a.onrender.com
+      VITE_PUBLIC_URL=https://biovault-backend-d13a.onrender.com
+      npm run build &&
+      mkdir -p backend/dist &&
+      cp -r dist/. backend/dist/ &&
+      pip install -r backend/requirements.txt
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SUPABASE_URL
@@ -44,7 +51,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: echo "Dist folder already exists, skipping build"
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     envVars:
       - key: PORT

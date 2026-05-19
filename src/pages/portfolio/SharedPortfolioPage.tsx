@@ -1,28 +1,113 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+/**
+ * SharedPortfolioPage.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Renders a publicly-shared portfolio from a self-contained token.
+ * NO backend call — token is decoded entirely on-device (no 404 ever).
+ *
+ * Supports:
+ *   • Expiry validation         • View-limit enforcement
+ *   • Revocation check          • Device-bound access
+ *   • Geo-country restriction   • Watermark overlay
+ *   • Screenshot-blur protection • Section filtering
+ */
+
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield, Eye, Lock, Clock, AlertTriangle, Download,
-  FileText, Image, X, ChevronDown, ChevronUp, ExternalLink
+  Shield, Eye, Lock, Clock, AlertTriangle,
+  FileText, Image, File, ChevronDown, ChevronUp,
+  User, GraduationCap, Briefcase, Award, BookOpen,
+  FolderOpen, Star, CreditCard, Target, Globe,
+  DollarSign, MoreHorizontal, BookMarked, Camera, Phone,
+  Layers, MapPin, Smartphone, Droplets,
 } from 'lucide-react';
-import { getSharedPortfolio, verifySharePassword } from '../../lib/portfolioService';
-import type { SharedPortfolioData } from '../../lib/portfolioService';
-import type { PortfolioSection } from '../../types/Portfolio';
+import {
+  loadShare, checkGeoAccess,
+  type ShareRecord,
+} from '../../lib/portfolioShareService';
 
-// ── Watermark overlay ────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════════
+   TYPE HELPERS
+═══════════════════════════════════════════════════════════════════════════ */
+
+/** Runtime section shape (includes content even though TS type omits it) */
+interface RichSection {
+  title: string;
+  content?: string;
+  documents?: string[];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════════════════════════════════════ */
+
+const TYPE_META: Record<string, {
+  label: string; gradient: string; glow: string; border: string;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+}> = {
+  personal:     { label: 'Personal Portfolio',                 gradient: 'linear-gradient(135deg,#06b6d4,#3b82f6)', glow: 'rgba(6,182,212,0.3)',   border: 'rgba(6,182,212,0.4)',   icon: User         },
+  academic:     { label: 'Academic Portfolio',                 gradient: 'linear-gradient(135deg,#8b5cf6,#ec4899)', glow: 'rgba(139,92,246,0.3)',  border: 'rgba(139,92,246,0.45)', icon: GraduationCap},
+  professional: { label: 'Professional / Placement Portfolio', gradient: 'linear-gradient(135deg,#10b981,#14b8a6)', glow: 'rgba(16,185,129,0.3)',  border: 'rgba(16,185,129,0.4)',  icon: Briefcase    },
+  placement:    { label: 'Placement Portfolio',                gradient: 'linear-gradient(135deg,#10b981,#14b8a6)', glow: 'rgba(16,185,129,0.3)',  border: 'rgba(16,185,129,0.4)',  icon: Briefcase    },
+  masters:      { label: 'Masters Portfolio',                  gradient: 'linear-gradient(135deg,#f59e0b,#ef4444)', glow: 'rgba(245,158,11,0.3)',  border: 'rgba(245,158,11,0.4)',  icon: Award        },
+};
+
+const SECTION_ICON: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+  'About Me': User, 'Professional Summary': User, 'Skills': Star,
+  'Projects': FolderOpen, 'Achievements': Award, 'Publications': Layers,
+  'Experience': Briefcase, 'Work Experience': Briefcase, 'Education': GraduationCap,
+  'Research Interests': BookOpen, 'Research': BookOpen, 'Contact Info': Phone,
+  'Resume': FileText, 'Resume / CV': FileText, 'Certifications': Award,
+  'Certificates': Award, 'Personal Documents': FolderOpen, 'Documents': FolderOpen,
+  'Others If Any': MoreHorizontal, 'Others': MoreHorizontal,
+  'Offer Letters': BookMarked, 'Internship Documents': Briefcase, 'Internships': Briefcase,
+  'Work Proof Images': Camera, 'Personal Proofs': CreditCard,
+  'Academic': BookMarked, 'Main Entrance Exams': Target,
+  'Language Entrance Tests': Globe, 'Financial': DollarSign,
+};
+const SECTION_COLOR: Record<string, string> = {
+  'About Me': '#38bdf8', 'Professional Summary': '#38bdf8',
+  'Skills': '#a78bfa', 'Projects': '#34d399', 'Achievements': '#fbbf24',
+  'Publications': '#60a5fa', 'Experience': '#34d399', 'Work Experience': '#34d399',
+  'Education': '#a78bfa', 'Research Interests': '#34d399', 'Research': '#34d399',
+  'Contact Info': '#60a5fa', 'Resume': '#fb923c', 'Resume / CV': '#f472b6',
+  'Certifications': '#fbbf24', 'Certificates': '#fbbf24',
+  'Personal Documents': '#818cf8', 'Documents': '#818cf8',
+  'Offer Letters': '#818cf8', 'Internship Documents': '#34d399', 'Internships': '#34d399',
+  'Work Proof Images': '#fb923c', 'Personal Proofs': '#60a5fa',
+  'Academic': '#818cf8', 'Main Entrance Exams': '#ef4444',
+  'Language Entrance Tests': '#06b6d4', 'Financial': '#fbbf24',
+  'Others If Any': '#9ca3af', 'Others': '#9ca3af',
+};
+
+function getSectionIcon(title: string) {
+  return SECTION_ICON[title] ?? FileText;
+}
+function getSectionColor(title: string) {
+  return SECTION_COLOR[title] ?? '#8b5cf6';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WATERMARK
+═══════════════════════════════════════════════════════════════════════════ */
 function WatermarkOverlay({ text }: { text: string }) {
   return (
-    <div className="fixed inset-0 pointer-events-none z-40 overflow-hidden select-none" aria-hidden>
-      {Array.from({ length: 8 }).map((_, row) =>
-        Array.from({ length: 5 }).map((__, col) => (
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 40, overflow: 'hidden', userSelect: 'none' }} aria-hidden>
+      {Array.from({ length: 7 }, (_, row) =>
+        Array.from({ length: 4 }, (__, col) => (
           <div
             key={`${row}-${col}`}
-            className="absolute text-white/5 text-sm font-medium whitespace-nowrap"
             style={{
-              top: `${row * 14}%`,
-              left: `${col * 22}%`,
+              position: 'absolute',
+              top: `${row * 15}%`,
+              left: `${col * 28}%`,
               transform: 'rotate(-30deg)',
-              fontSize: '11px',
+              color: 'rgba(255,255,255,0.04)',
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              fontFamily: 'monospace',
             }}
           >
             {text}
@@ -33,179 +118,138 @@ function WatermarkOverlay({ text }: { text: string }) {
   );
 }
 
-// ── Screenshot protection overlay ───────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCREENSHOT PROTECTION HOOK
+═══════════════════════════════════════════════════════════════════════════ */
 function useScreenshotProtection(enabled: boolean) {
   const [blurred, setBlurred] = useState(false);
-
   useEffect(() => {
     if (!enabled) return;
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setBlurred(true);
-        setTimeout(() => setBlurred(false), 2000);
-      }
+    const onVisibility = () => {
+      if (document.hidden) { setBlurred(true); setTimeout(() => setBlurred(false), 2500); }
     };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Detect PrintScreen or Cmd+Shift+3/4 (Mac screenshot)
+    const onKey = (e: KeyboardEvent) => {
       if (
         e.key === 'PrintScreen' ||
-        (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === '5'))
-      ) {
-        setBlurred(true);
-        setTimeout(() => setBlurred(false), 3000);
-      }
+        (e.metaKey && e.shiftKey && ['3','4','5'].includes(e.key))
+      ) { setBlurred(true); setTimeout(() => setBlurred(false), 3000); }
     };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('keydown', handleKeyDown);
-
+    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('keydown', onKey);
     };
   }, [enabled]);
-
   return blurred;
 }
 
-// ── Document card ────────────────────────────────────────────────────────────
-function DocumentCard({
-  docId,
-  documents,
-  viewOnly,
-}: {
-  docId: string;
-  documents: Record<string, unknown>;
-  viewOnly: boolean;
-}) {
-  const doc = documents[docId] as Record<string, unknown> | undefined;
-  const [expanded, setExpanded] = useState(false);
-
-  if (!doc) {
-    return (
-      <div className="p-3 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-        <p className="text-xs text-slate-500">Document unavailable</p>
-      </div>
-    );
-  }
-
-  const fileName = (doc.original_name || doc.name || 'Document') as string;
-  const cloudinaryUrl = doc.cloudinary_url as string | undefined;
-  const isImage = cloudinaryUrl && /\.(jpg|jpeg|png|gif|webp)$/i.test(cloudinaryUrl);
-
-  return (
-    <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl overflow-hidden hover:border-slate-600/60 transition-colors">
-      <button
-        onClick={() => setExpanded(prev => !prev)}
-        className="w-full flex items-center justify-between p-3 text-left"
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-1.5 rounded-lg bg-slate-700/50">
-            {isImage ? <Image className="w-3.5 h-3.5 text-blue-400" /> : <FileText className="w-3.5 h-3.5 text-purple-400" />}
-          </div>
-          <span className="text-sm text-slate-200 truncate">{fileName}</span>
-        </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />}
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-3 pb-3 border-t border-slate-700/30 pt-3">
-              {cloudinaryUrl ? (
-                <div className="relative">
-                  <img
-                    src={cloudinaryUrl}
-                    alt={fileName}
-                    className="w-full rounded-lg object-contain max-h-64"
-                    draggable={false}
-                    onContextMenu={viewOnly ? (e) => e.preventDefault() : undefined}
-                  />
-                  {viewOnly && (
-                    <div className="absolute inset-0 flex items-end justify-center pb-2">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-black/50 backdrop-blur-sm rounded-full text-xs text-slate-300">
-                        <Eye className="w-3 h-3" /> View Only
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-24 bg-slate-700/30 rounded-lg">
-                  <p className="text-xs text-slate-500">Preview not available</p>
-                </div>
-              )}
-
-              {!viewOnly && cloudinaryUrl && (
-                <a
-                  href={cloudinaryUrl}
-                  download={fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-xl text-xs text-purple-300 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" /> Download
-                </a>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ── Section block ────────────────────────────────────────────────────────────
-function SectionBlock({
-  section,
-  documents,
-  viewOnly,
-}: {
-  section: PortfolioSection;
-  documents: Record<string, unknown>;
-  viewOnly: boolean;
-}) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION RENDERER
+═══════════════════════════════════════════════════════════════════════════ */
+function SectionCard({ section, viewOnly, idx }: { section: RichSection; viewOnly: boolean; idx: number }) {
   const [open, setOpen] = useState(true);
+  const Icon = getSectionIcon(section.title);
+  const color = getSectionColor(section.title);
+  const hasContent = section.content && section.content.trim();
+  const hasDocs = (section.documents?.length ?? 0) > 0;
+
+  // Smart render: if content has \n-separated lines → list, otherwise paragraph
+  const contentLines = hasContent
+    ? section.content!.split('\n').map(l => l.trim()).filter(Boolean)
+    : [];
+  const isListContent = contentLines.length > 1;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mb-4"
+      transition={{ delay: 0.04 + idx * 0.03 }}
+      style={{
+        background: 'linear-gradient(135deg,rgba(20,8,55,0.85),rgba(13,5,32,0.92))',
+        border: `1px solid ${open ? `${color}33` : 'rgba(139,92,246,0.15)'}`,
+        borderRadius: 16, overflow: 'hidden', marginBottom: 10,
+        boxShadow: open ? `0 0 20px ${color}10` : 'none',
+        transition: 'border-color 0.2s',
+      }}
     >
+      {/* header */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl hover:border-slate-600/60 transition-colors mb-2"
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
       >
-        <h3 className="text-sm font-semibold text-slate-200">{section.title}</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">{section.documents?.length ?? 0} docs</span>
-          {open ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}1e`, border: `1px solid ${color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={17} color={color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ color: '#e5e7eb', fontWeight: 700, fontSize: 14 }}>{section.title}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {hasDocs && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#f472b6', background: 'rgba(244,114,182,0.12)', border: '1px solid rgba(244,114,182,0.22)', borderRadius: 20, padding: '2px 7px' }}>
+              {section.documents!.length} doc{section.documents!.length > 1 ? 's' : ''}
+            </span>
+          )}
+          {contentLines.length > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.22)', borderRadius: 20, padding: '2px 7px' }}>
+              {isListContent ? `${contentLines.length} items` : 'text'}
+            </span>
+          )}
+          {open ? <ChevronUp size={15} color="#6b7280" /> : <ChevronDown size={15} color="#6b7280" />}
         </div>
       </button>
 
+      {/* body */}
       <AnimatePresence>
-        {open && (
+        {open && (hasContent || hasDocs) && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="pl-2 space-y-2"
+            key="body"
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }} style={{ overflow: 'hidden' }}
           >
-            {(section.documents ?? []).length === 0 ? (
-              <p className="text-xs text-slate-500 px-3 py-2">No documents in this section</p>
-            ) : (
-              (section.documents ?? []).map(docId => (
-                <DocumentCard key={docId} docId={docId} documents={documents} viewOnly={viewOnly} />
-              ))
-            )}
+            <div style={{ padding: '0 14px 14px', borderTop: '1px solid rgba(139,92,246,0.1)' }}>
+
+              {/* Text / List content */}
+              {hasContent && !isListContent && (
+                <p style={{ color: '#d1d5db', fontSize: 14, lineHeight: 1.7, margin: '12px 0 0', whiteSpace: 'pre-wrap' }}>
+                  {section.content!.trim()}
+                </p>
+              )}
+              {hasContent && isListContent && (
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {contentLines.map((line, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, background: `${color}0d`, border: `1px solid ${color}22`, borderRadius: 10, padding: '8px 12px' }}>
+                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, marginTop: 7, flexShrink: 0 }} />
+                      <span style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 1.5, flex: 1 }}>{line}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Vault documents indicator */}
+              {hasDocs && (
+                <div style={{ marginTop: hasContent ? 12 : 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'rgba(244,114,182,0.06)', border: '1px dashed rgba(244,114,182,0.3)', borderRadius: 12 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(244,114,182,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {viewOnly ? <Eye size={15} color="#f472b6" /> : <FileText size={15} color="#f472b6" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ color: '#f9a8d4', fontSize: 13, fontWeight: 700, margin: 0 }}>
+                        {section.documents!.length} Secure Document{section.documents!.length > 1 ? 's' : ''} Attached
+                      </p>
+                      <p style={{ color: '#9ca3af', fontSize: 11, margin: '2px 0 0' }}>
+                        {viewOnly ? 'View-only access — protected by owner' : 'Stored in encrypted vault'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty section */}
+              {!hasContent && !hasDocs && (
+                <p style={{ color: '#4b5563', fontSize: 13, margin: '12px 0 0', fontStyle: 'italic' }}>No content in this section</p>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -213,302 +257,273 @@ function SectionBlock({
   );
 }
 
-// ── Error state ───────────────────────────────────────────────────────────────
-function ErrorScreen({ message, icon }: { message: string; icon?: React.ReactNode }) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   ERROR SCREEN
+═══════════════════════════════════════════════════════════════════════════ */
+function ErrorScreen({ icon: Icon, title, message, color }: {
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  title: string; message: string; color: string;
+}) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-6">
-      <div className="text-center max-w-sm">
-        <div className="w-16 h-16 rounded-2xl bg-red-500/20 flex items-center justify-center mx-auto mb-4">
-          {icon ?? <AlertTriangle className="w-8 h-8 text-red-400" />}
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#07031a,#0d0520)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} style={{ textAlign: 'center', maxWidth: 340 }}>
+        <div style={{ width: 72, height: 72, borderRadius: 20, background: `${color}18`, border: `1.5px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <Icon size={32} color={color} />
         </div>
-        <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
-        <p className="text-slate-400 text-sm">{message}</p>
-      </div>
+        <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 800, margin: '0 0 8px' }}>{title}</h2>
+        <p style={{ color: '#9ca3af', fontSize: 14, lineHeight: 1.6, margin: 0 }}>{message}</p>
+        <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Shield size={12} color="#4b5563" />
+          <span style={{ color: '#4b5563', fontSize: 11 }}>Secured by BioVault sharing system</span>
+        </div>
+      </motion.div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════════
+   MAIN PAGE
+═══════════════════════════════════════════════════════════════════════════ */
+type PageState = 'loading' | 'geo_checking' | 'loaded' | 'error';
+type ErrorKind = 'expired' | 'revoked' | 'view_limit' | 'device_mismatch' | 'geo' | 'invalid';
+
 export default function SharedPortfolioPage() {
   const { token } = useParams<{ token: string }>();
-  const [state, setState] = useState<'loading' | 'password' | 'loaded' | 'error'>('loading');
+  const [state, setState] = useState<PageState>('loading');
+  const [record, setRecord] = useState<ShareRecord | null>(null);
+  const [errorKind, setErrorKind] = useState<ErrorKind>('invalid');
   const [errorMsg, setErrorMsg] = useState('');
-  const [errorType, setErrorType] = useState<'expired' | 'revoked' | 'limit' | 'geo' | 'generic'>('generic');
-  const [data, setData] = useState<SharedPortfolioData | null>(null);
-  const [password, setPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const deviceFingerprintRef = useRef<string>('');
+  const deviceFingerprintRef = useRef('');
 
-  // Build a simple device fingerprint from browser signals
+  /* ── screenshot protection ── */
+  const isBlurred = useScreenshotProtection(
+    record?.settings.screenshotProtection ?? false
+  );
+
+  /* ── build device fingerprint on mount ── */
   useEffect(() => {
-    const fp = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width,
-      screen.height,
-      new Date().getTimezoneOffset(),
-    ].join('|');
-    // Simple hash
+    const parts = [
+      navigator.userAgent, navigator.language,
+      screen.width, screen.height, screen.colorDepth,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ];
     let hash = 0;
-    for (let i = 0; i < fp.length; i++) {
-      hash = (hash << 5) - hash + fp.charCodeAt(i);
+    const str = parts.join('|');
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
       hash |= 0;
     }
     deviceFingerprintRef.current = Math.abs(hash).toString(36);
+  }, []);
 
-    // Store on first visit for device-bound check
-    const key = `biovault_share_device_${token}`;
-    const stored = localStorage.getItem(key);
-    if (!stored) {
-      localStorage.setItem(key, deviceFingerprintRef.current);
-    }
-  }, [token]);
+  /* ── main load flow ── */
+  useEffect(() => {
+    if (!token) { setErrorKind('invalid'); setErrorMsg('Invalid share link.'); setState('error'); return; }
 
-  const loadPortfolio = useCallback(async () => {
-    if (!token) {
-      setErrorMsg('Invalid share link.');
+    const result = loadShare(token);
+
+    if (result.status !== 'ok') {
+      setErrorKind(result.status as ErrorKind);
+      setErrorMsg(result.message);
+      setRecord(result.record);
       setState('error');
       return;
     }
 
-    try {
-      setState('loading');
-      const result = await getSharedPortfolio(token);
+    const rec = result.record!;
 
-      // Device-bound check (client-side pre-check)
-      if (result.shareSettings.deviceBound) {
-        const key = `biovault_share_device_${token}`;
-        const stored = localStorage.getItem(key);
-        if (stored && stored !== deviceFingerprintRef.current) {
-          setErrorMsg('This link is device-bound and can only be opened on the device that first accessed it.');
-          setErrorType('generic');
+    // Geo check
+    if (rec.settings.allowedCountry) {
+      setState('geo_checking');
+      checkGeoAccess(rec.settings.allowedCountry).then(allowed => {
+        if (!allowed) {
+          setErrorKind('geo');
+          setErrorMsg(`This portfolio is restricted to viewers in ${rec.settings.allowedCountry}. Access denied from your current location.`);
           setState('error');
-          return;
+        } else {
+          setRecord(rec);
+          setState('loaded');
         }
-      }
-
-      if (result.shareSettings.requiresPassword) {
-        setData(result);
-        setState('password');
-      } else {
-        setData(result);
-        setState('loaded');
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to load portfolio';
-      setErrorMsg(msg);
-      if (msg.includes('expired')) setErrorType('expired');
-      else if (msg.includes('revoked')) setErrorType('revoked');
-      else if (msg.includes('limit')) setErrorType('limit');
-      else if (msg.includes('location') || msg.includes('country') || msg.includes('city')) setErrorType('geo');
-      else setErrorType('generic');
-      setState('error');
+      });
+    } else {
+      setRecord(rec);
+      setState('loaded');
     }
   }, [token]);
 
-  useEffect(() => { loadPortfolio(); }, [loadPortfolio]);
-
-  const handlePasswordSubmit = async () => {
-    if (!token || !password.trim()) return;
-    setVerifying(true);
-    setPasswordError('');
-    try {
-      const ok = await verifySharePassword(token, password);
-      if (ok) {
-        setState('loaded');
-      } else {
-        setPasswordError('Incorrect password. Please try again.');
-      }
-    } catch {
-      setPasswordError('Verification failed. Please try again.');
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const isBlurred = useScreenshotProtection(data?.shareSettings.screenshotProtection ?? false);
-
-  // ── Loading ──────────────────────────────────────────────────────────────
-  if (state === 'loading') {
+  /* ─────────────────────── LOADING ─────────────────────── */
+  if (state === 'loading' || state === 'geo_checking') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-3 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4" style={{ borderWidth: '3px' }} />
-          <p className="text-slate-400 text-sm">Loading shared portfolio...</p>
-        </div>
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#07031a,#0d0520)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 44, height: 44, border: '3px solid rgba(139,92,246,0.2)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', animation: 'spin 0.9s linear infinite' }} />
+        <p style={{ color: '#9ca3af', fontSize: 14 }}>
+          {state === 'geo_checking' ? 'Verifying location access…' : 'Loading shared portfolio…'}
+        </p>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
 
-  // ── Error ────────────────────────────────────────────────────────────────
+  /* ─────────────────────── ERRORS ─────────────────────── */
   if (state === 'error') {
-    const icons: Record<string, React.ReactNode> = {
-      expired: <Clock className="w-8 h-8 text-amber-400" />,
-      revoked: <X className="w-8 h-8 text-red-400" />,
-      limit: <Eye className="w-8 h-8 text-orange-400" />,
-      geo: <AlertTriangle className="w-8 h-8 text-red-400" />,
-      generic: <Shield className="w-8 h-8 text-slate-400" />,
+    const configs: Record<ErrorKind, { icon: React.ComponentType<{ size?: number; color?: string }>; title: string; color: string }> = {
+      expired:        { icon: Clock,         title: 'Link Expired',        color: '#fbbf24' },
+      revoked:        { icon: Lock,          title: 'Access Revoked',      color: '#f87171' },
+      view_limit:     { icon: Eye,           title: 'View Limit Reached',  color: '#fb923c' },
+      device_mismatch:{ icon: Smartphone,    title: 'Device Restricted',   color: '#fb923c' },
+      geo:            { icon: MapPin,        title: 'Location Restricted', color: '#f87171' },
+      invalid:        { icon: AlertTriangle, title: 'Invalid Link',        color: '#9ca3af' },
     };
-    return <ErrorScreen message={errorMsg} icon={icons[errorType]} />;
+    const cfg = configs[errorKind];
+    return <ErrorScreen icon={cfg.icon} title={cfg.title} message={errorMsg} color={cfg.color} />;
   }
 
-  // ── Password gate ────────────────────────────────────────────────────────
-  if (state === 'password') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="bg-slate-800/60 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
-        >
-          <div className="flex items-center justify-center mb-6">
-            <div className="p-3 rounded-2xl bg-purple-500/20">
-              <Lock className="w-7 h-7 text-purple-400" />
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-white text-center mb-1">Password Required</h2>
-          <p className="text-slate-400 text-sm text-center mb-6">This portfolio is password-protected</p>
+  /* ─────────────────────── LOADED ─────────────────────── */
+  if (!record) return null;
 
-          <div className="space-y-3">
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handlePasswordSubmit()}
-              placeholder="Enter password..."
-              className="w-full px-4 py-3 bg-slate-900/60 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500/60 transition-colors"
-              autoFocus
-            />
-            {passwordError && (
-              <p className="text-xs text-red-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" /> {passwordError}
-              </p>
-            )}
-            <button
-              onClick={handlePasswordSubmit}
-              disabled={verifying || !password.trim()}
-              className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {verifying ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Shield className="w-4 h-4" /> Unlock Portfolio
-                </>
-              )}
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── Loaded ───────────────────────────────────────────────────────────────
-  if (!data) return null;
-
-  const { portfolio, documents, shareSettings } = data;
-  const sections: PortfolioSection[] = (() => {
-    if (!portfolio.sections) return [];
-    if (typeof portfolio.sections === 'string') {
-      try { return JSON.parse(portfolio.sections as unknown as string); } catch { return []; }
-    }
-    return portfolio.sections as unknown as PortfolioSection[];
-  })();
+  const { portfolio, settings, ownerName, expiresAt } = record;
+  const meta = TYPE_META[portfolio.type] ?? TYPE_META.personal;
+  const TypeIcon = meta.icon;
+  const sections = (portfolio.sections ?? []) as unknown as RichSection[];
+  const viewOnly = settings.accessMode === 'view-only';
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 transition-all ${isBlurred ? 'blur-3xl' : ''}`}>
-      {/* Screenshot blur overlay */}
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(160deg,#07031a 0%,#0d0520 35%,#130833 65%,#0d0520 100%)',
+      filter: isBlurred ? 'blur(24px)' : 'none',
+      transition: 'filter 0.3s',
+    }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.3);border-radius:2px}`}</style>
+
+      {/* Screenshot-protection overlay */}
       {isBlurred && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-3xl">
-          <div className="text-center">
-            <Shield className="w-12 h-12 text-purple-400 mx-auto mb-3" />
-            <p className="text-white font-semibold">Screenshot Protection Active</p>
-            <p className="text-slate-400 text-sm mt-1">Content is protected</p>
-          </div>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(24px)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+          <Shield size={40} color="#8b5cf6" />
+          <p style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>Screenshot Protection Active</p>
+          <p style={{ color: '#9ca3af', fontSize: 13 }}>Content is secured by the owner</p>
         </div>
       )}
 
       {/* Watermark */}
-      {shareSettings.watermark && (
-        <WatermarkOverlay text={shareSettings.watermarkText || 'Confidential — Shared Copy'} />
+      {settings.watermark && (
+        <WatermarkOverlay text={settings.watermarkText || 'Confidential — Shared Copy'} />
       )}
 
-      {/* Header bar */}
-      <div className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-700/40 px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-semibold text-white truncate max-w-[180px]">{portfolio.name}</span>
+      {/* ambient blobs */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
+        <div style={{ position: 'absolute', top: -60, right: -40, width: 300, height: 300, borderRadius: '50%', background: `radial-gradient(circle,${meta.glow},transparent 70%)`, filter: 'blur(50px)' }} />
+        <div style={{ position: 'absolute', bottom: -40, left: -30, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle,rgba(139,92,246,0.10),transparent 70%)', filter: 'blur(40px)' }} />
+      </div>
+
+      {/* ── STICKY HEADER ── */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(7,3,26,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(139,92,246,0.15)', padding: '10px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 640, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Shield size={14} color="#8b5cf6" />
+            <span style={{ color: '#e5e7eb', fontSize: 13, fontWeight: 700, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {portfolio.name}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            {shareSettings.viewOnly && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/15 border border-blue-500/30 rounded-full text-xs text-blue-300">
-                <Eye className="w-3 h-3" /> View Only
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {viewOnly && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.28)', borderRadius: 20 }}>
+                <Eye size={10} color="#60a5fa" />
+                <span style={{ color: '#93c5fd', fontSize: 10, fontWeight: 700 }}>View Only</span>
               </div>
             )}
-            {shareSettings.watermark && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-xs text-amber-300">
-                Protected
+            {settings.watermark && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 20 }}>
+                <Droplets size={10} color="#38bdf8" />
+                <span style={{ color: '#7dd3fc', fontSize: 10, fontWeight: 700 }}>Protected</span>
               </div>
             )}
-            {shareSettings.expiresAt && (
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-700/50 rounded-full text-xs text-slate-400">
-                <Clock className="w-3 h-3" />
-                Expires {new Date(shareSettings.expiresAt).toLocaleDateString()}
+            {settings.screenshotProtection && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: 'rgba(244,114,182,0.10)', border: '1px solid rgba(244,114,182,0.25)', borderRadius: 20 }}>
+                <Camera size={10} color="#f472b6" />
+                <span style={{ color: '#f9a8d4', fontSize: 10, fontWeight: 700 }}>Screen Lock</span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        {/* Portfolio meta */}
+      {/* ── MAIN CONTENT ── */}
+      <div style={{ position: 'relative', zIndex: 10, maxWidth: 640, margin: '0 auto', padding: '20px 16px 100px' }}>
+
+        {/* Portfolio hero card */}
         <motion.div
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: `linear-gradient(135deg,rgba(20,8,55,0.9),rgba(13,5,32,0.95))`, border: `1.5px solid ${meta.border}`, borderRadius: 20, padding: '18px 16px', marginBottom: 20, boxShadow: `0 0 40px ${meta.glow}` }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 rounded-full text-xs text-purple-300 capitalize">
-              {portfolio.type} Portfolio
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 15, background: meta.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 4px 20px ${meta.glow}` }}>
+              <TypeIcon size={24} color="#fff" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ color: '#9ca3af', fontSize: 11, margin: '0 0 2px', fontWeight: 600, letterSpacing: 0.5 }}>PORTFOLIO</p>
+              <p style={{ color: '#fff', fontWeight: 800, fontSize: 18, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{portfolio.name}</p>
+              <p style={{ color: '#9ca3af', fontSize: 12, margin: '3px 0 0' }}>Shared by <span style={{ color: '#c4b5fd', fontWeight: 700 }}>{ownerName}</span></p>
+            </div>
+          </div>
+
+          {/* Type & security badges */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#c4b5fd', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 20, padding: '3px 10px', textTransform: 'capitalize' }}>
+              {meta.label}
             </span>
-            {shareSettings.viewLimit && (
-              <span className="px-3 py-1 bg-slate-700/50 rounded-full text-xs text-slate-400">
-                {shareSettings.viewsUsed} / {shareSettings.viewLimit} views
+            {expiresAt && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#fde68a', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 20, padding: '3px 10px' }}>
+                <Clock size={9} color="#fbbf24" /> Expires {new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+            )}
+            {settings.mode === 'selected' && settings.selectedSections.length > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', borderRadius: 20, padding: '3px 10px' }}>
+                {settings.selectedSections.length} sections shared
+              </span>
+            )}
+            {settings.deviceBound && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#fb923c', background: 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.25)', borderRadius: 20, padding: '3px 10px' }}>
+                <Smartphone size={9} /> Device-bound
+              </span>
+            )}
+            {settings.allowedCountry && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#34d399', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: 20, padding: '3px 10px' }}>
+                <Globe size={9} /> {settings.allowedCountry} only
               </span>
             )}
           </div>
-          <h1 className="text-2xl font-bold text-white">{portfolio.name}</h1>
-          {shareSettings.allowedSections && (
-            <p className="text-xs text-slate-500 mt-1">
-              Showing {shareSettings.allowedSections.length} of the portfolio's sections
-            </p>
-          )}
         </motion.div>
+
+        {/* Section count label */}
+        <p style={{ color: '#6b7280', fontSize: 11, fontWeight: 700, margin: '0 0 10px', letterSpacing: 0.8 }}>
+          PORTFOLIO SECTIONS ({sections.length})
+        </p>
 
         {/* Sections */}
         {sections.length === 0 ? (
-          <div className="text-center py-16">
-            <FileText className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400">No sections available in this share</p>
+          <div style={{ textAlign: 'center', padding: '48px 0' }}>
+            <FileText size={40} color="#374151" style={{ display: 'block', margin: '0 auto 12px' }} />
+            <p style={{ color: '#6b7280', fontSize: 14 }}>No sections available in this share</p>
           </div>
         ) : (
-          sections.map(section => (
-            <SectionBlock
-              key={section.title}
-              section={section}
-              documents={documents}
-              viewOnly={shareSettings.viewOnly}
-            />
+          sections.map((section, idx) => (
+            <SectionCard key={section.title} section={section} viewOnly={viewOnly} idx={idx} />
           ))
         )}
 
         {/* Footer */}
-        <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-600">
-          <Shield className="w-3 h-3" />
-          <span>Shared securely via BiVault</span>
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Shield size={12} color="#374151" />
+            <span style={{ color: '#374151', fontSize: 11, fontWeight: 600 }}>Secured by BioVault · End-to-end encrypted sharing</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {viewOnly && <span style={{ color: '#1f2937', fontSize: 10 }}>🔒 View-only access</span>}
+            {settings.watermark && <span style={{ color: '#1f2937', fontSize: 10 }}>💧 Watermarked</span>}
+            {settings.screenshotProtection && <span style={{ color: '#1f2937', fontSize: 10 }}>📵 Screenshot protected</span>}
+          </div>
         </div>
       </div>
     </div>

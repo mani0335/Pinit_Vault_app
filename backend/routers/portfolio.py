@@ -27,6 +27,10 @@ class PortfolioShareRequest(BaseModel):
     device_bound: bool = False
     password: Optional[str] = None
     base_url: str = "https://biovault-backend-d13a.onrender.com"
+    # Access modes: public | link_only | invite_only | private
+    access_mode: str = "link_only"
+    allowed_emails: Optional[List[str]] = None
+    allowed_usernames: Optional[List[str]] = None
 
 
 class RevokeShareRequest(BaseModel):
@@ -277,6 +281,9 @@ async def generate_share_token(
         "allowed_cities": data.allowed_cities,
         "device_bound": data.device_bound,
         "password": data.password,
+        "access_mode": data.access_mode,
+        "allowed_emails": data.allowed_emails,
+        "allowed_usernames": data.allowed_usernames,
     }
 
     try:
@@ -335,6 +342,10 @@ async def get_shared_portfolio(token: str, request: Request):
         views_used = share.get("views_used", 0)
         if views_used >= share["view_limit"]:
             raise HTTPException(status_code=410, detail="View limit reached for this share link")
+
+    # Private mode — completely blocked for public access
+    if share.get("access_mode") == "private":
+        raise HTTPException(status_code=403, detail="This portfolio is private and cannot be accessed via share link")
 
     # Geo-restriction check (basic — uses X-Forwarded-For or client host)
     if share.get("allowed_countries") or share.get("allowed_cities"):
@@ -416,6 +427,9 @@ async def get_shared_portfolio(token: str, request: Request):
             "viewsUsed": share.get("views_used", 0) + 1,
             "expiresAt": share.get("expires_at"),
             "allowedSections": share.get("allowed_sections"),
+            "accessMode": share.get("access_mode", "link_only"),
+            "allowedEmails": share.get("allowed_emails"),
+            "allowedUsernames": share.get("allowed_usernames"),
         }
     }
 

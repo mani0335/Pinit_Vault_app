@@ -20,7 +20,13 @@ CREATE TABLE IF NOT EXISTS portfolio_shares (
     allowed_cities JSONB,
     device_bound BOOLEAN DEFAULT FALSE,
     password TEXT,
-    revoked_at TIMESTAMPTZ
+    revoked_at TIMESTAMPTZ,
+    -- Access control: public / link_only / invite_only / private
+    access_mode TEXT DEFAULT 'link_only',
+    -- Comma-separated or JSONB list of allowed email addresses (invite_only mode)
+    allowed_emails JSONB,
+    -- Comma-separated or JSONB list of allowed usernames (invite_only mode)
+    allowed_usernames JSONB
 );
 
 -- Optional: index for faster lookups by portfolio/user
