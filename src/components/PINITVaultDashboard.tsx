@@ -2852,13 +2852,24 @@ function SharePage({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to create share");
+        let detail = `Server error ${response.status} — please try again`;
+        try { const e = await response.json(); detail = e.detail || detail; } catch { /* empty body */ }
+        throw new Error(detail);
       }
 
-      const responseData = await response.json();
+      let responseData: { share_link?: string; share_id?: string };
+      try {
+        responseData = await response.json();
+      } catch {
+        throw new Error("Server returned an empty response — please try again in a few seconds");
+      }
+
       const shareLink = responseData.share_link;
       const shareId = responseData.share_id;
+
+      if (!shareLink || !shareId) {
+        throw new Error("Share link not returned by server — please try again");
+      }
 
       setGeneratedShareLink(shareLink);
 
