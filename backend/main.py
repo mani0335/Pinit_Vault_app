@@ -72,6 +72,26 @@ for assets_path in dist_paths:
             print(f"⚠️ Could not mount assets from {assets_path}: {e}")
 
 
+@app.get("/shared/portfolio/{token}")
+async def serve_shared_portfolio_page(token: str):
+    """Serve React app for shared portfolio links. React Router handles /shared/portfolio/:token."""
+    dist_paths = [
+        Path(__file__).parent / "dist" / "index.html",
+        Path(__file__).parent.parent / "dist" / "index.html",
+    ]
+    for dist_path in dist_paths:
+        if dist_path.exists():
+            try:
+                return FileResponse(path=str(dist_path), media_type="text/html")
+            except Exception:
+                continue
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        content="""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BiVault Portfolio</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif}.c{text-align:center;color:#e2e8f0}.s{width:48px;height:48px;border:3px solid rgba(139,92,246,.2);border-top:3px solid #8b5cf6;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto}@keyframes spin{to{transform:rotate(360deg)}}p{color:#94a3b8;margin-top:8px}</style></head><body><div class="c"><div class="s"></div><p>Loading Shared Portfolio...</p></div></body></html>""",
+        status_code=200
+    )
+
+
 @app.get("/share/{share_id}")
 async def serve_share_page(share_id: str):
     """

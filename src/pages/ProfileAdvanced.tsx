@@ -83,12 +83,12 @@ export default function ProfileAdvanced() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [activeTab, setActiveTab] = useState('profile');
-  const [profileData, setProfileData] = useState({
+  const [profileData, setProfileData] = useState(() => ({
     name: 'Jason Miller',
     email: 'jason.miller@email.com',
     userId: 'PINT234567',
-    photo: 'https://ui-avatars.com/api/?name=Jason+Miller&background=0D8ABC&color=fff&size=150'
-  });
+    photo: localStorage.getItem('biovault_profileImage') || 'https://ui-avatars.com/api/?name=Jason+Miller&background=0D8ABC&color=fff&size=150'
+  }));
   const [isEditing, setIsEditing] = useState(false);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,7 +97,8 @@ export default function ProfileAdvanced() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const dataUrl = event.target?.result as string;
-        setProfileData({ ...profileData, photo: dataUrl });
+        setProfileData(prev => ({ ...prev, photo: dataUrl }));
+        localStorage.setItem('biovault_profileImage', dataUrl);
       };
       reader.readAsDataURL(file);
     }

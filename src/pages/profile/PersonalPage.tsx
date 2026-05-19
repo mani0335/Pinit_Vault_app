@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Camera, Upload, FileText, Plus, X } from 'lucide-react';
+import { ArrowLeft, Camera, Upload, FileText, Plus, CheckCircle } from 'lucide-react';
 import { Camera as CapacitorCamera } from '@capacitor/camera';
+import { initializeVault, addDocumentToVault, saveVaultState } from '../../lib/vaultManager';
+import type { VaultDocument } from '../../lib/vaultManager';
 import '../Profile.css';
 
 interface PersonalPageProps {
@@ -22,10 +24,29 @@ export default function PersonalPage({ categoryTitle = 'Personal', categoryEmoji
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [uploadMethod, setUploadMethod] = useState<'camera' | 'upload' | 'text' | null>(null);
   const [textValue, setTextValue] = useState('');
-  const [cameraActive, setCameraActive] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentItem = ITEMS.find(item => item.id === selectedItem);
+
+  const saveToVault = (fileData: string, fileName: string, fileType: VaultDocument['fileType'], fileSize: string) => {
+    const vault = initializeVault();
+    const doc: VaultDocument = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      fileName,
+      fileType,
+      fileSize,
+      fileData,
+      createdAt: new Date(),
+      isEncrypted: false,
+    };
+    const updated = addDocumentToVault(vault, doc);
+    saveVaultState(updated);
+    setSavedMessage(`✅ "${fileName}" saved to vault`);
+    setTimeout(() => setSavedMessage(''), 3000);
+    setUploadMethod(null);
+    setSelectedItem(null);
+  };
 
   const handleStartCamera = async () => {
     try {
@@ -35,38 +56,43 @@ export default function PersonalPage({ categoryTitle = 'Personal', categoryEmoji
         resultType: 'base64' as any,
         source: 'camera' as any
       });
-      
+
       if (image?.base64String) {
-        console.log('✅ Image captured:', selectedItem);
         const imageData = `data:image/jpeg;base64,${image.base64String}`;
-        // Handle the captured image data
-        setCameraActive(false);
-        // You can save or process the imageData here
+        const sizeKB = Math.round((image.base64String.length * 3) / 4 / 1024);
+        const fileName = `${currentItem?.title || 'capture'}_${Date.now()}.jpg`;
+        saveToVault(imageData, fileName, 'image', `${sizeKB} KB`);
       }
     } catch (error) {
       console.error('Camera access denied:', error);
       alert('Camera access denied');
+      setUploadMethod(null);
     }
-  };
-
-  const handleCapture = async () => {
-    // Not needed with Capacitor Camera - handleStartCamera does the capture
-    setCameraActive(false);
-    setUploadMethod(null);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      console.log('✅ File selected:', file.name);
-      setUploadMethod(null);
-    }
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const data = event.target?.result as string;
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const fileType: VaultDocument['fileType'] =
+        ext === 'pdf' ? 'pdf' :
+        ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(ext) ? 'image' : 'document';
+      const sizeKB = Math.round(file.size / 1024);
+      saveToVault(data, file.name, fileType, `${sizeKB} KB`);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSaveText = () => {
     if (textValue.trim()) {
-      console.log('✅ Text saved:', textValue);
-      setUploadMethod(null);
+      const encoded = btoa(unescape(encodeURIComponent(textValue)));
+      const dataUrl = `data:text/plain;base64,${encoded}`;
+      const fileName = `${currentItem?.title || 'note'}_${Date.now()}.txt`;
+      saveToVault(dataUrl, fileName, 'document', `${textValue.length} chars`);
       setTextValue('');
     }
   };
@@ -87,6 +113,26 @@ export default function PersonalPage({ categoryTitle = 'Personal', categoryEmoji
           <p>Add and manage your {categoryTitle.toLowerCase()} documents</p>
         </div>
       </motion.div>
+
+      {/* Success message */}
+      {savedMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            margin: '0 0 16px 0',
+            padding: '12px 16px',
+            background: 'rgba(34,197,94,0.15)',
+            border: '1px solid rgba(34,197,94,0.4)',
+            borderRadius: 10,
+            color: '#86efac',
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 14,
+          }}
+        >
+          <CheckCircle size={16} />
+          {savedMessage}
+        </motion.div>
+      )}
 
       {/* Items Grid */}
       {!selectedItem ? (

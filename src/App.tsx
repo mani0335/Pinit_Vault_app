@@ -27,7 +27,11 @@ const SharedImageViewer = lazy(() => import("@/components/SharedImageViewer").th
 // Portfolio pages
 const PortfolioHome        = lazy(() => import("@/pages/portfolio/PortfolioHome"));
 const PortfolioBuilder     = lazy(() => import("@/pages/portfolio/PortfolioBuilder"));
+const PortfolioView        = lazy(() => import("@/pages/portfolio/PortfolioView"));
+const PortfolioEdit        = lazy(() => import("@/pages/portfolio/PortfolioEdit"));
+const PortfolioShare       = lazy(() => import("@/pages/portfolio/PortfolioShare"));
 const ChoosePortfolioType  = lazy(() => import("@/pages/portfolio/ChoosePortfolioType"));
+const SharedPortfolioPage  = lazy(() => import("@/pages/portfolio/SharedPortfolioPage"));
 
 // Profile sub-pages
 const PersonalPage        = lazy(() => import("@/pages/profile/PersonalPage"));
@@ -185,6 +189,15 @@ const App = () => (
           <Route path="/portfolio/builder" element={
             <ProtectedRoute><PortfolioBuilder /></ProtectedRoute>
           } />
+          <Route path="/portfolio/view/:id" element={
+            <ProtectedRoute><PortfolioView /></ProtectedRoute>
+          } />
+          <Route path="/portfolio/edit/:id" element={
+            <ProtectedRoute><PortfolioEdit /></ProtectedRoute>
+          } />
+          <Route path="/portfolio/share/:id" element={
+            <ProtectedRoute><PortfolioShare /></ProtectedRoute>
+          } />
           <Route path="/portfolio/choose-type" element={
             <ProtectedRoute><ChoosePortfolioType /></ProtectedRoute>
           } />
@@ -212,9 +225,9 @@ const App = () => (
             <ProtectedRoute><ProjectsPage /></ProtectedRoute>
           } />
 
-          {/* 404 */}
-          {/* ─── Public share route — no login required ─── */}
+          {/* ─── Public share routes — no login required ─── */}
           <Route path="/share/:token" element={<SharedImageViewer />} />
+          <Route path="/shared/portfolio/:token" element={<SharedPortfolioPage />} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

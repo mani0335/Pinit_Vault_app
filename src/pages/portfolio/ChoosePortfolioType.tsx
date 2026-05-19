@@ -55,7 +55,7 @@ export default function ChoosePortfolioType() {
 
   const handleContinue = () => {
     if (selectedType) {
-      navigate(`/portfolio/builder/${selectedType}`);
+      navigate('/portfolio/builder', { state: { type: selectedType } });
     }
   };
 
@@ -64,7 +64,7 @@ export default function ChoosePortfolioType() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
+    <div className="min-h-screen p-6" style={{ background: 'linear-gradient(160deg, #0a0118 0%, #130a2e 50%, #07031a 100%)', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

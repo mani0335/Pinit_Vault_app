@@ -1,6 +1,7 @@
 import { appStorage } from "./storage";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Preferences } from "@capacitor/preferences";
+import { Share } from "@capacitor/share";
 
 interface VaultDocument {
   id: string;
@@ -439,119 +440,44 @@ export async function getVaultMetadata(
 export async function saveImageToGallery(
   base64Data: string,
   fileName: string,
-  userId: string
+  _userId: string
 ): Promise<{ success: boolean; path?: string; error?: string }> {
   try {
-    console.log("📷 Starting gallery save process...");
-    
-    // Remove data:image/jpeg;base64, prefix if present
+    console.log("📷 Saving to device via share sheet...");
+
+    // Strip data URI prefix to get raw base64
     const cleanBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-    
-    const timestamp = Date.now();
-    // Extract file extension from original filename or default to jpg
-    const fileExt = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-    const uniqueName = `PINIT_${userId.substring(0, 8)}_${timestamp}.${fileExt}`;
-    const folderPath = "PINIT Vault";
 
-    try {
-      // Try to create "PINIT Vault" folder in Documents directory (Pictures doesn't exist in Capacitor)
-      try {
-        await Filesystem.mkdir({
-          path: folderPath,
-          directory: Directory.Documents,
-          recursive: true,
-        });
-        console.log(`✅ PINIT Vault folder ready at Documents`);
-      } catch (mkdirErr) {
-        console.log("ℹ️ Folder creation info (may already exist):", mkdirErr);
-      }
+    // Pick a safe unique filename
+    const fileExt = fileName.split(".").pop()?.toLowerCase() || "jpg";
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_") || `PINIT_${Date.now()}.${fileExt}`;
 
-      // Save with base64 data - use correct encoding for base64
-      const fullPath = `${folderPath}/${uniqueName}`;
-      console.log(`💾 Writing file to: ${fullPath} (size: ${cleanBase64.length} bytes)`);
-      
-      // For base64 data, pass it as-is without UTF8 encoding
-      const result = await Filesystem.writeFile({
-        path: fullPath,
-        data: cleanBase64,  // Raw base64 string
-        directory: Directory.Documents,
-        // Don't specify encoding for base64 - Capacitor should handle it automatically
-      });
+    // Write to cache (always writable, no special permissions needed)
+    const written = await Filesystem.writeFile({
+      path: safeName,
+      data: cleanBase64,
+      directory: Directory.Cache,
+      recursive: true,
+    });
 
-      console.log(`✅ Image successfully saved to PINIT Vault: ${uniqueName}`);
-      console.log(`📂 Full path: ${result.uri}`);
-      return {
-        success: true,
-        path: result.uri,
-      };
-    } catch (e) {
-      console.warn("⚠️ PINIT Vault subfolder save failed, trying direct Documents...", e);
-      
-      // Fallback: Try saving directly to Documents root
-      try {
-        const fallbackResult = await Filesystem.writeFile({
-          path: uniqueName,
-          data: cleanBase64,
-          directory: Directory.Documents,
-        });
-        
-        console.log(`✅ Image saved to Documents root (fallback): ${uniqueName}`);
-        console.log(`📂 Full path: ${fallbackResult.uri}`);
-        return {
-          success: true,
-          path: fallbackResult.uri,
-        };
-      } catch (fallbackErr) {
-        console.warn("⚠️ Direct Documents save also failed:", fallbackErr);
-        
-        // Final fallback: Try Documents directory
-        try {
-          const docResult = await Filesystem.writeFile({
-            path: uniqueName,
-            data: cleanBase64,
-            directory: Directory.Documents,
-          });
-          
-          console.log(`✅ Image saved to Documents (final fallback): ${uniqueName}`);
-          return {
-            success: true,
-            path: docResult.uri,
-          };
-        } catch (docErr) {
-          console.error("❌ All filesystem save attempts failed:", docErr);
-          
-          // Final fallback: Try browser download
-          try {
-            console.log("🌐 Trying browser download as final fallback...");
-            const dataUrl = `data:image/jpeg;base64,${cleanBase64}`;
-            const link = document.createElement('a');
-            link.href = dataUrl;
-            link.download = uniqueName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            console.log("✅ Browser download initiated");
-            return {
-              success: true,
-              path: "Browser download initiated",
-            };
-          } catch (browserErr) {
-            console.error("❌ Browser download also failed:", browserErr);
-            return {
-              success: false,
-              error: `All download methods failed. Please check storage permissions.`,
-            };
-          }
-        }
-      }
+    console.log(`✅ Temp file written: ${written.uri}`);
+
+    // Open Android share sheet → user can tap "Save to Files", "Downloads", "Google Drive", etc.
+    await Share.share({
+      title: safeName,
+      url: written.uri,
+      dialogTitle: `Save "${safeName}" to your device`,
+    });
+
+    return { success: true, path: written.uri };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // User dismissed the share sheet — not a real error
+    if (msg.includes("cancel") || msg.includes("Cancel") || msg.includes("dismissed")) {
+      return { success: true, path: "share cancelled" };
     }
-  } catch (error) {
-    console.error("❌ Gallery save error:", error);
-    return {
-      success: false,
-      error: String(error),
-    };
+    console.error("❌ saveImageToGallery error:", err);
+    return { success: false, error: msg };
   }
 }
 

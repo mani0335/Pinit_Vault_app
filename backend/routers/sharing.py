@@ -13,6 +13,9 @@ router = APIRouter(tags=["Sharing"])
 # ============================================================================
 # PYDANTIC MODELS - All request/response models defined below
 # ============================================================================
+# NOTE: Route ordering matters in FastAPI.
+# Specific paths (/public/..., /verify-password, /user/...) MUST be declared
+# before the wildcard /{share_id} to avoid being swallowed by it.
 
 class ShareCreateRequest(BaseModel):
     user_id: str
@@ -33,59 +36,6 @@ class ShareUpdateRequest(BaseModel):
 class PasswordVerifyRequest(BaseModel):
     share_id: str
     password: str
-
-# ============================================================================
-# SERVE REACT APP FOR SHARE PAGES
-# ============================================================================
-
-@router.get("/{share_id}")
-async def serve_share_page_react(share_id: str):
-    """
-    Serve React app for share links when accessing /share/{share_id} directly.
-    React Router will handle the route on the client side.
-    """
-    # Try to find and serve dist/index.html
-    dist_paths = [
-        Path(__file__).parent.parent / "dist" / "index.html",  # backend/dist
-        Path(__file__).parent.parent.parent / "dist" / "index.html",  # ../dist
-    ]
-    
-    for dist_path in dist_paths:
-        if dist_path.exists():
-            try:
-                return FileResponse(path=str(dist_path), media_type="text/html")
-            except Exception as e:
-                print(f"Error serving {dist_path}: {e}")
-                continue
-    
-    # Fallback: Show loading screen
-    return HTMLResponse(
-        content="""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BiVault Share</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { max-width: 500px; background: white; border-radius: 12px; padding: 40px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        h1 { color: #1a202c; margin-bottom: 16px; }
-        p { color: #4a5568; margin-bottom: 12px; line-height: 1.6; }
-        .spinner { display: inline-block; width: 40px; height: 40px; margin: 20px auto; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>⏳ Loading Shared Content...</h1>
-        <div class="spinner"></div>
-        <p>Please wait while we fetch your encrypted image</p>
-    </div>
-</body>
-</html>""",
-        status_code=200
-    )
 
 # ============================================================================
 # CREATE SHARE LINK
@@ -402,9 +352,62 @@ async def delete_share(share_id: str, user_id: str = Query(...)):
         
         print(f"✅ Share Deleted: {share_id}")
         return {"ok": True, "message": "Share deleted"}
-    
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Delete Share Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting share: {str(e)}")
+
+
+# ============================================================================
+# SERVE REACT APP FOR VAULT IMAGE SHARE PAGES
+# IMPORTANT: This wildcard must be LAST so it doesn't shadow specific routes
+# ============================================================================
+
+@router.get("/{share_id}")
+async def serve_share_page_react(share_id: str):
+    """
+    Serve React app for vault image share links (/share/{share_id}).
+    React Router handles the route on the client side.
+    """
+    dist_paths = [
+        Path(__file__).parent.parent / "dist" / "index.html",
+        Path(__file__).parent.parent.parent / "dist" / "index.html",
+    ]
+
+    for dist_path in dist_paths:
+        if dist_path.exists():
+            try:
+                return FileResponse(path=str(dist_path), media_type="text/html")
+            except Exception as e:
+                print(f"Error serving {dist_path}: {e}")
+                continue
+
+    return HTMLResponse(
+        content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiVault Share</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { max-width: 500px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 40px; text-align: center; backdrop-filter: blur(20px); }
+        h1 { color: #e2e8f0; margin-bottom: 16px; font-size: 24px; }
+        p { color: #94a3b8; margin-bottom: 12px; line-height: 1.6; }
+        .spinner { display: inline-block; width: 40px; height: 40px; margin: 20px auto; border: 3px solid rgba(139,92,246,0.2); border-top: 3px solid #8b5cf6; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Loading Shared Content...</h1>
+        <div class="spinner"></div>
+        <p>Please wait while we securely fetch your content</p>
+    </div>
+</body>
+</html>""",
+        status_code=200
+    )
