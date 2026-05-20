@@ -7,83 +7,66 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const [state, setState] = useState<"checking" | "authorized" | "unauthorized">("checking");
+  // ── Fast synchronous check via localStorage ──────────────────────────────
+  // On web / PWA, localStorage always has the tokens (Login.tsx writes to both).
+  // This avoids a 400 ms "checking" flash on every protected route transition.
+  const _syncToken  = localStorage.getItem("biovault_token");
+  const _syncUserId = localStorage.getItem("biovault_userId");
+  const syncAuthorized = !!(_syncToken && _syncUserId);
+
+  const [state, setState] = useState<"checking" | "authorized" | "unauthorized">(
+    syncAuthorized ? "authorized" : "checking"
+  );
 
   useEffect(() => {
+    // Already verified via localStorage — no async check needed
+    if (syncAuthorized) return;
+
     const verify = async () => {
       try {
         console.log('🔐 [ProtectedRoute] ============ TOKEN VERIFICATION STARTING ============');
-        
-        // Add longer delay to ensure storage has been written
-        // This needs to be longer because FaceScanner also waits 300ms before callback
+
+        // Small delay so Capacitor Preferences finish flushing after login
         await new Promise(resolve => setTimeout(resolve, 400));
         console.log('🔐 [ProtectedRoute] Storage wait complete');
-        
-        // Check both storages
-        let token = null;
+
+        // ── Check appStorage (Capacitor Preferences on Android) ──────────────
+        let token: string | null = null;
+        let userId: string | null = null;
         let source = '';
-        
+
         try {
-          token = await appStorage.getItem("biovault_token");
-          if (token) {
-            console.log('✅ [ProtectedRoute] Token found in appStorage:', token.substring(0, 50) + '...');
+          token  = await appStorage.getItem("biovault_token");
+          userId = await appStorage.getItem("biovault_userId");
+          if (token && userId) {
             source = 'appStorage';
+            console.log('✅ [ProtectedRoute] Token + userId found in appStorage');
+            // Mirror to localStorage so future navigations are instant
+            localStorage.setItem("biovault_token",  token);
+            localStorage.setItem("biovault_userId", userId);
           } else {
-            console.log('⚠️ [ProtectedRoute] appStorage.getItem returned null/empty for biovault_token');
+            console.log('⚠️ [ProtectedRoute] appStorage returned null — checking localStorage');
           }
         } catch (err) {
           console.warn('⚠️ [ProtectedRoute] appStorage.getItem failed:', err);
-          token = null;
         }
-        
-        if (!token) {
-          console.log('📍 [ProtectedRoute] appStorage check failed, checking localStorage...');
-          token = localStorage.getItem("biovault_token");
-          if (token) {
-            console.log('✅ [ProtectedRoute] Token found in localStorage:', token.substring(0, 50) + '...');
-            source = 'localStorage';
-          } else {
-            console.log('❌ [ProtectedRoute] No token in localStorage either');
-          }
-        }
-        
-        console.log('🔐 [ProtectedRoute] Final token status:', {
-          hasToken: !!token,
-          source,
-          tokenLength: token ? token.length : 0,
-          firstChars: token ? token.substring(0, 20) : 'N/A'
-        });
-        
-        // Also verify userId exists
-        let userId = null;
-        try {
-          userId = await appStorage.getItem("biovault_userId");
-          if (!userId) {
-            userId = localStorage.getItem("biovault_userId");
-          }
-        } catch (err) {
-          console.warn('⚠️ [ProtectedRoute] Error checking userId:', err);
-        }
-        
-        console.log('🔐 [ProtectedRoute] Final verification status:', {
+
+        // ── Fallback to localStorage (always, not just on error) ─────────────
+        if (!token)  token  = localStorage.getItem("biovault_token");
+        if (!userId) userId = localStorage.getItem("biovault_userId");
+        if (!source && token && userId) source = 'localStorage';
+
+        console.log('🔐 [ProtectedRoute] Final verification:', {
           hasToken: !!token,
           hasUserId: !!userId,
           source,
-          tokenLength: token ? token.length : 0,
-          userId: userId ? userId.substring(0, 15) + '...' : 'N/A'
         });
-        
+
         if (token && userId) {
-          console.log("✅✅✅ [ProtectedRoute] AUTHORIZED! Token and userId verified from:", source);
-          console.log("🎉 [ProtectedRoute] Rendering Dashboard");
+          console.log("✅✅✅ [ProtectedRoute] AUTHORIZED from:", source);
           setState("authorized");
-        } else if (!token) {
-          console.log("❌❌❌ [ProtectedRoute] No token found anywhere - UNAUTHORIZED");
-          console.log("🔄 [ProtectedRoute] Redirecting to login");
-          setState("unauthorized");
-        } else if (!userId) {
-          console.log("❌❌❌ [ProtectedRoute] No userId found - UNAUTHORIZED");
-          console.log("🔄 [ProtectedRoute] Redirecting to login");
+        } else {
+          console.log("❌❌❌ [ProtectedRoute] No valid credentials — redirecting to login");
           setState("unauthorized");
         }
       } catch (err) {
@@ -93,7 +76,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     };
 
     verify();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (state === "checking") {
     return (

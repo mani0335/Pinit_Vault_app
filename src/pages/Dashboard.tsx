@@ -18,12 +18,25 @@ const Dashboard = () => {
     const loadUser = async () => {
       try {
         console.log('📋 [Dashboard] Loading userId from storage...');
-        const id = await appStorage.getItem("biovault_userId");
-        console.log("✅ [Dashboard] userId loaded:", id);
+        // Always check both storages — appStorage may return null without throwing on Android
+        let id: string | null = null;
+        try {
+          id = await appStorage.getItem("biovault_userId");
+        } catch (err) {
+          console.warn("⚠️ [Dashboard] appStorage.getItem failed:", err);
+        }
+        // Always fall back to localStorage if appStorage returned null/undefined
+        if (!id) {
+          id = localStorage.getItem("biovault_userId");
+          if (id) console.log("📍 [Dashboard] userId from localStorage:", id);
+        } else {
+          console.log("✅ [Dashboard] userId from appStorage:", id);
+          // Mirror to localStorage so future checks are instant
+          localStorage.setItem("biovault_userId", id);
+        }
         setUserId(id);
       } catch (err) {
         console.error("❌ [Dashboard] Failed to load userId:", err);
-        // Fall back to localStorage
         const localId = localStorage.getItem("biovault_userId");
         console.log("📍 [Dashboard] Fallback to localStorage:", localId);
         setUserId(localId);
