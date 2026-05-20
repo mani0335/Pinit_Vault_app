@@ -891,7 +891,17 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             alert("Failed to open camera. Please check camera permissions.");
           }
         }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} quickActionCameraRef={quickActionCameraRef} quickActionFileRef={quickActionFileRef} onQuickActionImageSelected={handleQuickActionImageSelected} onVerifyProofImageSelected={handleVerifyProofImageSelected} navigate={navigate} />}
-        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} setCurrentPage={setCurrentPage} onDeleteDocument={async (docId: string) => {
+        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} setCurrentPage={setCurrentPage} onStartShare={() => {
+          // Reset share flow so the user always starts fresh on the configure step
+          setShareStep("configure");
+          setGeneratedShareLink("");
+          setGeneratedQRCode("");
+          setShareExpiryDate("");
+          setShareExpiryTime("00:00");
+          setShareDownloadLimit(null);
+          setSharePassword("");
+          setIncludeCertificate(false);
+        }} onDeleteDocument={async (docId: string) => {
           // Remove from parent state immediately
           setVaultDocuments((prev) => prev.filter((d) => d.id !== docId));
           // Persist to localStorage (and Capacitor Preferences on Android)
@@ -1424,7 +1434,7 @@ function HomePage({ userName, documentCount, onEncryptClick, setVerifyProofImage
 }
 
 // ============= VAULT PAGE =============
-function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, setSelectedShareImage, setCurrentPage }: { documents: VaultDocument[]; onDeleteDocument?: (docId: string) => void; userId?: string | null; selectedShareImage: VaultDocument | null; setSelectedShareImage: React.Dispatch<React.SetStateAction<VaultDocument | null>>; setCurrentPage: React.Dispatch<React.SetStateAction<PageType>> }) {
+function VaultPage({ documents, onDeleteDocument, onStartShare, userId, selectedShareImage, setSelectedShareImage, setCurrentPage }: { documents: VaultDocument[]; onDeleteDocument?: (docId: string) => void; onStartShare?: () => void; userId?: string | null; selectedShareImage: VaultDocument | null; setSelectedShareImage: React.Dispatch<React.SetStateAction<VaultDocument | null>>; setCurrentPage: React.Dispatch<React.SetStateAction<PageType>> }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -2034,6 +2044,7 @@ function VaultPage({ documents, onDeleteDocument, userId, selectedShareImage, se
             <motion.button
               onClick={() => {
                 setSelectedShareImage(selectedDoc);
+                if (onStartShare) onStartShare(); // reset share flow state
                 setCurrentPage("share");
               }}
               whileHover={{ scale: 1.05 }}
