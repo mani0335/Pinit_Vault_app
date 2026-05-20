@@ -8,7 +8,6 @@ import { FaceScanner } from "@/components/FaceScanner";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/StatusIndicator";
 import { appStorage } from "@/lib/storage";
-import { verifyFingerprint } from "@/lib/authService";
 
 type Step = "fingerprint" | "face" | "success" | "error";
 
@@ -274,30 +273,23 @@ const Login = () => {
                     console.log('🔐 Tokens already saved by FaceScanner - proceeding to Dashboard');
                     
                     setTimeout(async () => {
-                      // CRITICAL: Verify tokens exist before navigation
                       try {
-                        let token = await appStorage.getItem("biovault_token");
+                        const token =
+                          (await appStorage.getItem("biovault_token")) ||
+                          localStorage.getItem("biovault_token");
+
                         if (!token) {
-                          token = localStorage.getItem("biovault_token");
-                        }
-                        
-                        if (!token) {
-                          console.error('❌ CRITICAL: No token found - cannot navigate to dashboard');
-                          console.error('🔄 Falling back to retry fingerprint');
                           setStep("fingerprint");
                           setHasNavigatedToDashboard(false);
                           return;
                         }
-                        
-                        console.log('✅ Token validation passed - navigating to /dashboard');
-                        console.log('🎯 Navigation triggered with valid token');
+
                         navigate("/dashboard", { replace: true });
                       } catch (err) {
-                        console.error('❌ Error validating token:', err);
                         setStep("fingerprint");
                         setHasNavigatedToDashboard(false);
                       }
-                    }, 1800);  // Increased delay to ensure FaceScanner's token persistence completes
+                    }, 800); // reduced from 1800ms — tokens are already saved by FaceScanner
                   }}
                   onError={() => {
                     console.log('❌ Face authentication failed');
