@@ -2839,76 +2839,97 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
-      // ── Resolve the image URL for the share ───────────────────────────────
-      // Priority: cloudinaryUrl (already a URL) → build data URL then upload to Storage
-      let imageUrlForShare: string | null = selectedShareImage.cloudinaryUrl || null;
+      // ── Resolve a displayable image URL for the share ─────────────────────
+      // NOTE: cloudinaryUrl stores ENCRYPTED binary (not displayable directly).
+      // The only ready-to-display source is encryptedImage (decrypted JPEG data URL).
+      // Backend-loaded docs often omit encryptedImage, so we fall back to the
+      // localStorage copy which always has it.
+      let imageUrlForShare: string | null = null;
 
-      if (!imageUrlForShare) {
-        try {
-          // ── Step 1: build a display-ready data URL (mirrors handlePreviewDocument) ──
-          let previewDataUrl: string | null = null;
+      try {
+        // ── Step 1: get encryptedImage from in-memory doc or localStorage ────
+        let previewDataUrl: string | null = null;
 
-          if (selectedShareImage.encryptedImage) {
-            const img = selectedShareImage.encryptedImage.trim();
-            previewDataUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
-          } else {
-            let rawData = selectedShareImage.encryptedData || '';
+        const getEncryptedImage = (doc: VaultDocument): string | null => {
+          if (!doc.encryptedImage) return null;
+          const img = doc.encryptedImage.trim();
+          return img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
+        };
 
-            // Decrypt XOR-encrypted documents (key stored in metadata.checksum)
-            if (rawData && selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
-              try {
-                const { decryptFile } = await import('@/lib/encryptionUtils');
-                rawData = decryptFile(rawData, selectedShareImage.metadata.checksum);
-              } catch (decErr) {
-                console.warn('⚠️ Could not decrypt for share:', decErr);
-              }
+        // Try in-memory doc first (fast)
+        previewDataUrl = getEncryptedImage(selectedShareImage);
+
+        // If not found, read directly from localStorage (bypass backend-loaded version)
+        if (!previewDataUrl && userId) {
+          try {
+            const lsKey = `pinit_vault_documents_${userId}`;
+            const stored = localStorage.getItem(lsKey);
+            if (stored) {
+              const localDocs: VaultDocument[] = JSON.parse(stored);
+              const localDoc = localDocs.find(
+                d => d.id === selectedShareImage.id || d.name === selectedShareImage.name
+              );
+              if (localDoc) previewDataUrl = getEncryptedImage(localDoc);
             }
+          } catch (lsErr) {
+            console.warn('⚠️ localStorage read for share failed:', lsErr);
+          }
+        }
 
-            if (rawData) {
-              if (rawData.startsWith('data:')) {
-                previewDataUrl = rawData;
-              } else {
-                try {
-                  const sample = atob(rawData.substring(0, 8));
-                  const isPdf = sample.startsWith('%PDF');
-                  previewDataUrl = isPdf
-                    ? `data:application/pdf;base64,${rawData}`
-                    : `data:image/jpeg;base64,${rawData}`;
-                } catch {
+        // Last resort: decrypt encryptedData (XOR key in metadata.checksum)
+        if (!previewDataUrl) {
+          let rawData = selectedShareImage.encryptedData || '';
+          if (rawData && selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
+            try {
+              const { decryptFile } = await import('@/lib/encryptionUtils');
+              rawData = decryptFile(rawData, selectedShareImage.metadata.checksum);
+            } catch (decErr) {
+              console.warn('⚠️ Decryption for share failed:', decErr);
+            }
+          }
+          if (rawData) {
+            if (rawData.startsWith('data:image')) {
+              previewDataUrl = rawData;
+            } else if (rawData.length > 100) {
+              try {
+                const sample = atob(rawData.substring(0, 8));
+                if (!sample.startsWith('%PDF')) {
                   previewDataUrl = `data:image/jpeg;base64,${rawData}`;
                 }
-              }
+              } catch { /* not valid base64 */ }
             }
           }
-
-          // ── Step 2: upload to Supabase Storage → get public URL ─────────────
-          if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
-            console.log('📤 Uploading share image to Supabase Storage...');
-            const fetchRes = await fetch(previewDataUrl);
-            const blob = await fetchRes.blob();
-            const ext = blob.type.includes('png') ? 'png' : 'jpg';
-            const fileName = `${shareId}.${ext}`;
-
-            const { error: storageError } = await supabase.storage
-              .from('share-images')
-              .upload(fileName, blob, {
-                contentType: blob.type || 'image/jpeg',
-                upsert: true,
-              });
-
-            if (!storageError) {
-              const { data: urlData } = supabase.storage
-                .from('share-images')
-                .getPublicUrl(fileName);
-              imageUrlForShare = urlData.publicUrl;
-              console.log('✅ Share image uploaded:', imageUrlForShare);
-            } else {
-              console.warn('⚠️ Storage upload failed:', storageError.message, storageError.details);
-            }
-          }
-        } catch (err) {
-          console.warn('⚠️ Could not upload image for share:', err);
         }
+
+        // ── Step 2: upload image blob → Supabase Storage → public URL ────────
+        if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
+          console.log('📤 Uploading share image to Supabase Storage...');
+          const fetchRes = await fetch(previewDataUrl);
+          const blob = await fetchRes.blob();
+          const ext = blob.type.includes('png') ? 'png' : 'jpg';
+          const fileName = `${shareId}.${ext}`;
+
+          const { error: storageError } = await supabase.storage
+            .from('share-images')
+            .upload(fileName, blob, {
+              contentType: blob.type || 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!storageError) {
+            const { data: urlData } = supabase.storage
+              .from('share-images')
+              .getPublicUrl(fileName);
+            imageUrlForShare = urlData.publicUrl;
+            console.log('✅ Share image uploaded:', imageUrlForShare);
+          } else {
+            console.warn('⚠️ Storage upload failed:', storageError.message, storageError.details);
+          }
+        } else {
+          console.warn('⚠️ No displayable image found for this document — share will have no image preview');
+        }
+      } catch (err) {
+        console.warn('⚠️ Could not resolve/upload image for share:', err);
       }
 
       // Save to share_configs using only confirmed existing columns
