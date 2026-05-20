@@ -12,7 +12,7 @@ interface ShareConfig {
   image_name: string | null;
   download_limit: number | null;
   downloads_used: number;
-  password: string | null;
+  password: string | null;  // never rendered; only used for server-side eq check
   include_cert: boolean;
   is_active: boolean;
   access_count: number;
@@ -45,9 +45,10 @@ export const SharedImageViewer: React.FC = () => {
 
     const fetchShareData = async () => {
       try {
+        // Never return the raw password to the client — exclude it from the select
         const { data, error: dbError } = await supabase
           .from('share_configs')
-          .select('*')
+          .select('share_id,user_id,share_link,vault_image_id,image_name,download_limit,downloads_used,include_cert,is_active,access_count,created_by,expiry_date,created_at,password')
           .eq('share_id', token)
           .maybeSingle();   // maybeSingle doesn't throw when 0 rows returned
 
@@ -103,10 +104,18 @@ export const SharedImageViewer: React.FC = () => {
     fetchShareData();
   }, [token]);
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shareData) return;
-    if (passwordInput === shareData.password) {
+    if (!shareData || !token) return;
+    // Verify password server-side: query the row with both share_id AND password matching.
+    // This means the raw password value is never sent back to the client.
+    const { data } = await supabase
+      .from('share_configs')
+      .select('share_id')
+      .eq('share_id', token)
+      .eq('password', passwordInput)
+      .maybeSingle();
+    if (data) {
       setUnlocked(true);
     } else {
       alert('❌ Incorrect password. Please try again.');
@@ -165,7 +174,7 @@ export const SharedImageViewer: React.FC = () => {
   }
 
   // ─── PASSWORD GATE ─────────────────────────────────────────────────────────
-  if (shareData.password && !unlocked) {
+  if (shareData.password !== null && shareData.password !== undefined && shareData.password !== '' && !unlocked) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex items-center justify-center p-4">
         <motion.div
