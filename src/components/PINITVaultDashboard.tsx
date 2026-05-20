@@ -626,7 +626,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
   const [shareHistory, setShareHistory] = useState<any[]>([]);
   const [selectedShareImage, setSelectedShareImage] = useState<VaultDocument | null>(null);
   const [shareExpiryDate, setShareExpiryDate] = useState<string>("");
-  const [shareExpiryTime, setShareExpiryTime] = useState<string>("00:00");
+  const [shareExpiryTime, setShareExpiryTime] = useState<string>("23:59");
   const [shareDownloadLimit, setShareDownloadLimit] = useState<number | null>(null);
   const [sharePassword, setSharePassword] = useState<string>("");
   const [includeCertificate, setIncludeCertificate] = useState<boolean>(false);
@@ -897,7 +897,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           setGeneratedShareLink("");
           setGeneratedQRCode("");
           setShareExpiryDate("");
-          setShareExpiryTime("00:00");
+          setShareExpiryTime("23:59");
           setShareDownloadLimit(null);
           setSharePassword("");
           setIncludeCertificate(false);
@@ -1439,6 +1439,8 @@ function VaultPage({ documents, onDeleteDocument, onStartShare, userId, selected
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [vaultDocs, setVaultDocs] = useState(documents);
+  // Keep local list in sync when parent deletes/adds docs
+  useEffect(() => { setVaultDocs(documents); }, [documents]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
   const [embeddedMetadata, setEmbeddedMetadata] = useState<AdvancedWatermarkMetadata | null>(null);
