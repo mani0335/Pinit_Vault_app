@@ -2866,21 +2866,42 @@ function SharePage({
         insertPayload.vault_image_id = imageUrlForShare;
       }
 
+      // ── Attempt 1: insert with image URL ──────────────────────────────────
+      let insertOk = false;
       const { error: supabaseError } = await supabase
         .from('share_configs')
         .insert(insertPayload);
 
-      if (supabaseError) {
-        console.warn('⚠️ Share insert failed, retrying without image URL:', supabaseError.message);
-        // Retry without the image URL so the share link itself always saves
+      if (!supabaseError) {
+        insertOk = true;
+        console.log('✅ Share saved to Supabase (with image URL)');
+      } else {
+        console.warn('⚠️ Share insert attempt 1 failed:', supabaseError.code, supabaseError.message);
+        // ── Attempt 2: retry without image URL ────────────────────────────
         delete insertPayload.vault_image_id;
-        const { error: retryError } = await supabase.from('share_configs').insert(insertPayload);
-        if (retryError) {
-          console.error('❌ Supabase insert failed entirely:', retryError);
+        const { error: retryError } = await supabase
+          .from('share_configs')
+          .insert(insertPayload);
+        if (!retryError) {
+          insertOk = true;
+          console.log('✅ Share saved to Supabase (without image URL)');
+        } else {
+          console.error('❌ Supabase insert failed entirely:', retryError.code, retryError.message, retryError.details, retryError.hint);
+          // Show the real error so the user (and dev) can diagnose it
+          alert(
+            `⚠️ Share link was created locally but COULD NOT be saved to the server.\n\n` +
+            `Error: ${retryError.message}\n` +
+            `Code: ${retryError.code}\n\n` +
+            `The link will NOT work for others until this is resolved.\n` +
+            `Please contact support with this error code.`
+          );
+          return; // Don't show "success" if save failed
         }
       }
 
-      // Add to configs
+      if (!insertOk) return; // guard (should not reach here)
+
+      // Add to local UI state
       setShareConfigs([...shareConfigs, config]);
 
       // Add to history
