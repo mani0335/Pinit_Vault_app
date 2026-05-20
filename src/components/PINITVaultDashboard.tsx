@@ -902,7 +902,7 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
           setSharePassword("");
           setIncludeCertificate(false);
         }} onDeleteDocument={async (docId: string) => {
-          // Remove from parent state immediately
+          // Optimistically remove from parent state
           setVaultDocuments((prev) => prev.filter((d) => d.id !== docId));
           // Persist to localStorage (and Capacitor Preferences on Android)
           if (userId) {
@@ -910,6 +910,13 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
               await deleteDocumentFromVault(userId, docId);
             } catch (err) {
               console.error('❌ Failed to persist delete:', err);
+              // Rollback: reload docs from storage so the item reappears
+              try {
+                const { loadVaultDocuments } = await import('@/lib/vaultService');
+                const restored = await loadVaultDocuments(userId);
+                setVaultDocuments(restored);
+              } catch { /* ignore rollback error */ }
+              alert('❌ Could not delete the document. Please try again.');
             }
           }
         }} />}
@@ -1462,10 +1469,7 @@ function VaultPage({ documents, onDeleteDocument, onStartShare, userId, selected
     );
   });
 
-  // Sync documents when prop changes
-  useEffect(() => {
-    setVaultDocs(documents);
-  }, [documents]);
+  // (sync already handled by the useEffect on line 1443)
 
   const filteredDocs = vaultDocs.filter((doc) =>
     getSafeName(doc).toLowerCase().includes(searchTerm.toLowerCase())
@@ -3023,7 +3027,13 @@ function SharePage({
         access_count: 0,
         created_by: userId || 'PINIT User',
         expiry_date: shareExpiryDate
-          ? new Date(`${shareExpiryDate}T${shareExpiryTime || '23:59'}`).toISOString()
+          ? (() => {
+              // Build a local-time date so the user's chosen time isn't shifted by the UTC offset
+              const localIso = `${shareExpiryDate}T${shareExpiryTime || '23:59'}:00`;
+              const d = new Date(localIso);
+              const offsetMs = d.getTimezoneOffset() * 60 * 1000;
+              return new Date(d.getTime() - offsetMs).toISOString();
+            })()
           : null,
       };
 
