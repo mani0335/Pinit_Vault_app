@@ -12,8 +12,13 @@ const Index = () => {
     // 🔐 THREE-TIER ROUTING: Check session → userId → register
     const route = async () => {
       try {
-        // Wait for splash animation (1.8s)
-        await new Promise(resolve => setTimeout(resolve, 1800));
+        // Wait for splash animation + warm up backend in parallel
+        await Promise.all([
+          new Promise(resolve => setTimeout(resolve, 800)),
+          fetch(`${import.meta.env.VITE_API_URL || 'https://biovault-backend-d13a.onrender.com'}/api/health`, {
+            method: 'GET', signal: AbortSignal.timeout(8000)
+          }).catch(() => {/* ignore — warmup only */})
+        ]);
         
         console.log('🔍 Index: Starting three-tier routing check...');
         

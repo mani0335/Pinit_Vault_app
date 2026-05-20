@@ -101,8 +101,12 @@ if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
 }
 
-// SPA fallback — serve our HTML for all unknown routes
+// SPA fallback — serve index.html for page routes only, 404 for asset files
 app.get('*', (req, res) => {
+  if (/\.(js|mjs|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|json)$/.test(req.path)) {
+    res.status(404).send('Not found');
+    return;
+  }
   res.type('text/html').send(htmlContent);
 });
 

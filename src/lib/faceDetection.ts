@@ -1,232 +1,149 @@
-import * as tf from "@tensorflow/tfjs";
-import * as blazeface from "@tensorflow-models/blazeface";
+import * as faceapi from '@vladmandic/face-api';
 
-let model: blazeface.BlazeFaceModel | null = null;
-let modelLoadingPromise: Promise<blazeface.BlazeFaceModel> | null = null;
+// Models served from jsDelivr CDN (same version as installed package)
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1/model';
 
-/**
- * Load the BlazeFace model for face detection with proper error handling
- */
-export async function loadFaceDetectionModel(): Promise<blazeface.BlazeFaceModel> {
-  if (model) {
-    return model;
-  }
-  
-  if (modelLoadingPromise) {
-    return modelLoadingPromise;
-  }
+let modelsLoaded = false;
+let modelLoadingPromise: Promise<void> | null = null;
+
+export async function loadFaceDetectionModel(): Promise<void> {
+  if (modelsLoaded) return;
+  if (modelLoadingPromise) return modelLoadingPromise;
 
   modelLoadingPromise = (async () => {
     try {
-      console.log(' Initializing TensorFlow.js...');
-      
-      // Add timeout to prevent hanging
-      const initTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('TensorFlow.js initialization timeout')), 10000);
-      });
-      
-      await Promise.race([tf.ready(), initTimeout]);
-      console.log(' TensorFlow.js ready, loading BlazeFace model...');
-      
-      // Set backend to CPU for better compatibility
-      await tf.setBackend('cpu');
-      console.log(' TensorFlow.js backend set to CPU');
-      
-      // Add timeout for model loading
-      const modelTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('BlazeFace model loading timeout')), 15000);
-      });
-      
-      model = await Promise.race([blazeface.load(), modelTimeout]) as blazeface.BlazeFaceModel;
-      console.log(' Face detection model loaded successfully');
-      return model;
-    } catch (error) {
-      console.error("Failed to load face detection model:", error);
-      
-      // Clean up on error
-      model = null;
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]);
+      modelsLoaded = true;
+    } catch (err) {
+      modelsLoaded = false;
       modelLoadingPromise = null;
-      
-      // Provide more specific error message
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      
-      // Check for constructor errors (Y3, X3, etc.)
-      if (errorMsg.includes('Y3') || errorMsg.includes('X3') || errorMsg.includes('constructor')) {
-        console.error('🚨 Constructor Error Detected:', errorMsg);
-        throw new Error(`TensorFlow.js constructor error: ${errorMsg}. Please restart the app.`);
-      }
-      
-      // Check for memory issues
-      if (errorMsg.includes('memory') || errorMsg.includes('out of memory')) {
-        throw new Error(`Memory error: ${errorMsg}. Please close other apps and try again.`);
-      }
-      
-      throw new Error(`Face detection model failed: ${errorMsg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Face model loading failed: ${msg}. Check your internet connection.`);
     }
   })();
 
   return modelLoadingPromise;
 }
 
-/**
- * Interface for face detection result
- */
 export interface FaceDetectionResult {
   hasFace: boolean;
   faceCount: number;
   confidence: number;
-  landmarks?: blazeface.NormalizedFace[];
+  // 128-dim descriptor from trained recognition net — robust to glasses/hair/lighting
+  descriptor: Float32Array | null;
+  // Eye Aspect Ratio based open/closed detection
+  eyesOpen: boolean;
+  irisVisible: boolean;
   error?: string;
 }
 
-/**
- * Detect if a video frame contains exactly one face
- * @param video - The video element to analyze
- * @returns FaceDetectionResult with face detection status
- */
+const DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
+  scoreThreshold: 0.5,
+  inputSize: 416,
+});
+
+// Eye Aspect Ratio: if > 0.18 eyes are open
+function calcEAR(eye: faceapi.Point[]): number {
+  const d = (a: faceapi.Point, b: faceapi.Point) => Math.hypot(a.x - b.x, a.y - b.y);
+  return (d(eye[1], eye[5]) + d(eye[2], eye[4])) / (2 * d(eye[0], eye[3]));
+}
+
+// Check if iris is roughly centered (not looking too far sideways)
+function checkIrisCentered(eye: faceapi.Point[]): boolean {
+  const eyeCenterX = (eye[0].x + eye[3].x) / 2;
+  const eyeWidth = Math.abs(eye[3].x - eye[0].x);
+  const irisCenterX = eye.reduce((s, p) => s + p.x, 0) / eye.length;
+  return Math.abs(irisCenterX - eyeCenterX) / (eyeWidth || 1) < 0.3;
+}
+
+function empty(error: string): FaceDetectionResult {
+  return { hasFace: false, faceCount: 0, confidence: 0, descriptor: null, eyesOpen: false, irisVisible: false, error };
+}
+
 export async function detectFaceInVideo(video: HTMLVideoElement): Promise<FaceDetectionResult> {
+  if (!modelsLoaded) return empty('Models not loaded yet');
+  if (video.readyState < 2) return empty('Video not ready');
+
   try {
-    if (!model) {
-      model = await loadFaceDetectionModel();
+    // Quick count check before full pipeline
+    const all = await faceapi.detectAllFaces(video, DETECTOR_OPTIONS);
+    if (!all || all.length === 0) {
+      return empty('No face detected. Move closer and ensure good lighting.');
+    }
+    if (all.length > 1) {
+      return empty(`${all.length} faces detected — only one person should be in the frame.`);
     }
 
-    // Ensure video is ready
-    if (video.readyState < 2) {
-      return {
-        hasFace: false,
-        faceCount: 0,
-        confidence: 0,
-        error: "Video not ready",
-      };
-    }
+    // Full pipeline: detection + 68 landmarks + 128-dim recognition descriptor
+    const result = await faceapi
+      .detectSingleFace(video, DETECTOR_OPTIONS)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
 
-    // Run face detection
-    const predictions = await model.estimateFaces(video, false);
+    if (!result) return empty('Face detection failed. Please try again.');
 
-    // Check if exactly one face was detected
-    if (!predictions || predictions.length === 0) {
-      return {
-        hasFace: false,
-        faceCount: 0,
-        confidence: 0,
-        error: "No face detected. Please ensure your face is clearly visible.",
-      };
-    }
-
-    if (predictions.length > 1) {
-      return {
-        hasFace: false,
-        faceCount: predictions.length,
-        confidence: 0,
-        error: `Multiple faces detected (${predictions.length}). Only one face should be in the frame.`,
-      };
-    }
-
-    const face = predictions[0];
-    const confidence = face.probability?.[0] || 0;
-
-    // Different thresholds based on use case
-    // Registration: HIGH threshold (75%) - only perfect faces
-    // Login: MEDIUM threshold (60%) - recognize known user
-    // This prevents registration of partial faces (hair, side profiles)
-    if (confidence < 0.60) {
-      return {
-        hasFace: false,
-        faceCount: 1,
-        confidence,
-        error: `Face detection confidence too low (${Math.round(confidence * 100)}%). Please ensure good lighting and face is clearly visible.`,
-      };
-    }
+    const leftEye = result.landmarks.getLeftEye();
+    const rightEye = result.landmarks.getRightEye();
+    const leftEAR = calcEAR(leftEye);
+    const rightEAR = calcEAR(rightEye);
+    const eyesOpen = leftEAR > 0.18 && rightEAR > 0.18;
+    const irisVisible = eyesOpen && checkIrisCentered(leftEye) && checkIrisCentered(rightEye);
 
     return {
       hasFace: true,
       faceCount: 1,
-      confidence,
-      landmarks: predictions,
+      confidence: result.detection.score,
+      descriptor: result.descriptor,
+      eyesOpen,
+      irisVisible,
     };
-  } catch (error) {
-    console.error("Face detection error:", error);
-    return {
-      hasFace: false,
-      faceCount: 0,
-      confidence: 0,
-      error: "Face detection failed. Please try again.",
-    };
+  } catch {
+    return empty('Face detection error. Please try again.');
   }
 }
 
-/**
- * Validate that only a face is in the frame (no other objects)
- * @param video - The video element to analyze
- * @param requiredConfidence - Minimum confidence threshold (0-1)
- * @returns true if valid face detected, false otherwise
- */
-export async function validateFaceOnly(
-  video: HTMLVideoElement,
-  requiredConfidence: number = 0.75
-): Promise<boolean> {
-  const result = await detectFaceInVideo(video);
-  return result.hasFace && result.confidence >= requiredConfidence;
-}
-
-/**
- * Check if face is suitable for REGISTRATION (perfect face detection)
- * Requires HIGH confidence and validates face landmarks
- */
 export function isFaceSuitableForRegistration(result: FaceDetectionResult): boolean {
-  // Confidence must be >= 75% for registration
-  const MIN_REGISTRATION_CONFIDENCE = 0.75;
-  if (!result.hasFace || result.confidence < MIN_REGISTRATION_CONFIDENCE) {
-    return false;
-  }
-  
-  // Validate landmarks exist and face is complete
-  if (!result.landmarks || result.landmarks.length === 0) {
-    return false;
-  }
-  
-  const face = result.landmarks[0];
-  // Check that major landmarks are detected (eyes, nose, mouth)
-  if (!face.landmarks || Array.isArray(face.landmarks) && face.landmarks.length < 6) {
-    return false;
-  }
-  
-  return true;
+  return result.hasFace && result.confidence >= 0.6 && result.descriptor !== null;
 }
 
-/**
- * Get face quality score for display and decision-making
- */
 export function getFaceQualityScore(result: FaceDetectionResult): { score: number; quality: string } {
   if (!result.hasFace) return { score: 0, quality: 'No face detected' };
-  
-  const confidencePercent = result.confidence * 100;
-  let quality = 'Poor';
-  
-  if (confidencePercent >= 90) quality = 'Perfect';
-  else if (confidencePercent >= 80) quality = 'Great';
-  else if (confidencePercent >= 75) quality = 'Good';
-  else if (confidencePercent >= 60) quality = 'Fair';
-  else quality = 'Poor';
-  
-  return { score: Math.round(confidencePercent), quality };
+  const pct = Math.round(result.confidence * 100);
+  const quality =
+    pct >= 90 ? 'Perfect' :
+    pct >= 80 ? 'Great' :
+    pct >= 70 ? 'Good' :
+    pct >= 60 ? 'Fair' : 'Poor';
+  return { score: pct, quality };
 }
 
 /**
- * Clean up TensorFlow memory
+ * Euclidean distance between two 128-dim face descriptors.
+ * Same person: typically 0.0–0.45
+ * Different people: typically 0.6–1.2
+ * Recommended threshold: 0.5
  */
+export function faceEuclideanDistance(a: number[] | Float32Array, b: number[] | Float32Array): number {
+  const fa = a instanceof Float32Array ? a : new Float32Array(a);
+  const fb = b instanceof Float32Array ? b : new Float32Array(b);
+  let sq = 0;
+  for (let i = 0; i < fa.length; i++) sq += (fa[i] - fb[i]) ** 2;
+  return Math.sqrt(sq);
+}
+
+export function isSameFace(
+  a: number[] | Float32Array,
+  b: number[] | Float32Array,
+  threshold = 0.5
+): boolean {
+  return faceEuclideanDistance(a, b) <= threshold;
+}
+
 export async function disposeModels(): Promise<void> {
-  try {
-    if (model) {
-      // BlazeFaceModel may not have dispose method, handle gracefully
-      if ('dispose' in model && typeof model.dispose === 'function') {
-        model.dispose();
-      }
-      model = null;
-    }
-    tf.disposeVariables();
-  } catch (error) {
-    console.warn('Error disposing models:', error);
-    model = null;
-  }
+  modelsLoaded = false;
+  modelLoadingPromise = null;
 }
