@@ -2839,40 +2839,45 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
-      // Resolve the best image URL to expose in the share viewer
-      const imageUrlForShare: string | null =
-        selectedShareImage.cloudinaryUrl ||
-        // Fall back to the encrypted base64 data URL if no Cloudinary URL exists
-        (selectedShareImage.encryptedData?.startsWith('data:image')
-          ? selectedShareImage.encryptedData
-          : selectedShareImage.encryptedData
-            ? `data:image/jpeg;base64,${selectedShareImage.encryptedData}`
-            : null);
+      // Only use cloudinaryUrl for the share — it's a short URL that fits any column type.
+      // Base64 data URLs can be MB-sized and will fail Supabase's varchar limits.
+      const imageUrlForShare: string | null = selectedShareImage.cloudinaryUrl || null;
 
-      // Save to share_configs (what the viewer reads via /share/:token)
+      // Save to share_configs using only confirmed existing columns
+      const insertPayload: Record<string, unknown> = {
+        share_id: shareId,
+        user_id: userId || 'unknown',
+        share_link: shareLink,
+        download_limit: shareDownloadLimit || null,
+        downloads_used: 0,
+        password: sharePassword.length > 0 ? sharePassword : null,
+        include_cert: includeCertificate,
+        is_active: true,
+        access_count: 0,
+        created_by: userId || 'PINIT User',
+        expiry_date: shareExpiryDate
+          ? new Date(`${shareExpiryDate}T${shareExpiryTime || '23:59'}`).toISOString()
+          : null,
+      };
+
+      // Attempt to store the image URL — if vault_image_id column type rejects it
+      // the catch below will retry without it so the share still works.
+      if (imageUrlForShare) {
+        insertPayload.vault_image_id = imageUrlForShare;
+      }
+
       const { error: supabaseError } = await supabase
         .from('share_configs')
-        .insert({
-          share_id: shareId,
-          user_id: userId || 'unknown',
-          share_link: shareLink,
-          vault_image_id: imageUrlForShare,   // store image URL here so viewer can display it
-          image_name: selectedShareImage.name || 'Shared Image',
-          download_limit: shareDownloadLimit || null,
-          downloads_used: 0,
-          password: sharePassword.length > 0 ? sharePassword : null,
-          include_cert: includeCertificate,
-          is_active: true,
-          access_count: 0,
-          created_by: userId || 'PINIT User',
-          expiry_date: shareExpiryDate
-            ? new Date(`${shareExpiryDate}T${shareExpiryTime || '23:59'}`).toISOString()
-            : null,
-        });
+        .insert(insertPayload);
 
       if (supabaseError) {
-        console.error('❌ Supabase error:', supabaseError);
-        // Non-fatal: link still works, just won't appear in viewer history
+        console.warn('⚠️ Share insert failed, retrying without image URL:', supabaseError.message);
+        // Retry without the image URL so the share link itself always saves
+        delete insertPayload.vault_image_id;
+        const { error: retryError } = await supabase.from('share_configs').insert(insertPayload);
+        if (retryError) {
+          console.error('❌ Supabase insert failed entirely:', retryError);
+        }
       }
 
       // Add to configs
