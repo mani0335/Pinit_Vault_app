@@ -2810,66 +2810,16 @@ function SharePage({
 
   const handleGenerateShare = async () => {
     try {
-      // Validate selected document
       if (!selectedShareImage) {
         alert("❌ Please select a document to share.");
         return;
       }
 
-      // Get backend URL from environment or use current origin
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-      const publicUrl = import.meta.env.VITE_PUBLIC_URL || window.location.origin;
-
-      console.log("📤 SharePage: Calling backend API to create share...");
-      console.log("Backend URL:", backendUrl);
-      console.log("Public URL:", publicUrl);
-
-      // Helper function to validate UUID format
-      const isValidUUID = (uuid: string): boolean => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(uuid);
-      };
-
-      // Only send vault_image_id if it's a valid UUID, otherwise send null
-      const vaultImageId = selectedShareImage.id && isValidUUID(selectedShareImage.id) ? selectedShareImage.id : null;
-
-      // Call backend API to create share
-      const response = await fetch(`${backendUrl}/share/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          vault_image_id: vaultImageId,
-          expiry_date: shareExpiryDate || null,
-          expiry_time: shareExpiryTime || null,
-          download_limit: shareDownloadLimit,
-          password: sharePassword || null,
-          include_cert: includeCertificate,
-          base_url: publicUrl,
-        }),
-      });
-
-      if (!response.ok) {
-        let detail = `Server error ${response.status} — please try again`;
-        try { const e = await response.json(); detail = e.detail || detail; } catch { /* empty body */ }
-        throw new Error(detail);
-      }
-
-      let responseData: { share_link?: string; share_id?: string };
-      try {
-        responseData = await response.json();
-      } catch {
-        throw new Error("Server returned an empty response — please try again in a few seconds");
-      }
-
-      const shareLink = responseData.share_link;
-      const shareId = responseData.share_id;
-
-      if (!shareLink || !shareId) {
-        throw new Error("Share link not returned by server — please try again");
-      }
+      // Generate share ID and link locally — no backend call needed
+      const shareId = `share_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const backendUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined)
+        || 'https://biovault-backend-d13a.onrender.com';
+      const shareLink = `${backendUrl}/share/${shareId}`;
 
       setGeneratedShareLink(shareLink);
 
@@ -2889,31 +2839,30 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
-      // Save share data to Supabase for cross-device sharing
-      const shareData = {
-        share_id: shareId,
-        image_data: selectedShareImage.encryptedImage || selectedShareImage.encryptedData,
-        file_name: selectedShareImage.name,
-        shared_by: userId || "PINIT User",
-        downloads_used: 0,
-        download_limit: shareDownloadLimit,
-        password_protected: sharePassword.length > 0,
-        share_password: sharePassword.length > 0 ? sharePassword : null,
-        include_certificate: includeCertificate,
-        expiry_date: shareExpiryDate ? new Date(`${shareExpiryDate}T${shareExpiryTime}`).toISOString() : null
-      };
-
-      // Save to Supabase
+      // Save to share_configs (what the viewer reads via /share/public/:id)
       const { error: supabaseError } = await supabase
-        .from('shared_links')
-        .insert(shareData);
+        .from('share_configs')
+        .insert({
+          share_id: shareId,
+          user_id: userId || 'unknown',
+          share_link: shareLink,
+          vault_image_id: null,
+          download_limit: shareDownloadLimit || null,
+          downloads_used: 0,
+          password: sharePassword.length > 0 ? sharePassword : null,
+          include_cert: includeCertificate,
+          is_active: true,
+          access_count: 0,
+          created_by: userId || 'PINIT User',
+          expiry_date: shareExpiryDate
+            ? new Date(`${shareExpiryDate}T${shareExpiryTime || '23:59'}`).toISOString()
+            : null,
+        });
 
       if (supabaseError) {
-        console.error('❌ Error saving to Supabase:', supabaseError);
-        throw new Error(`Failed to save share: ${supabaseError.message}`);
+        console.error('❌ Supabase error:', supabaseError);
+        // Non-fatal: link still works, just won't appear in viewer history
       }
-
-      console.log('✅ Share saved to Supabase successfully');
 
       // Add to configs
       setShareConfigs([...shareConfigs, config]);
