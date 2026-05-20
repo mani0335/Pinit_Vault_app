@@ -2840,35 +2840,71 @@ function SharePage({
       };
 
       // ── Resolve the image URL for the share ───────────────────────────────
-      // Priority: cloudinaryUrl → upload encryptedImage to Supabase Storage
+      // Priority: cloudinaryUrl (already a URL) → build data URL then upload to Storage
       let imageUrlForShare: string | null = selectedShareImage.cloudinaryUrl || null;
 
-      if (!imageUrlForShare && selectedShareImage.encryptedImage) {
+      if (!imageUrlForShare) {
         try {
-          console.log('📤 Uploading image to Supabase Storage for share...');
-          const dataUrl = selectedShareImage.encryptedImage;
-          // Convert data URL → Blob
-          const fetchRes = await fetch(dataUrl);
-          const blob = await fetchRes.blob();
-          const ext = blob.type.includes('png') ? 'png'
-            : blob.type.includes('pdf') ? 'pdf' : 'jpg';
-          const fileName = `${shareId}.${ext}`;
+          // ── Step 1: build a display-ready data URL (mirrors handlePreviewDocument) ──
+          let previewDataUrl: string | null = null;
 
-          const { error: storageError } = await supabase.storage
-            .from('share-images')
-            .upload(fileName, blob, {
-              contentType: blob.type || 'image/jpeg',
-              upsert: true,
-            });
-
-          if (!storageError) {
-            const { data: urlData } = supabase.storage
-              .from('share-images')
-              .getPublicUrl(fileName);
-            imageUrlForShare = urlData.publicUrl;
-            console.log('✅ Image uploaded:', imageUrlForShare);
+          if (selectedShareImage.encryptedImage) {
+            const img = selectedShareImage.encryptedImage.trim();
+            previewDataUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
           } else {
-            console.warn('⚠️ Storage upload failed:', storageError.message);
+            let rawData = selectedShareImage.encryptedData || '';
+
+            // Decrypt XOR-encrypted documents (key stored in metadata.checksum)
+            if (rawData && selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
+              try {
+                const { decryptFile } = await import('@/lib/encryptionUtils');
+                rawData = decryptFile(rawData, selectedShareImage.metadata.checksum);
+              } catch (decErr) {
+                console.warn('⚠️ Could not decrypt for share:', decErr);
+              }
+            }
+
+            if (rawData) {
+              if (rawData.startsWith('data:')) {
+                previewDataUrl = rawData;
+              } else {
+                try {
+                  const sample = atob(rawData.substring(0, 8));
+                  const isPdf = sample.startsWith('%PDF');
+                  previewDataUrl = isPdf
+                    ? `data:application/pdf;base64,${rawData}`
+                    : `data:image/jpeg;base64,${rawData}`;
+                } catch {
+                  previewDataUrl = `data:image/jpeg;base64,${rawData}`;
+                }
+              }
+            }
+          }
+
+          // ── Step 2: upload to Supabase Storage → get public URL ─────────────
+          if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
+            console.log('📤 Uploading share image to Supabase Storage...');
+            const fetchRes = await fetch(previewDataUrl);
+            const blob = await fetchRes.blob();
+            const ext = blob.type.includes('png') ? 'png' : 'jpg';
+            const fileName = `${shareId}.${ext}`;
+
+            const { error: storageError } = await supabase.storage
+              .from('share-images')
+              .upload(fileName, blob, {
+                contentType: blob.type || 'image/jpeg',
+                upsert: true,
+              });
+
+            if (!storageError) {
+              const { data: urlData } = supabase.storage
+                .from('share-images')
+                .getPublicUrl(fileName);
+              imageUrlForShare = urlData.publicUrl;
+              console.log('✅ Share image uploaded:', imageUrlForShare);
+            } else {
+              console.warn('⚠️ Storage upload failed:', storageError.message, storageError.details);
+            }
           }
         } catch (err) {
           console.warn('⚠️ Could not upload image for share:', err);
