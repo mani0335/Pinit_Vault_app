@@ -2851,7 +2851,8 @@ function SharePage({
         let previewDataUrl: string | null = null;
 
         const getEncryptedImage = (doc: VaultDocument): string | null => {
-          if (!doc.encryptedImage) return null;
+          // Require at least 5 KB of base64 — shorter values are truncated placeholders
+          if (!doc.encryptedImage || doc.encryptedImage.length < 5000) return null;
           const img = doc.encryptedImage.trim();
           return img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
         };
@@ -2876,9 +2877,10 @@ function SharePage({
           }
         }
 
-        // Fallback: decrypt encryptedData (XOR key in metadata.checksum)
+        // Fallback: use encryptedData directly (it's often a plain data URL, not actually encrypted)
         if (!previewDataUrl) {
           let rawData = selectedShareImage.encryptedData || '';
+          // Only apply XOR decryption when checksum key is actually present
           if (rawData && selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
             try {
               const { decryptFile } = await import('@/lib/encryptionUtils');
@@ -2889,8 +2891,10 @@ function SharePage({
           }
           if (rawData) {
             if (rawData.startsWith('data:image')) {
+              // Already a complete, displayable data URL
               previewDataUrl = rawData;
-            } else if (rawData.length > 100) {
+            } else if (rawData.length > 5000) {
+              // Raw base64 — wrap it (skip PDFs)
               try {
                 const sample = atob(rawData.substring(0, 8));
                 if (!sample.startsWith('%PDF')) {
