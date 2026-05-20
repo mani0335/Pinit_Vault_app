@@ -2877,7 +2877,6 @@ function SharePage({
       }]);
 
       console.log("✅ Share link generated successfully:", shareLink);
-      console.log("✅ Share data saved to localStorage:", shareData);
       alert("✅ Share link created! Your friend can scan the QR code or use the link to access it.");
       setShareStep("preview");
     } catch (error) {
