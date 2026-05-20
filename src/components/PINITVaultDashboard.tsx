@@ -2946,44 +2946,37 @@ function SharePage({
           }
         }
 
-        // ── DEBUG: log what was found so we can diagnose ─────────────────────
-        console.log('🔍 [Share Image Debug]', {
-          docName: selectedShareImage.name,
-          hasEncryptedImage: !!selectedShareImage.encryptedImage,
-          hasEncryptedData: !!(selectedShareImage.encryptedData),
-          encryptedDataLen: selectedShareImage.encryptedData?.length ?? 0,
-          hasCloudinaryUrl: !!selectedShareImage.cloudinaryUrl,
-          cloudinaryUrl: selectedShareImage.cloudinaryUrl,
-          previewDataUrlFound: !!previewDataUrl,
-          previewDataUrlLen: previewDataUrl?.length ?? 0,
-        });
-
-        // ── Step 2: upload image blob → Supabase Storage → public URL ────────
+        // ── Step 2: resize to thumbnail and store data URL directly in DB ────
+        // Avoids Supabase Storage entirely — no bucket policies, no upload failures.
+        // Canvas downscales to ≤800px and compresses to JPEG 72% → ~30-120 KB.
         if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
-          console.log('📤 Uploading share image to Supabase Storage...');
-          const fetchRes = await fetch(previewDataUrl);
-          const blob = await fetchRes.blob();
-          const ext = blob.type.includes('png') ? 'png' : 'jpg';
-          const fileName = `${shareId}.${ext}`;
-
-          const { error: storageError } = await supabase.storage
-            .from('share-images')
-            .upload(fileName, blob, {
-              contentType: blob.type || 'image/jpeg',
-              upsert: true,
+          try {
+            const thumbnail = await new Promise<string>((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => {
+                const MAX = 800;
+                const scale = Math.min(MAX / img.naturalWidth, MAX / img.naturalHeight, 1);
+                const w = Math.round(img.naturalWidth * scale);
+                const h = Math.round(img.naturalHeight * scale);
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) { reject(new Error('no canvas ctx')); return; }
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.72));
+              };
+              img.onerror = reject;
+              img.src = previewDataUrl!;
             });
-
-          if (!storageError) {
-            const { data: urlData } = supabase.storage
-              .from('share-images')
-              .getPublicUrl(fileName);
-            imageUrlForShare = urlData.publicUrl;
-            console.log('✅ Share image uploaded:', imageUrlForShare);
-          } else {
-            console.warn('⚠️ Storage upload failed:', storageError.message, storageError.details);
+            imageUrlForShare = thumbnail;
+            console.log(`✅ Thumbnail ready (${Math.round(thumbnail.length / 1024)} KB)`);
+          } catch (canvasErr) {
+            console.warn('⚠️ Canvas resize failed, using original:', canvasErr);
+            imageUrlForShare = previewDataUrl; // fallback to original
           }
         } else {
-          console.warn('⚠️ No displayable image found for this document — share will have no image preview');
+          console.warn('⚠️ No displayable image found — previewDataUrl:', previewDataUrl?.substring(0, 60));
         }
       } catch (err) {
         console.warn('⚠️ Could not resolve/upload image for share:', err);
