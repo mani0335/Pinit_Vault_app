@@ -5,30 +5,7 @@ import { ScanEffect } from "./ScanEffect";
 import { Button } from "./ui/button";
 import { verifyFace, verifyFaceBackend } from "@/lib/authService";
 import { appStorage } from "@/lib/storage";
-import { detectFaceInVideo, loadFaceDetectionModel } from "@/lib/faceDetection";
-
-// Calculate cosine similarity between two face embeddings
-function calculateCosineSimilarity(embedding1: number[], embedding2: number[]): number {
-  if (embedding1.length !== embedding2.length) {
-    throw new Error("Embedding dimensions must match");
-  }
-
-  let dotProduct = 0;
-  let norm1 = 0;
-  let norm2 = 0;
-
-  for (let i = 0; i < embedding1.length; i++) {
-    dotProduct += embedding1[i] * embedding2[i];
-    norm1 += embedding1[i] * embedding1[i];
-    norm2 += embedding2[i] * embedding2[i];
-  }
-
-  if (norm1 === 0 || norm2 === 0) {
-    return 0;
-  }
-
-  return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-}
+import { detectFaceInVideo, loadFaceDetectionModel, faceEuclideanDistance } from "@/lib/faceDetection";
 
 interface FaceScannerProps {
   onSuccess: (faceData?: number[]) => void;
@@ -48,56 +25,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
   const hasAutoStarted = useRef(false);
 
   const PROCESSING_MS = 900;
-  const SUCCESS_HOLD_MS = 1200;  // Increased from 450ms to ensure all storage operations complete
-
-  const extractEmbedding = useCallback((video: HTMLVideoElement): number[] | null => {
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(video.videoWidth, 1);
-    canvas.height = Math.max(video.videoHeight, 1);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx || canvas.width <= 1 || canvas.height <= 1) return null;
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // 🔧 FIX: Generate 128-dimensional embedding (from 16x8 pixel sample)
-    const sampleW = 16;  // Increased from 8 to 16
-    const sampleH = 8;   // Keep at 8 for 16*8 = 128 pixels
-    const sampleCanvas = document.createElement("canvas");
-    sampleCanvas.width = sampleW;
-    sampleCanvas.height = sampleH;
-    const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
-    if (!sampleCtx) return null;
-
-    sampleCtx.drawImage(canvas, 0, 0, sampleW, sampleH);
-    const data = sampleCtx.getImageData(0, 0, sampleW, sampleH).data;
-
-    const embedding: number[] = [];
-    // Extract luminance from 16x8=128 pixels = 128-dimensional embedding
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i] || 0;
-      const g = data[i + 1] || 0;
-      const b = data[i + 2] || 0;
-      const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      embedding.push(Number(luminance.toFixed(4)));
-    }
-
-    // Verify we have 128 dimensions
-    if (embedding.length !== 128) {
-      console.warn(`⚠️ Embedding has ${embedding.length} dimensions, expected 128`);
-    } else {
-      console.log(`✅ Generated 128-dimensional face embedding`);
-    }
-
-    // L2 normalize embedding for cosine similarity comparison on backend.
-    const norm = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
-    if (norm === 0) return null;
-    const normalized = embedding.map((v) => Number((v / norm).toFixed(6)));
-    
-    console.log(`📊 Embedding sum: ${normalized.reduce((a, b) => a + Math.abs(b), 0).toFixed(4)}`);
-    console.log(`📊 First 5 values: ${normalized.slice(0, 5).map(v => v.toFixed(4)).join(', ')}`);
-    
-    return normalized;
-  }, []);
+  const SUCCESS_HOLD_MS = 1200;
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -196,12 +124,15 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
     setStatus("scanning");
     setMessage("Detecting face...");
 
+    // Shared: holds the face-api.js 128-dim descriptor captured during detection
+    let lastDescriptor: Float32Array | null = null;
+
     // FOR REGISTRATION: Properly detect face presence first
     if (mode === "register") {
       console.log('🔍 REGISTRATION MODE: Starting proper face detection...');
       let faceDetected = false;
       let detectionAttempts = 0;
-      const maxDetectionAttempts = 75; // Try for up to 75x200ms = 15 seconds (increased from 50)
+      const maxDetectionAttempts = 75;
       const minConfidence = 0.5;
 
       setMessage("📸 Looking for your face... (Move closer if needed)");
@@ -216,7 +147,9 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
           if (faceDetection.hasFace && faceDetection.confidence >= minConfidence) {
             console.log(`✅ Face detected! Confidence: ${Math.round(faceDetection.confidence * 100)}%`);
             faceDetected = true;
-            setMessage(`✓ Face detected (${Math.round(faceDetection.confidence * 100)}%)`);
+            lastDescriptor = faceDetection.descriptor;
+            const eyeMsg = faceDetection.irisVisible ? ' · Iris detected ✓' : faceDetection.eyesOpen ? ' · Eyes open ✓' : '';
+            setMessage(`✓ Face detected (${Math.round(faceDetection.confidence * 100)}%)${eyeMsg}`);
             await new Promise((r) => setTimeout(r, 500));
             break;
           } else {
@@ -266,8 +199,9 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
 
           if (faceDetection.hasFace && faceDetection.confidence >= minConfidenceThreshold) {
             consecutiveValidDetections++;
+            lastDescriptor = faceDetection.descriptor;
             console.log(`✓ Face detected (${consecutiveValidDetections}/${requiredConsecutiveDetections})`);
-            
+
             if (consecutiveValidDetections >= requiredConsecutiveDetections) {
               faceIsValid = true;
               break;
@@ -302,84 +236,18 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
     setMessage("✓ Face detected. Capturing face profile...");
     await new Promise((r) => setTimeout(r, 350));
 
-    // Try multiple times to get a good face capture
-    let embedding = null;
-    let attempts = 0;
-    const maxAttempts = 15; // Increased from 8 to 15 for better success rate
-
-    while (!embedding && attempts < maxAttempts) {
-      attempts++;
-      await new Promise((r) => setTimeout(r, 300)); // Shorter wait between attempts
-
-      embedding = extractEmbedding(video);
-
-      // Validate embedding quality
-      if (embedding) {
-        const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
-        const embeddingLength = embedding.length;
-        
-        // For registration: stricter validation (good embedding distribution)
-        // For login: lenient validation (just check it exists)
-        if (mode === "register") {
-          // Registration: embedding should be well-distributed - MORE LENIENT RANGE
-          // Accept 5-55 instead of 10-40 to handle various lighting/angles
-          if (embeddingSum < 5.0 || embeddingSum > 55.0) {
-            console.warn(
-              `Attempt ${attempts}: Embedding sum out of range for registration (sum=${embeddingSum.toFixed(2)}). Required: 5-55. Retrying...`
-            );
-            embedding = null;
-          } else {
-            console.log(
-              `✅ Face embedded on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
-            );
-            break;
-          }
-        } else {
-          // Login: just validate reasonable range
-          if (embeddingSum < 0.1 || embeddingSum > 50.0) {
-            console.warn(
-              `Attempt ${attempts}: Embedding sum out of range (sum=${embeddingSum.toFixed(2)}). Retrying...`
-            );
-            embedding = null;
-          } else {
-            console.log(
-              `Face captured on attempt ${attempts} (quality=${embeddingSum.toFixed(2)})`
-            );
-            break;
-          }
-        }
-      }
-    }
+    // Use the 128-dim descriptor captured during detection (face-api.js recognition net)
+    const embedding = lastDescriptor ? Array.from(lastDescriptor) : null;
 
     if (!embedding) {
       setStatus("error");
-      setMessage(
-        "❌ Unable to capture face profile. Please ensure your face is well-lit and clearly visible."
-      );
+      setMessage("❌ Unable to capture face profile. Please ensure your face is well-lit and clearly visible.");
       onError?.("Face capture failed");
       setTimeout(() => {
         setStatus("camera");
         setMessage("Align your face inside the frame");
       }, 1500);
       return;
-    }
-
-    // Quality validation for registration mode - MORE LENIENT
-    if (mode === "register") {
-      const embeddingSum = embedding.reduce((a, b) => a + Math.abs(b), 0);
-      console.log(`🎯 REGISTRATION MODE: Face quality validation (sum=${embeddingSum.toFixed(2)})`);
-      
-      // More lenient validation: 5-55 instead of 10-40
-      if (embeddingSum < 5 || embeddingSum > 55) {
-        setStatus("error");
-        setMessage(`❌ Face quality issue. Please improve lighting and try again. (Quality: ${embeddingSum.toFixed(1)})`);
-        onError?.("Face quality too low");
-        setTimeout(() => {
-          setStatus("camera");
-          setMessage("Align your face inside the frame");
-        }, 2000);
-        return;
-      }
     }
 
     if (mode === "login") {
@@ -426,54 +294,38 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
         console.log('   - Current embedding length:', embedding.length);
         console.log('   - Stored embedding length:', storedEmbedding.length);
 
-        // Calculate similarity between current and stored embedding
-        const similarity = calculateCosineSimilarity(embedding, storedEmbedding);
-        console.log('📊 FaceScanner: Face similarity score:', similarity);
+        // Euclidean distance on face-api.js 128-dim descriptors
+        // Same person: 0.0–0.45 | Different people: 0.6–1.2 | Threshold: 0.5
+        const distance = faceEuclideanDistance(embedding, storedEmbedding);
+        const DISTANCE_THRESHOLD = 0.5;
+        const isMatch = distance <= DISTANCE_THRESHOLD;
+        const similarity = Math.max(0, Math.min(1, 1 - distance / DISTANCE_THRESHOLD));
 
-        // Threshold for face recognition (adjust as needed)
-        const SIMILARITY_THRESHOLD = 0.85;
-        const isMatch = similarity >= SIMILARITY_THRESHOLD;
-
-        console.log('🔍 FaceScanner: Face match result:', {
-          similarity: similarity,
-          threshold: SIMILARITY_THRESHOLD,
-          isMatch: isMatch
-        });
+        console.log('📊 FaceScanner: Face distance:', distance.toFixed(4), '| Match:', isMatch);
 
         if (isMatch) {
-          // Generate tokens for successful login
           const token = `face_verified_${userId}_${Date.now()}`;
           const refreshToken = `refresh_${userId}_${Date.now()}`;
-          
-          // Save tokens
+
           await appStorage.setItem("biovault_token", token);
           localStorage.setItem("biovault_token", token);
           await appStorage.setItem("biovault_refresh_token", refreshToken);
           localStorage.setItem("biovault_refresh_token", refreshToken);
 
-          const data = {
-            ok: true,
-            match: true,
-            verified: true,
-            score: similarity,
-            similarity: similarity,
-            token: token,
-            refreshToken: refreshToken,
-            reason: "Face verified successfully",
-            message: "Login successful",
-            mode: "backend"
-          };
-
-          console.log('✅ FaceScanner: Face verification successful');
+          console.log('✅ FaceScanner: Face verified, distance:', distance.toFixed(4));
           setStatus("success");
-          setMessage(`✓ Face verified (${Math.round(similarity * 100)}%)`);
+          setMessage(`✓ Face verified (${Math.round(similarity * 100)}% match)`);
           stopCamera();
           setCameraReady(false);
-          
+
           setTimeout(() => onSuccess({ embedding } as any), SUCCESS_HOLD_MS);
           return;
         } else {
-          throw new Error("Face does not match stored biometrics");
+          // If distance is very large (>1.2), likely an old pixel-based embedding format
+          const hint = distance > 1.2
+            ? " Your face data uses an old format — please re-register your face in Settings."
+            : " Try again with better lighting or re-register your face.";
+          throw new Error(`Face does not match stored biometrics.${hint}`);
         }
       } catch (err: any) {
         const msg = (err?.message || "").toString();
@@ -569,7 +421,7 @@ export function FaceScanner({ onSuccess, onError, mode, required = false, userId
       console.log('✅ onSuccess callback triggered with embedding');
       onSuccess({ embedding } as any);
     }, SUCCESS_HOLD_MS);
-  }, [PROCESSING_MS, SUCCESS_HOLD_MS, cameraReady, extractEmbedding, mode, onError, onSuccess, stopCamera]);
+  }, [SUCCESS_HOLD_MS, cameraReady, mode, onError, onSuccess, propUserId, stopCamera]);
 
   // Assign startScan to ref for auto-start in register mode
   useEffect(() => {
