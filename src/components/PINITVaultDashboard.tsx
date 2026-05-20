@@ -891,7 +891,18 @@ export function PINITVaultDashboard({ userId: propsUserId, isRestricted }: PINIT
             alert("Failed to open camera. Please check camera permissions.");
           }
         }} setVerifyProofImage={setVerifyProofImage} setCurrentPage={setCurrentPage} quickActionCameraRef={quickActionCameraRef} quickActionFileRef={quickActionFileRef} onQuickActionImageSelected={handleQuickActionImageSelected} onVerifyProofImageSelected={handleVerifyProofImageSelected} navigate={navigate} />}
-        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} setCurrentPage={setCurrentPage} />}
+        {currentPage === "vault" && <VaultPage key="vault" documents={vaultDocuments} userId={userId} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} setCurrentPage={setCurrentPage} onDeleteDocument={async (docId: string) => {
+          // Remove from parent state immediately
+          setVaultDocuments((prev) => prev.filter((d) => d.id !== docId));
+          // Persist to localStorage (and Capacitor Preferences on Android)
+          if (userId) {
+            try {
+              await deleteDocumentFromVault(userId, docId);
+            } catch (err) {
+              console.error('❌ Failed to persist delete:', err);
+            }
+          }
+        }} />}
         {currentPage === "portfolio" && <PortfolioHome key="portfolio" userId={userId} />}
         {currentPage === "share" && <SharePage key="share" shareConfigs={shareConfigs} setShareConfigs={setShareConfigs} shareHistory={shareHistory} setShareHistory={setShareHistory} selectedShareImage={selectedShareImage} setSelectedShareImage={setSelectedShareImage} shareExpiryDate={shareExpiryDate} setShareExpiryDate={setShareExpiryDate} shareExpiryTime={shareExpiryTime} setShareExpiryTime={setShareExpiryTime} shareDownloadLimit={shareDownloadLimit} setShareDownloadLimit={setShareDownloadLimit} sharePassword={sharePassword} setSharePassword={setSharePassword} includeCertificate={includeCertificate} setIncludeCertificate={setIncludeCertificate} generatedShareLink={generatedShareLink} setGeneratedShareLink={setGeneratedShareLink} generatedQRCode={generatedQRCode} setGeneratedQRCode={setGeneratedQRCode} shareStep={shareStep} setShareStep={setShareStep} userId={userId} vaultDocuments={vaultDocuments} />}
         {currentPage === "identity" && <IdentityPage key="identity" userName={userName} userId={userId} />}
