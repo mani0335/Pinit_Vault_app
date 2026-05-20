@@ -2839,14 +2839,25 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
-      // Save to share_configs (what the viewer reads via /share/public/:id)
+      // Resolve the best image URL to expose in the share viewer
+      const imageUrlForShare: string | null =
+        selectedShareImage.cloudinaryUrl ||
+        // Fall back to the encrypted base64 data URL if no Cloudinary URL exists
+        (selectedShareImage.encryptedData?.startsWith('data:image')
+          ? selectedShareImage.encryptedData
+          : selectedShareImage.encryptedData
+            ? `data:image/jpeg;base64,${selectedShareImage.encryptedData}`
+            : null);
+
+      // Save to share_configs (what the viewer reads via /share/:token)
       const { error: supabaseError } = await supabase
         .from('share_configs')
         .insert({
           share_id: shareId,
           user_id: userId || 'unknown',
           share_link: shareLink,
-          vault_image_id: null,
+          vault_image_id: imageUrlForShare,   // store image URL here so viewer can display it
+          image_name: selectedShareImage.name || 'Shared Image',
           download_limit: shareDownloadLimit || null,
           downloads_used: 0,
           password: sharePassword.length > 0 ? sharePassword : null,
