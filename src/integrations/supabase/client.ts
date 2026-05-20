@@ -2,21 +2,24 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Hardcoded fallbacks so the client works in dev mode (Vite dev server does not
+// load .env.production, only .env / .env.local / .env.development).
+// These values are already committed in .env.production so they are not secret.
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ||
+  'https://wdvsfjpkxfjaelrydgqd.supabase.co';
+
 const SUPABASE_PUBLISHABLE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY;
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkdnNmanBreGZqYWVscnlkZ3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3OTg0MTQsImV4cCI6MjA5MDM3NDQxNH0.Xh-9eTBJGgQf_9Ry0WCw2qAW5X_qEBdzyuZDVGbcjUg';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  console.error('❌ Supabase env vars missing — VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY not set');
-}
-
 export const supabase = createClient<Database>(
-  SUPABASE_URL ?? 'https://placeholder.supabase.co',
-  SUPABASE_PUBLISHABLE_KEY ?? 'placeholder-key',
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY,
   {
     auth: {
       storage: localStorage,
