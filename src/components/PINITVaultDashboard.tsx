@@ -2946,6 +2946,18 @@ function SharePage({
           }
         }
 
+        // ── DEBUG: log what was found so we can diagnose ─────────────────────
+        console.log('🔍 [Share Image Debug]', {
+          docName: selectedShareImage.name,
+          hasEncryptedImage: !!selectedShareImage.encryptedImage,
+          hasEncryptedData: !!(selectedShareImage.encryptedData),
+          encryptedDataLen: selectedShareImage.encryptedData?.length ?? 0,
+          hasCloudinaryUrl: !!selectedShareImage.cloudinaryUrl,
+          cloudinaryUrl: selectedShareImage.cloudinaryUrl,
+          previewDataUrlFound: !!previewDataUrl,
+          previewDataUrlLen: previewDataUrl?.length ?? 0,
+        });
+
         // ── Step 2: upload image blob → Supabase Storage → public URL ────────
         if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
           console.log('📤 Uploading share image to Supabase Storage...');
