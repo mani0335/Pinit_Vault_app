@@ -18,6 +18,7 @@ import {
   saveImageToGallery,
   syncVaultMetadata,
   calculatePageCount,
+  countPdfPagesFromDataUrl,
 } from "@/lib/vaultService";
 import { ensurePINITVaultFolder, saveImageToPINITVault } from "@/lib/folderUtils";
 import { embedAdvancedWatermark, extractAdvancedWatermark, type AdvancedWatermarkMetadata } from "@/lib/advancedSteganography";
@@ -1910,6 +1911,27 @@ function VaultPage({ documents, onDeleteDocument, onStartShare, userId, selected
                 <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">CHECKSUM</p>
                   <p className="text-sm text-slate-200 font-mono">{selectedDoc.metadata?.checksum || '—'}</p>
+                </div>
+                <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
+                  <p className="text-xs text-slate-400 mb-1">PAGES</p>
+                  <p className="text-sm text-slate-200 font-mono">
+                    {(() => {
+                      // Use stored pageCount if available
+                      if (selectedDoc.pageCount && selectedDoc.pageCount > 0) {
+                        return `${selectedDoc.pageCount} page${selectedDoc.pageCount !== 1 ? 's' : ''}`;
+                      }
+                      // For PDFs without stored pageCount, count from encryptedData on the fly
+                      const isPdf = (selectedDoc.metadata?.original_name || selectedDoc.name || '').toLowerCase().endsWith('.pdf')
+                        || (selectedDoc.encryptedData || '').startsWith('data:application/pdf');
+                      if (isPdf && selectedDoc.encryptedData) {
+                        try {
+                          const n = countPdfPagesFromDataUrl(selectedDoc.encryptedData);
+                          return `${n} page${n !== 1 ? 's' : ''}`;
+                        } catch { /* fallback */ }
+                      }
+                      return isPdf ? '—' : '1 page';
+                    })()}
+                  </p>
                 </div>
               </div>
             </div>

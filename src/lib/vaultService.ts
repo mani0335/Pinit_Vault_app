@@ -24,33 +24,69 @@ interface VaultDocument {
 const BACKEND_URL = import.meta.env.VITE_API_URL || "https://biovault-backend-d13a.onrender.com";
 
 /**
- * Calculate page count for documents (simplified approach)
+ * Count PDF pages by scanning the binary for /Type /Page markers.
+ * Works entirely in-browser with no extra libraries.
+ * Falls back to 1 if parsing fails.
  */
 export async function calculatePageCount(file: File): Promise<number> {
-  return new Promise((resolve) => {
-    if (file.type === 'application/pdf') {
-      // For PDF, estimate based on file size (rough approximation)
-      // This avoids external dependencies and provides reasonable estimates
-      const fileSizeKB = file.size / 1024;
-      let estimatedPages = 1;
-      
-      if (fileSizeKB < 100) {
-        estimatedPages = 1; // Small PDF ~1 page
-      } else if (fileSizeKB < 500) {
-        estimatedPages = Math.floor(fileSizeKB / 100); // Medium PDF ~100KB per page
-      } else if (fileSizeKB < 2000) {
-        estimatedPages = Math.floor(fileSizeKB / 200); // Large PDF ~200KB per page
-      } else {
-        estimatedPages = Math.floor(fileSizeKB / 300); // Very large PDF ~300KB per page
+  if (file.type !== 'application/pdf') return 1;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    // Decode bytes as Latin-1 so every byte maps 1-to-1 (safe for binary PDF)
+    const text = new TextDecoder('latin1').decode(buffer);
+
+    // First try the /N entry in the document catalog (fastest, most reliable)
+    // Pattern: /N followed by whitespace and a number
+    const catalogMatch = text.match(/\/N\s+(\d+)/);
+    if (catalogMatch) {
+      const n = parseInt(catalogMatch[1], 10);
+      if (n > 0 && n <= 9999) {
+        console.log(`✅ PDF page count from /N: ${n}`);
+        return n;
       }
-      
-      console.log(`PDF page count estimated: ${estimatedPages} pages (size: ${fileSizeKB}KB)`);
-      resolve(Math.max(1, Math.min(estimatedPages, 100))); // Cap at 100 pages
-    } else {
-      // For non-PDF documents, default to 1 page
-      resolve(1);
     }
-  });
+
+    // Fallback: count /Type /Page entries (not /Pages which appears once per tree node)
+    // Use a regex that avoids matching /Pages (the parent node type)
+    const pageMatches = text.match(/\/Type\s*\/Page[^s]/g);
+    if (pageMatches && pageMatches.length > 0) {
+      console.log(`✅ PDF page count from /Type /Page scan: ${pageMatches.length}`);
+      return pageMatches.length;
+    }
+
+    console.warn('⚠️ Could not parse PDF page count, defaulting to 1');
+    return 1;
+  } catch (err) {
+    console.warn('⚠️ PDF page count error:', err);
+    return 1;
+  }
+}
+
+/**
+ * Count PDF pages from a base64 data URL (used when File is not available,
+ * e.g. when viewing an existing vault document).
+ */
+export function countPdfPagesFromDataUrl(dataUrl: string): number {
+  try {
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return 1;
+    // Decode base64 to binary string
+    const binary = atob(base64);
+
+    // Try /N entry first
+    const catalogMatch = binary.match(/\/N\s+(\d+)/);
+    if (catalogMatch) {
+      const n = parseInt(catalogMatch[1], 10);
+      if (n > 0 && n <= 9999) return n;
+    }
+
+    // Fallback: count /Type /Page (not /Pages)
+    const pageMatches = binary.match(/\/Type\s*\/Page[^s]/g);
+    return pageMatches ? pageMatches.length : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /**
