@@ -63,6 +63,15 @@ services:
       - key: VITE_PUBLIC_URL
         scope: build
         value: https://pinit-vault-app.onrender.com
+      - key: VITE_SUPABASE_URL
+        scope: build
+        value: https://wdvsfjpkxfjaelrydgqd.supabase.co
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        scope: build
+        value: sb_publishable_Jp_SicC7aj7ua4zodXmfbA_V9ym-z-7
+      - key: VITE_SUPABASE_ANON_KEY
+        scope: build
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkdnNmanBreGZqYWVscnlkZ3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3OTg0MTQsImV4cCI6MjA5MDM3NDQxNH0.Xh-9eTBJGgQf_9Ry0WCw2qAW5X_qEBdzyuZDVGbcjUg
       - key: NODE_ENV
         scope: build
         value: production
