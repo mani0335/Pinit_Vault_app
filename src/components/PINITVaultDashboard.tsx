@@ -2876,7 +2876,7 @@ function SharePage({
           }
         }
 
-        // Last resort: decrypt encryptedData (XOR key in metadata.checksum)
+        // Fallback: decrypt encryptedData (XOR key in metadata.checksum)
         if (!previewDataUrl) {
           let rawData = selectedShareImage.encryptedData || '';
           if (rawData && selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
@@ -2898,6 +2898,51 @@ function SharePage({
                 }
               } catch { /* not valid base64 */ }
             }
+          }
+        }
+
+        // Last resort: fetch encrypted binary from cloudinaryUrl → decrypt
+        if (!previewDataUrl && selectedShareImage.cloudinaryUrl) {
+          try {
+            console.log('📥 Fetching encrypted data from cloudinaryUrl...');
+            const response = await fetch(selectedShareImage.cloudinaryUrl);
+            const blob = await response.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+            // Convert ArrayBuffer to base64 safely (chunk to avoid stack overflow on large files)
+            const uint8 = new Uint8Array(arrayBuffer);
+            let binaryStr = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < uint8.length; i += chunkSize) {
+              binaryStr += String.fromCharCode(...uint8.subarray(i, i + chunkSize));
+            }
+            let base64 = btoa(binaryStr);
+
+            // Decrypt if XOR key available
+            if (selectedShareImage.metadata?.encrypted && selectedShareImage.metadata?.checksum) {
+              try {
+                const { decryptFile } = await import('@/lib/encryptionUtils');
+                base64 = decryptFile(base64, selectedShareImage.metadata.checksum);
+              } catch (decErr) {
+                console.warn('⚠️ Cloudinary decrypt failed:', decErr);
+              }
+            }
+
+            if (base64 && base64.length > 100) {
+              if (base64.startsWith('data:image')) {
+                previewDataUrl = base64;
+              } else {
+                try {
+                  const sample = atob(base64.substring(0, 8));
+                  if (!sample.startsWith('%PDF')) {
+                    previewDataUrl = `data:image/jpeg;base64,${base64}`;
+                  }
+                } catch {
+                  previewDataUrl = `data:image/jpeg;base64,${base64}`;
+                }
+              }
+            }
+          } catch (fetchErr) {
+            console.warn('⚠️ Could not fetch from cloudinaryUrl for share:', fetchErr);
           }
         }
 
