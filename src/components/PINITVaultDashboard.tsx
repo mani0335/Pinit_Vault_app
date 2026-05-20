@@ -2839,9 +2839,41 @@ function SharePage({
         createdBy: userId || "Unknown",
       };
 
-      // Only use cloudinaryUrl for the share — it's a short URL that fits any column type.
-      // Base64 data URLs can be MB-sized and will fail Supabase's varchar limits.
-      const imageUrlForShare: string | null = selectedShareImage.cloudinaryUrl || null;
+      // ── Resolve the image URL for the share ───────────────────────────────
+      // Priority: cloudinaryUrl → upload encryptedImage to Supabase Storage
+      let imageUrlForShare: string | null = selectedShareImage.cloudinaryUrl || null;
+
+      if (!imageUrlForShare && selectedShareImage.encryptedImage) {
+        try {
+          console.log('📤 Uploading image to Supabase Storage for share...');
+          const dataUrl = selectedShareImage.encryptedImage;
+          // Convert data URL → Blob
+          const fetchRes = await fetch(dataUrl);
+          const blob = await fetchRes.blob();
+          const ext = blob.type.includes('png') ? 'png'
+            : blob.type.includes('pdf') ? 'pdf' : 'jpg';
+          const fileName = `${shareId}.${ext}`;
+
+          const { error: storageError } = await supabase.storage
+            .from('share-images')
+            .upload(fileName, blob, {
+              contentType: blob.type || 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!storageError) {
+            const { data: urlData } = supabase.storage
+              .from('share-images')
+              .getPublicUrl(fileName);
+            imageUrlForShare = urlData.publicUrl;
+            console.log('✅ Image uploaded:', imageUrlForShare);
+          } else {
+            console.warn('⚠️ Storage upload failed:', storageError.message);
+          }
+        } catch (err) {
+          console.warn('⚠️ Could not upload image for share:', err);
+        }
+      }
 
       // Save to share_configs using only confirmed existing columns
       const insertPayload: Record<string, unknown> = {
