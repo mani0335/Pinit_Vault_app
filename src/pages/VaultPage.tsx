@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -27,10 +28,12 @@ import { Filesystem, Directory } from "@capacitor/filesystem";
 import { Capacitor } from "@capacitor/core";
 
 interface VaultPageProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export default function VaultPage({ onBack }: VaultPageProps) {
+  const navigate = useNavigate();
+  const handleBack = onBack ?? (() => navigate("/dashboard", { replace: true }));
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
@@ -325,7 +328,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
           className="flex items-center justify-between mb-8"
         >
           <button
-            onClick={onBack}
+            onClick={handleBack}
             className="flex items-center gap-2 text-gray-300 hover:text-white transition"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -434,7 +437,7 @@ export default function VaultPage({ onBack }: VaultPageProps) {
               Upload or scan documents to fill your vault
             </p>
             <button
-              onClick={onBack}
+              onClick={handleBack}
               className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold rounded-lg transition"
             >
               ← Go Back
