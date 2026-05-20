@@ -51,7 +51,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: npm ci && npm run build
+    buildCommand: npm run build
     startCommand: npm start
     envVars:
       - key: PORT
@@ -60,6 +60,9 @@ services:
       - key: VITE_BACKEND_URL
         scope: build
         value: https://biovault-backend-d13a.onrender.com
+      - key: VITE_PUBLIC_URL
+        scope: build
+        value: https://pinit-vault-app.onrender.com
       - key: NODE_ENV
         scope: build
         value: production

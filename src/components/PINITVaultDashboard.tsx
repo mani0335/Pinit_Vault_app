@@ -2817,9 +2817,9 @@ function SharePage({
 
       // Generate share ID and link locally — no backend call needed
       const shareId = `share_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const backendUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined)
-        || 'https://biovault-backend-d13a.onrender.com';
-      const shareLink = `${backendUrl}/share/${shareId}`;
+      const publicUrl = (import.meta.env.VITE_PUBLIC_URL as string | undefined)
+        || 'https://pinit-vault-app.onrender.com';
+      const shareLink = `${publicUrl}/share/${shareId}`;
 
       setGeneratedShareLink(shareLink);
 
