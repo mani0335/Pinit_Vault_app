@@ -44,34 +44,24 @@ services:
         scope: env
         value: pinit-thumbnails
 
-  # Frontend Web Service (React SPA with proper SPA routing)
-  - type: web
-    name: biovault-app
-    runtime: node
-    region: oregon
-    plan: free
-    rootDir: .
+  # Frontend Static Site (React SPA — Render serves dist/ from CDN)
+  - type: static
+    name: Pinit_Vault_app
     buildCommand: npm run build
-    startCommand: npm start
+    staticPublishPath: ./dist
+    pullRequestPreviewsEnabled: false
     envVars:
-      - key: PORT
-        scope: runtime
-        value: "3000"
       - key: VITE_BACKEND_URL
-        scope: build
         value: https://biovault-backend-d13a.onrender.com
       - key: VITE_PUBLIC_URL
-        scope: build
         value: https://pinit-vault-app.onrender.com
       - key: VITE_SUPABASE_URL
-        scope: build
         value: https://wdvsfjpkxfjaelrydgqd.supabase.co
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
-        scope: build
         value: sb_publishable_Jp_SicC7aj7ua4zodXmfbA_V9ym-z-7
       - key: VITE_SUPABASE_ANON_KEY
-        scope: build
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkdnNmanBreGZqYWVscnlkZ3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3OTg0MTQsImV4cCI6MjA5MDM3NDQxNH0.Xh-9eTBJGgQf_9Ry0WCw2qAW5X_qEBdzyuZDVGbcjUg
-      - key: NODE_ENV
-        scope: build
-        value: production
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
