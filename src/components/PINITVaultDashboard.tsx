@@ -3000,10 +3000,9 @@ function SharePage({
           }
         }
 
-        // ── Step 2: resize to thumbnail and store data URL directly in DB ────
-        // Avoids Supabase Storage entirely — no bucket policies, no upload failures.
-        // Canvas downscales to ≤800px and compresses to JPEG 72% → ~30-120 KB.
+        // ── Step 2: build the content to store in vault_image_id ─────────────
         if (previewDataUrl && previewDataUrl.startsWith('data:image')) {
+          // For images: resize to ≤800px JPEG thumbnail to keep DB payload small
           try {
             const thumbnail = await new Promise<string>((resolve, reject) => {
               const img = new Image();
@@ -3024,13 +3023,17 @@ function SharePage({
               img.src = previewDataUrl!;
             });
             imageUrlForShare = thumbnail;
-            console.log(`✅ Thumbnail ready (${Math.round(thumbnail.length / 1024)} KB)`);
+            console.log(`✅ Image thumbnail ready (${Math.round(thumbnail.length / 1024)} KB)`);
           } catch (canvasErr) {
             console.warn('⚠️ Canvas resize failed, using original:', canvasErr);
-            imageUrlForShare = previewDataUrl; // fallback to original
+            imageUrlForShare = previewDataUrl;
           }
+        } else if (previewDataUrl && previewDataUrl.startsWith('data:application/pdf')) {
+          // For PDFs: store the full PDF data URL so the viewer can open/download it
+          imageUrlForShare = previewDataUrl;
+          console.log(`✅ PDF stored for share (${Math.round(previewDataUrl.length / 1024)} KB)`);
         } else {
-          console.warn('⚠️ No displayable image found — previewDataUrl:', previewDataUrl?.substring(0, 60));
+          console.warn('⚠️ No storable content found — previewDataUrl:', previewDataUrl?.substring(0, 60));
         }
       } catch (err) {
         console.warn('⚠️ Could not resolve/upload image for share:', err);
@@ -3041,6 +3044,7 @@ function SharePage({
         share_id: shareId,
         user_id: userId || 'unknown',
         share_link: shareLink,
+        image_name: selectedShareImage.name || null,
         download_limit: shareDownloadLimit || null,
         downloads_used: 0,
         password: sharePassword.length > 0 ? sharePassword : null,
