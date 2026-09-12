@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.biovault.app-mergeDebugResources-49:/values-v23/values-v23.xml",
+            "outputFile": "com.biovault.app-mergeDebugResources-58:/values-v23/values-v23.xml",
             "map": [
                 {
                     "source": "C:\\Users\\manish\\.gradle\\caches\\8.14.1\\transforms\\b5d4c1ec572daa02bfe6df4be3bd48e4\\transformed\\cardview-1.0.0\\res\\values-v23\\values-v23.xml",

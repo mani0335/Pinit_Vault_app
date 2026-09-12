@@ -1,0 +1,48 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "insuraflow-pro",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\start-insuraflow.bat"],
+      "port": 3000
+    },
+    {
+      "name": "secure-sweet-access",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "port": 5173
+    },
+    {
+      "name": "pinit-insure",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\start-pinit-insure.bat"],
+      "port": 3001
+    },
+    {
+      "name": "pinit-dna",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\start-pinit-dna.bat"],
+      "port": 5174
+    },
+    {
+      "name": "pinit-dna-production",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\start-pinit-dna-prod.bat"],
+      "port": 5175,
+      "autoPort": true
+    },
+    {
+      "name": "apk-preview",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\start-apk-preview.bat"],
+      "port": 5180
+    },
+    {
+      "name": "admin-pinit",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "C:/Users/manish/Desktop/Admin PINIT/frontend", "dev", "--port", "3007"],
+      "port": 3007
+    }
+  ]
+}

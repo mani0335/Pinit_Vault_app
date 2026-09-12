@@ -3,7 +3,13 @@
     <color name="ic_launcher_background">#FFFFFF</color>
     <string name="app_name">PINIT Vault</string>
     <string name="custom_url_scheme">com.biovault.app</string>
+    <string name="gcm_defaultSenderId" translatable="false">731629222791</string>
+    <string name="google_api_key" translatable="false">AIzaSyD9In7GrYlTkGCMwI3ESo5JEeL40X-IXTI</string>
+    <string name="google_app_id" translatable="false">1:731629222791:android:a30c9b1c1a913015bbf122</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyD9In7GrYlTkGCMwI3ESo5JEeL40X-IXTI</string>
+    <string name="google_storage_bucket" translatable="false">pinit-vault.firebasestorage.app</string>
     <string name="package_name">com.biovault.app</string>
+    <string name="project_id" translatable="false">pinit-vault</string>
     <string name="title_activity_main">PINIT Vault</string>
     <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
         

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.biovault.app-mergeDebugResources-49:/values-en-rCA/values-en-rCA.xml",
+            "outputFile": "com.biovault.app-mergeDebugResources-58:/values-en-rCA/values-en-rCA.xml",
             "map": [
                 {
                     "source": "C:\\Users\\manish\\.gradle\\caches\\8.14.1\\transforms\\c0c93a135adbd5cadd6d8c40c035cfe4\\transformed\\biometric-1.1.0\\res\\values-en-rCA\\values-en-rCA.xml",

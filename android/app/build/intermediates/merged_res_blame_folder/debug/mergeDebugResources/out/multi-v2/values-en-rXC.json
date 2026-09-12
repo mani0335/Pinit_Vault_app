@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.biovault.app-mergeDebugResources-49:/values-en-rXC/values-en-rXC.xml",
+            "outputFile": "com.biovault.app-mergeDebugResources-58:/values-en-rXC/values-en-rXC.xml",
             "map": [
                 {
                     "source": "C:\\Users\\manish\\.gradle\\caches\\8.14.1\\transforms\\6e3a0f938438e4b9ffba6a2cd1f9bbaf\\transformed\\core-1.17.0\\res\\values-en-rXC\\values-en-rXC.xml",

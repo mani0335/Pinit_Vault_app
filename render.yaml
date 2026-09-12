@@ -44,6 +44,19 @@ services:
         scope: env
         value: pinit-thumbnails
 
+  # PINIT-DNA Python AI Microservice (FAISS + sentence-transformers semantic search)
+  - type: web
+    name: pinit-dna-ai
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: Pinit-DNA/Pinit-DNA/python-ai
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
   # Frontend Static Site (React SPA — Render serves dist/ from CDN)
   - type: static
     name: Pinit_Vault_app

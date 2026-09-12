@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "731629222791",
+    "project_id": "pinit-vault",
+    "storage_bucket": "pinit-vault.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:731629222791:android:a30c9b1c1a913015bbf122",
+        "android_client_info": {
+          "package_name": "com.biovault.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9In7GrYlTkGCMwI3ESo5JEeL40X-IXTI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
